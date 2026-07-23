@@ -6,7 +6,7 @@ nothing leaves your machine. Runs on an **NVIDIA GPU (CUDA)** or **CPU**, on
 both **Windows and Linux**.
 
 ```
-  audio (WAV / MP3 / m4a / flac / ...)
+  audio (WAV / MP3 / M4A / FLAC / AAC / OGG / ... — any codec FFmpeg reads)
         │
         ▼
   1. denoise / normalize        (FFmpeg, or optional DeepFilterNet)
@@ -28,7 +28,10 @@ both **Windows and Linux**.
 
 - **Local & private** — no network calls at inference time.
 - **Cross-platform** — Windows and Linux, GPU or CPU (auto-detected).
-- **WAV & MP3** (plus m4a, flac, ogg, opus, and more via FFmpeg).
+- **Virtually any audio format** — WAV, MP3, **M4A**, AAC, FLAC, OGG/Opus, WMA,
+  AIFF, ALAC, APE, WavPack, AMR, AC3, CAF, and more. Decoding is delegated to
+  the FFmpeg binary, so any codec/container FFmpeg can read is supported —
+  including pulling the audio track out of video files (MP4, MKV, MOV, WebM, …).
 - **Best multilingual accuracy** — Whisper `large-v3`, ~99 languages, auto-detect.
 - **Always UTF-8 output** — Chinese, Japanese, Korean, and any non-Latin script
   round-trip correctly, to files and to stdout.
@@ -181,6 +184,11 @@ plaude-local note.mp3
 
 # Without the installed entry point
 python -m plaude_local note.mp3
+
+# Any FFmpeg-decodable format works the same way
+plaude-local voice-memo.m4a          # iPhone/Android voice memo (AAC in M4A)
+plaude-local podcast.opus
+plaude-local lecture.mp4             # audio is extracted from the video
 
 # Pick a smaller/faster model and force CPU
 plaude-local call.wav --model small --device cpu

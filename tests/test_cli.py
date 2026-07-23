@@ -126,37 +126,42 @@ class TestOrchestration(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertTrue((pathlib.Path(d) / "rec.txt").is_file())
 
-    def test_mp3_input_is_accepted(self):
+    def _transcribe_ext(self, ext, quiet=True):
+        """Run the CLI on an input with the given extension; return (rc, stderr)."""
         segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
         with tempfile.TemporaryDirectory() as d:
-            f = pathlib.Path(d) / "clip.mp3"
-            f.write_bytes(b"ID3")
-            out = pathlib.Path(d) / "o.txt"
-            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
-                 mock.patch.object(audio, "prepare", return_value=f), \
-                 mock.patch.object(
-                     transcribe, "Transcriber",
-                     lambda **kw: _FakeEngine(segs, **kw)):
-                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-q"])
-            self.assertEqual(rc, 0)
-            self.assertTrue(out.is_file())
-
-    def test_unsupported_extension_warns_but_proceeds(self):
-        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
-        with tempfile.TemporaryDirectory() as d:
-            f = pathlib.Path(d) / "clip.xyz"
+            f = pathlib.Path(d) / ("clip" + ext)
             f.write_bytes(b"x")
             out = pathlib.Path(d) / "o.txt"
             err = io.StringIO()
+            argv = [str(f), "-o", str(out), "--denoise", "none"]
+            if quiet:
+                argv.append("-q")
             with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
                  mock.patch.object(audio, "prepare", return_value=f), \
                  mock.patch.object(
                      transcribe, "Transcriber",
                      lambda **kw: _FakeEngine(segs, **kw)), \
                  contextlib.redirect_stderr(err):
-                rc = cli.run([str(f), "-o", str(out), "--denoise", "none"])
-            self.assertEqual(rc, 0)
-            self.assertIn("not a recognized", err.getvalue())
+                rc = cli.run(argv)
+            return rc, err.getvalue(), out.is_file()
+
+    def test_common_formats_accepted_without_note(self):
+        # m4a and many other FFmpeg-decodable formats are first-class: they
+        # transcribe and produce no "uncommon extension" note.
+        for ext in (".m4a", ".mp3", ".wav", ".flac", ".ogg", ".opus", ".aac",
+                    ".wma", ".aiff", ".mkv", ".mp4", ".mov", ".webm", ".amr",
+                    ".ac3", ".caf", ".wv", ".ape"):
+            rc, err, made = self._transcribe_ext(ext, quiet=False)
+            self.assertEqual(rc, 0, ext)
+            self.assertTrue(made, ext)
+            self.assertNotIn("uncommon extension", err, ext)
+
+    def test_unknown_extension_notes_but_proceeds(self):
+        rc, err, made = self._transcribe_ext(".xyz", quiet=False)
+        self.assertEqual(rc, 0)
+        self.assertTrue(made)
+        self.assertIn("uncommon extension", err)
 
     def test_output_is_utf8_for_non_latin_scripts(self):
         # Chinese + Japanese must round-trip as UTF-8 text.

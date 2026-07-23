@@ -24,11 +24,25 @@ MODEL_CHOICES = [
     "medium", "medium.en", "large-v2", "large-v3",
 ]
 
-# Container/codecs FFmpeg reads for us. WAV and MP3 are the primary targets;
-# the rest are accepted as a convenience. Unknown extensions still get a try.
+# Decoding is delegated to the FFmpeg binary, which supports essentially every
+# audio codec and container in existence (and can pull the audio track out of
+# video files too). This set is only used to decide whether to print an
+# "unrecognized extension" hint - an unknown extension is still passed to FFmpeg
+# and will work if FFmpeg can decode it. WAV and MP3 are the primary targets;
+# m4a and the rest are first-class here so common recordings never warn.
 SUPPORTED_AUDIO_EXTS = {
-    ".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".oga", ".opus",
-    ".wma", ".aiff", ".aif", ".mp4", ".mkv", ".webm", ".mov",
+    # Lossy audio
+    ".mp3", ".m4a", ".m4b", ".m4p", ".aac", ".adts", ".ogg", ".oga", ".opus",
+    ".spx", ".wma", ".mp2", ".mpga", ".mpc", ".ra", ".rm", ".oma", ".aa",
+    ".aax", ".ac3", ".eac3", ".dts", ".amr", ".3ga", ".gsm", ".vqf",
+    # Lossless / uncompressed audio
+    ".wav", ".flac", ".alac", ".aiff", ".aif", ".aifc", ".ape", ".wv", ".tta",
+    ".au", ".snd", ".caf", ".w64", ".dsf", ".dff", ".shn", ".voc", ".sln",
+    ".mka",
+    # Video containers (FFmpeg extracts the audio track)
+    ".mp4", ".m4v", ".mov", ".qt", ".mkv", ".webm", ".avi", ".flv", ".f4v",
+    ".wmv", ".asf", ".ts", ".m2ts", ".mts", ".m2t", ".3gp", ".3g2", ".vob",
+    ".ogv", ".mpg", ".mpeg", ".mxf", ".divx",
 }
 
 
@@ -180,8 +194,9 @@ def run(argv: Optional[List[str]] = None) -> int:
     ext = in_path.suffix.lower()
     if ext not in SUPPORTED_AUDIO_EXTS:
         _log(args.quiet,
-             f"warning: '{ext or 'no extension'}' is not a recognized audio "
-             f"format; attempting to decode anyway. Primary formats: WAV, MP3.")
+             f"note: '{ext or 'no extension'}' is an uncommon extension; "
+             f"handing it to FFmpeg anyway, which decodes almost any codec. "
+             f"If FFmpeg can read it, transcription will proceed.")
 
     if not audio.have_ffmpeg():
         from . import preflight
