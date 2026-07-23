@@ -24,6 +24,10 @@ both **Windows and Linux**.
   transcript (txt / srt / vtt / json)  +  summary.md      ← always UTF-8
 ```
 
+> **Windows users:** a feature-parity **PowerShell edition** lives in
+> [`powershell/`](powershell/README.md) (`Plaude-Local.ps1`) if you prefer a
+> native PowerShell tool over the Python CLI.
+
 ## Features
 
 - **Local & private** — no network calls at inference time.
@@ -166,7 +170,7 @@ spoken clip with FFmpeg's synth, or just use any audio/video file you have:
 # 1. confirm prerequisites
 plaude-local --check
 
-# 2. transcribe a file (auto GPU/CPU, auto language, writes note.txt next to it)
+# 2. transcribe a file (auto GPU/CPU, auto language, writes ./output.txt)
 plaude-local note.mp3
 
 # 3. see it on screen instead of a file
@@ -181,8 +185,14 @@ python -m unittest discover -s tests -v
 ## Usage examples
 
 ```bash
-# Simplest: transcribe, auto-detect device + language, write note.txt
+# Simplest: transcribe, auto-detect device + language, write ./output.txt
 plaude-local note.mp3
+
+# Choose the output file name
+plaude-local note.mp3 -o meeting-notes.txt
+
+# Overwrite an existing output without the 10-second prompt
+plaude-local note.mp3 -o out.txt --yes
 
 # Without the installed entry point
 python -m plaude_local note.mp3
@@ -254,10 +264,20 @@ All outputs are written as **UTF-8**, so non-Latin scripts are preserved:
 Summaries (from `--summarize`) are written to `<transcript>.summary.md` by
 default (or to stdout with `--summary-output -`).
 
+### Output file and overwriting
+
+If you don't pass `-o/--output`, the transcript is written to **`output.<format>`**
+in the current directory (e.g. `output.txt`). If that file already exists, you're
+asked whether to overwrite; with no answer within **10 seconds it overwrites by
+default**. Pass `--yes` (`-y`) to skip the prompt, or `-o -` to write to stdout.
+In a non-interactive session (piped/redirected) it overwrites without waiting.
+
 ### Key flags
 
 | Flag | Default | Meaning |
 |------|---------|---------|
+| `-o` / `--output` | `output.<format>` | output file path; `-` for stdout |
+| `-y` / `--yes` / `--overwrite` | off | overwrite output without the 10 s prompt |
 | `--check` / `--doctor` | — | verify prerequisites and exit |
 | `--model` | `large-v3` | Whisper model size or local path |
 | `--device` | `auto` | `auto` picks CUDA if present, else CPU |

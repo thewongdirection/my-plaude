@@ -46,12 +46,17 @@ def build_parser() -> argparse.ArgumentParser:
                         "mp4, mkv, ...)")
     p.add_argument(
         "-o", "--output", type=str, default=None,
-        help="output file path (default: alongside the input, using --format's "
-             "extension). Use '-' to write to stdout. Always written as UTF-8.",
+        help="output file path. Default: output.<format> (e.g. output.txt) in "
+             "the current directory. Use '-' to write to stdout. Always UTF-8.",
     )
     p.add_argument(
         "-f", "--format", choices=formats.FORMATS, default="txt",
         help="output format",
+    )
+    p.add_argument(
+        "-y", "--yes", "--overwrite", action="store_true", dest="yes",
+        help="overwrite the output file without asking (default: prompt, then "
+             "auto-overwrite after 10s)",
     )
     p.add_argument("--check", "--doctor", action="store_true", dest="check",
                    help="check prerequisites (ffmpeg, models, optional extras) "
@@ -132,8 +137,64 @@ def _log(quiet: bool, *msg: object) -> None:
         print(*msg, file=sys.stderr, flush=True)
 
 
-def _default_output(input_path: str, fmt: str) -> str:
-    return str(Path(input_path).with_suffix("." + fmt))
+DEFAULT_OUTPUT_STEM = "output"
+OVERWRITE_TIMEOUT_SECONDS = 10
+
+
+def _default_output(fmt: str) -> str:
+    """Default output path when -o is not given: output.<fmt> in the cwd."""
+    return f"{DEFAULT_OUTPUT_STEM}.{fmt}"
+
+
+def _prompt_yes_no_timeout(prompt: str, timeout: float, *, default: bool) -> bool:
+    """Ask a yes/no question, returning ``default`` if unanswered within
+    ``timeout`` seconds. Cross-platform (uses a reader thread, so it works on
+    Windows where select() can't watch stdin)."""
+    import threading
+
+    box: dict = {"answer": None}
+
+    def _reader() -> None:
+        try:
+            box["answer"] = input()
+        except (EOFError, OSError):
+            box["answer"] = ""
+
+    sys.stderr.write(prompt)
+    sys.stderr.flush()
+    t = threading.Thread(target=_reader, daemon=True)
+    t.start()
+    t.join(timeout)
+
+    raw = box["answer"]
+    if raw is None:  # timed out
+        sys.stderr.write("\n")
+        return default
+    ans = raw.strip().lower()
+    if ans in ("y", "yes"):
+        return True
+    if ans in ("n", "no"):
+        return False
+    return default
+
+
+def _confirm_overwrite(path: str, *, assume_yes: bool, quiet: bool) -> bool:
+    """Decide whether to (over)write ``path``.
+
+    New files: always yes. Existing files: yes if --yes; otherwise prompt with a
+    10-second timeout that defaults to overwrite. In a non-interactive session
+    (no TTY) we can't prompt, so we overwrite after noting it.
+    """
+    if assume_yes or not Path(path).exists():
+        return True
+    if not sys.stdin.isatty():
+        _log(quiet, f"note: {path} exists; overwriting (non-interactive session).")
+        return True
+    return _prompt_yes_no_timeout(
+        f"{path} already exists. Overwrite? [Y/n] "
+        f"(auto-overwrite in {OVERWRITE_TIMEOUT_SECONDS}s): ",
+        OVERWRITE_TIMEOUT_SECONDS, default=True,
+    )
 
 
 def _write_utf8(text: str, out_path: Optional[str]) -> None:
@@ -288,7 +349,11 @@ def run(argv: Optional[List[str]] = None) -> int:
     # 4. Render + write transcript (UTF-8)
     meta["timestamps"] = args.diarize  # show clock in txt when we have speakers
     text = formats.render(segments, args.format, meta=meta)
-    transcript_out = args.output if args.output else _default_output(str(in_path), args.format)
+    transcript_out = args.output if args.output else _default_output(args.format)
+    if transcript_out != "-" and not _confirm_overwrite(
+            transcript_out, assume_yes=args.yes, quiet=args.quiet):
+        print(f"aborted: {transcript_out} was not overwritten.", file=sys.stderr)
+        return 11
     try:
         _write_utf8(text, transcript_out)
     except OSError as exc:

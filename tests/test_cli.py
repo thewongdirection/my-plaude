@@ -127,18 +127,41 @@ class TestOrchestration(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertEqual(out.read_text(encoding="utf-8"), "Hello.\nWorld.\n")
 
-    def test_default_output_path_next_to_input(self):
+    def test_default_output_is_output_dot_txt_in_cwd(self):
         segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
         with tempfile.TemporaryDirectory() as d:
             f = self._input(d)
-            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
-                 mock.patch.object(audio, "prepare", return_value=f), \
-                 mock.patch.object(
-                     transcribe, "Transcriber",
-                     lambda **kw: _FakeEngine(segs, **kw)):
-                rc = cli.run([str(f), "--denoise", "none", "-q"])
+            cwd = os.getcwd()
+            os.chdir(d)
+            try:
+                with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                     mock.patch.object(audio, "prepare", return_value=f), \
+                     mock.patch.object(
+                         transcribe, "Transcriber",
+                         lambda **kw: _FakeEngine(segs, **kw)):
+                    rc = cli.run([str(f), "--denoise", "none", "-q"])
+            finally:
+                os.chdir(cwd)
             self.assertEqual(rc, 0)
-            self.assertTrue((pathlib.Path(d) / "rec.txt").is_file())
+            self.assertTrue((pathlib.Path(d) / "output.txt").is_file())
+
+    def test_default_output_matches_format(self):
+        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            cwd = os.getcwd()
+            os.chdir(d)
+            try:
+                with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                     mock.patch.object(audio, "prepare", return_value=f), \
+                     mock.patch.object(
+                         transcribe, "Transcriber",
+                         lambda **kw: _FakeEngine(segs, **kw)):
+                    rc = cli.run([str(f), "--denoise", "none", "-f", "srt", "-q"])
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(rc, 0)
+            self.assertTrue((pathlib.Path(d) / "output.srt").is_file())
 
     def test_output_is_utf8_for_non_latin_scripts(self):
         # Chinese + Japanese must round-trip as UTF-8 text.
@@ -252,6 +275,82 @@ class TestOrchestration(unittest.TestCase):
             # backend + device were forwarded
             self.assertEqual(m.call_args.kwargs["backend"], "pyannote")
             self.assertEqual(m.call_args.kwargs["device"], "cpu")
+
+
+class TestPromptTimeout(unittest.TestCase):
+    def setUp(self):
+        p = contextlib.redirect_stderr(io.StringIO())
+        p.__enter__()
+        self.addCleanup(p.__exit__, None, None, None)
+
+    def test_yes_answer(self):
+        with mock.patch("builtins.input", return_value="y"):
+            self.assertTrue(cli._prompt_yes_no_timeout("? ", 1, default=False))
+
+    def test_no_answer(self):
+        with mock.patch("builtins.input", return_value="n"):
+            self.assertFalse(cli._prompt_yes_no_timeout("? ", 1, default=True))
+
+    def test_blank_uses_default(self):
+        with mock.patch("builtins.input", return_value=""):
+            self.assertTrue(cli._prompt_yes_no_timeout("? ", 1, default=True))
+
+    def test_timeout_uses_default(self):
+        import time
+
+        def _slow():
+            time.sleep(1.0)
+            return "n"
+        # Reader blocks past the (tiny) timeout -> default is returned promptly.
+        with mock.patch("builtins.input", side_effect=_slow):
+            self.assertTrue(
+                cli._prompt_yes_no_timeout("? ", 0.05, default=True))
+
+
+class TestOverwrite(unittest.TestCase):
+    def _run_with_existing_output(self, extra_args, prompt_return=None):
+        segs = [{"start": 0.0, "end": 1.0, "text": "new", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = pathlib.Path(d) / "rec.wav"
+            f.write_bytes(b"x")
+            out = pathlib.Path(d) / "o.txt"
+            out.write_text("OLD CONTENT", encoding="utf-8")
+            patches = [
+                mock.patch.object(audio, "have_ffmpeg", return_value=True),
+                mock.patch.object(audio, "have_ffprobe", return_value=False),
+                mock.patch.object(audio, "prepare", return_value=f),
+                mock.patch.object(transcribe, "Transcriber",
+                                  lambda **kw: _FakeEngine(segs, **kw)),
+                contextlib.redirect_stderr(io.StringIO()),
+            ]
+            if prompt_return is not None:
+                # Force an interactive session and stub the actual prompt.
+                fake_stdin = mock.Mock()
+                fake_stdin.isatty.return_value = True
+                patches.append(mock.patch("sys.stdin", fake_stdin))
+                patches.append(mock.patch.object(
+                    cli, "_prompt_yes_no_timeout", return_value=prompt_return))
+            with contextlib.ExitStack() as stack:
+                for p in patches:
+                    stack.enter_context(p)
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-q"]
+                             + extra_args)
+            return rc, out.read_text(encoding="utf-8")
+
+    def test_yes_flag_overwrites_without_prompt(self):
+        rc, content = self._run_with_existing_output(["--yes"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(content, "new\n")
+
+    def test_prompt_yes_overwrites(self):
+        rc, content = self._run_with_existing_output([], prompt_return=True)
+        self.assertEqual(rc, 0)
+        self.assertEqual(content, "new\n")
+
+    def test_prompt_no_aborts_and_keeps_file(self):
+        rc, content = self._run_with_existing_output([], prompt_return=False)
+        self.assertEqual(rc, 11)
+        self.assertEqual(content, "OLD CONTENT")  # untouched
 
 
 class TestInputProbing(unittest.TestCase):
