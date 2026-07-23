@@ -142,7 +142,5 @@ pure/logic functions — no external tools or network:
 Invoke-Pester -Path ./powershell
 ```
 
-They run in CI on Ubuntu and Windows via `../.github/workflows/ci.yml`.
-
 > **Maintainers:** any future change to the Python tool must be mirrored here to
 > preserve parity. See `../CLAUDE.md`.

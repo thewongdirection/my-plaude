@@ -51,8 +51,7 @@ python -m plaude_local --check
 Invoke-Pester -Path ./powershell
 ```
 
-Both suites run in CI on every push via `.github/workflows/ci.yml` (Python on
-3.9/3.11/3.12; Pester on Ubuntu + Windows). Keep both green.
+Keep both suites green when changing either implementation.
 
 ## Conventions
 
