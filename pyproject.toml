@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plaude-local"
+version = "0.1.0"
+description = "Local, offline speech-to-text CLI (Whisper) with denoising and optional speaker diarization"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["speech-to-text", "asr", "whisper", "transcription", "offline", "diarization"]
+
+# Core runtime dependency. Everything else (CLI, audio I/O via ffmpeg,
+# output writers) uses the standard library. FFmpeg is an external *binary*,
+# not a Python package.
+dependencies = [
+    "faster-whisper>=1.0.0",
+]
+
+[project.optional-dependencies]
+# Neural denoiser - better than the default ffmpeg filter chain on noisy audio.
+denoise = ["deepfilternet>=0.5.6"]
+# Speaker diarization ("who said what"). Pulls in torch.
+diarize = ["pyannote.audio>=3.1"]
+# Everything.
+all = ["deepfilternet>=0.5.6", "pyannote.audio>=3.1"]
+
+[project.scripts]
+plaude-local = "plaude_local.cli:main"
+
+[tool.setuptools]
+packages = ["plaude_local"]

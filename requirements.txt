@@ -1,0 +1,13 @@
+# Core (required): the ASR engine. Handles WAV/MP3 decoding internally via PyAV.
+faster-whisper>=1.0.0
+
+# --- Optional extras (install only if you need them) ---
+# Better neural denoising (`--denoise deepfilter`); also installs torch:
+#   pip install deepfilternet
+#
+# Speaker diarization (`--diarize`); also installs torch and needs a free
+# Hugging Face token on first run:
+#   pip install "pyannote.audio>=3.1"
+#
+# External binary (not a pip package) - required for reading audio:
+#   FFmpeg   (Windows: `winget install ffmpeg`; Linux: `apt install ffmpeg`)

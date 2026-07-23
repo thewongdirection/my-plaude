@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Model caches / weights
+*.bin
+*.pt
+*.onnx
+models/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local test audio / outputs
+*.wav
+*.mp3
+*.srt
+*.vtt
+!sample/*
