@@ -35,3 +35,9 @@ plaude-local = "plaude_local.cli:main"
 
 [tool.setuptools]
 packages = ["plaude_local"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

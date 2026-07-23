@@ -8,7 +8,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from plaude_local import cli, audio, transcribe, diarize
+from plaude_local import cli, audio, transcribe, diarize, summarize, preflight
+from plaude_local.preflight import Check
 
 
 def _run_quiet(argv):
@@ -49,7 +50,27 @@ class TestParser(unittest.TestCase):
         self.assertEqual(args.diarize_backend, "whisperx")
 
 
+class TestCheck(unittest.TestCase):
+    def test_check_all_ok_returns_zero(self):
+        ok = [Check("Python", True, True), Check("FFmpeg", True, True)]
+        with mock.patch.object(preflight, "run_all", return_value=ok):
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(cli.run(["--check"]), 0)
+
+    def test_check_missing_required_returns_one(self):
+        bad = [Check("FFmpeg", False, True, remedy="install it")]
+        with mock.patch.object(preflight, "run_all", return_value=bad):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = cli.run(["--check"])
+        self.assertEqual(rc, 1)
+        self.assertIn("install it", buf.getvalue())
+
+
 class TestErrorCodes(unittest.TestCase):
+    def test_input_required_without_check(self):
+        self.assertEqual(_run_quiet([]), 2)
+
     def test_input_not_found(self):
         self.assertEqual(_run_quiet(["/no/such/input.wav"]), 2)
 
@@ -104,6 +125,130 @@ class TestOrchestration(unittest.TestCase):
                 rc = cli.run([str(f), "--denoise", "none", "-q"])
             self.assertEqual(rc, 0)
             self.assertTrue((pathlib.Path(d) / "rec.txt").is_file())
+
+    def test_mp3_input_is_accepted(self):
+        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = pathlib.Path(d) / "clip.mp3"
+            f.write_bytes(b"ID3")
+            out = pathlib.Path(d) / "o.txt"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)):
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-q"])
+            self.assertEqual(rc, 0)
+            self.assertTrue(out.is_file())
+
+    def test_unsupported_extension_warns_but_proceeds(self):
+        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = pathlib.Path(d) / "clip.xyz"
+            f.write_bytes(b"x")
+            out = pathlib.Path(d) / "o.txt"
+            err = io.StringIO()
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)), \
+                 contextlib.redirect_stderr(err):
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none"])
+            self.assertEqual(rc, 0)
+            self.assertIn("not a recognized", err.getvalue())
+
+    def test_output_is_utf8_for_non_latin_scripts(self):
+        # Chinese + Japanese must round-trip as UTF-8 text.
+        segs = [
+            {"start": 0.0, "end": 1.0, "text": " 你好世界", "speaker": None},
+            {"start": 1.0, "end": 2.0, "text": " こんにちは", "speaker": None},
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            out = pathlib.Path(d) / "cn.txt"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)):
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-q"])
+            self.assertEqual(rc, 0)
+            # Decoding as UTF-8 must succeed and preserve the characters.
+            content = out.read_bytes().decode("utf-8")
+            self.assertIn("你好世界", content)
+            self.assertIn("こんにちは", content)
+
+    def test_stdout_output_is_utf8_bytes(self):
+        # Regression: the sys.stdout.buffer path must emit real UTF-8 bytes so
+        # CJK survives on any console code page. StringIO has no .buffer, so we
+        # supply a stdout stand-in that exposes a binary buffer.
+        class _FakeStdout:
+            def __init__(self):
+                self.buffer = io.BytesIO()
+
+        segs = [{"start": 0.0, "end": 1.0, "text": " 你好世界", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            fake = _FakeStdout()
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)), \
+                 mock.patch("sys.stdout", fake):
+                rc = cli.run([str(f), "-o", "-", "--denoise", "none", "-q"])
+            self.assertEqual(rc, 0)
+            emitted = fake.buffer.getvalue()
+            self.assertIsInstance(emitted, bytes)
+            self.assertIn("你好世界", emitted.decode("utf-8"))
+
+    def test_bad_output_dir_fails_cleanly(self):
+        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            bad = pathlib.Path(d) / "no_such_dir" / "out.txt"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                rc = cli.run([str(f), "-o", str(bad), "--denoise", "none", "-q"])
+            self.assertEqual(rc, 9)
+
+    def test_summarize_writes_summary_file(self):
+        segs = [{"start": 0.0, "end": 1.0, "text": "some talk", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            out = pathlib.Path(d) / "o.txt"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)), \
+                 mock.patch.object(summarize, "detect_backend", return_value="ollama"), \
+                 mock.patch.object(summarize, "summarize",
+                                   return_value="* key point") as m:
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none",
+                              "--summarize", "-q"])
+            self.assertEqual(rc, 0)
+            summary = pathlib.Path(d) / "o.summary.md"
+            self.assertTrue(summary.is_file())
+            body = summary.read_text(encoding="utf-8")
+            self.assertIn("# Summary", body)
+            self.assertIn("* key point", body)
+            m.assert_called_once()
+
+    def test_summarize_no_server_fails_fast(self):
+        segs = [{"start": 0.0, "end": 1.0, "text": "x", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(summarize, "detect_backend", return_value=None), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                rc = cli.run([str(f), "--denoise", "none", "--summarize", "-q"])
+            self.assertEqual(rc, 8)
 
     def test_diarize_path_tags_speakers(self):
         segs = [{"start": 0.0, "end": 1.0, "text": " hi", "speaker": None}]

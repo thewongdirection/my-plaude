@@ -10,5 +10,10 @@ faster-whisper>=1.0.0
 #   pip install "pyannote.audio>=3.1"      # --diarize-backend pyannote (default)
 #   pip install "whisperx>=3.1"            # --diarize-backend whisperx
 #
+# Summarization (`--summarize`) needs NO extra pip package (uses stdlib urllib),
+# but does need a local LLM server running - either:
+#   Ollama:    https://ollama.com/download  (then `ollama pull llama3.1`)
+#   llama.cpp: https://github.com/ggml-org/llama.cpp  (`llama-server -m model.gguf`)
+#
 # External binary (not a pip package) - required for reading audio:
 #   FFmpeg   (Windows: `winget install ffmpeg`; Linux: `apt install ffmpeg`)
