@@ -6,8 +6,9 @@ faster-whisper>=1.0.0
 #   pip install deepfilternet
 #
 # Speaker diarization (`--diarize`); also installs torch and needs a free
-# Hugging Face token on first run:
-#   pip install "pyannote.audio>=3.1"
+# Hugging Face token on first run. Two backend choices:
+#   pip install "pyannote.audio>=3.1"      # --diarize-backend pyannote (default)
+#   pip install "whisperx>=3.1"            # --diarize-backend whisperx
 #
 # External binary (not a pip package) - required for reading audio:
 #   FFmpeg   (Windows: `winget install ffmpeg`; Linux: `apt install ffmpeg`)

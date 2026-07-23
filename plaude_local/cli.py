@@ -74,8 +74,12 @@ def build_parser() -> argparse.ArgumentParser:
     # Diarization
     g_diar = p.add_argument_group("speaker diarization (optional)")
     g_diar.add_argument("--diarize", action="store_true",
-                        help="tag speakers (who said what). Requires "
-                             "pyannote.audio and a Hugging Face token.")
+                        help="tag speakers (who said what). Requires the "
+                             "chosen backend and a Hugging Face token.")
+    g_diar.add_argument("--diarize-backend", choices=["pyannote", "whisperx"],
+                        default="pyannote",
+                        help="diarization backend: pyannote (lighter) or "
+                             "whisperx")
     g_diar.add_argument("--hf-token", default=None,
                         help="Hugging Face token (or set HF_TOKEN)")
     g_diar.add_argument("--num-speakers", type=int, default=None,
@@ -165,11 +169,14 @@ def run(argv: Optional[List[str]] = None) -> int:
         # 3. Diarize (optional)
         if args.diarize:
             from . import diarize
-            _log(args.quiet, "[3/3] diarizing speakers ...")
+            _log(args.quiet,
+                 f"[3/3] diarizing speakers (backend={args.diarize_backend}) ...")
             try:
                 segments = diarize.diarize_and_merge(
                     str(prepared), segments,
+                    backend=args.diarize_backend,
                     hf_token=hf_token,
+                    device=engine.device,
                     num_speakers=args.num_speakers,
                     min_speakers=args.min_speakers,
                     max_speakers=args.max_speakers,

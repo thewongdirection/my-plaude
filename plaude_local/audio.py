@@ -44,7 +44,7 @@ def have_ffmpeg() -> bool:
 def _run_ffmpeg(args: list[str]) -> None:
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *args]
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(cmd, check=True, capture_output=True, text=True, errors="replace")
     except FileNotFoundError as exc:  # pragma: no cover - environment dependent
         raise AudioError(
             "ffmpeg was not found on PATH. Install it and try again "

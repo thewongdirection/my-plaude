@@ -43,7 +43,8 @@ Pipeline:
 | `faster-whisper` | yes | the ASR engine |
 | NVIDIA GPU (8 GB+ VRAM) | recommended | `large-v3` in float16 fits ~8 GB; CPU works but is slower |
 | `deepfilternet` | optional | better neural denoise (`--denoise deepfilter`) |
-| `pyannote.audio` + HF token | optional | speaker diarization (`--diarize`) |
+| `pyannote.audio` + HF token | optional | speaker diarization, pyannote backend (`--diarize`) |
+| `whisperx` + HF token | optional | speaker diarization, WhisperX backend (`--diarize-backend whisperx`) |
 
 For GPU use you also need NVIDIA's CUDA/cuDNN runtime available to CTranslate2 —
 see the [faster-whisper GPU notes](https://github.com/SYSTRAN/faster-whisper#gpu).
@@ -94,6 +95,9 @@ plaude-local noisy.wav --denoise deepfilter
 # tag speakers (needs: pip install pyannote.audio + a Hugging Face token)
 export HF_TOKEN=hf_xxx
 plaude-local interview.mp3 --diarize --format txt
+
+# use the WhisperX diarization backend instead (needs: pip install whisperx)
+plaude-local interview.mp3 --diarize --diarize-backend whisperx
 ```
 
 ### Output formats
@@ -129,9 +133,24 @@ speaker labels (`Speaker 1`, `Speaker 2`, …) and timestamps are added:
 - **Transcription.** `faster-whisper` runs Whisper via CTranslate2 with int8/
   float16 quantization, so `large-v3` fits on an 8 GB GPU and also runs on CPU.
   Voice-activity detection trims silence for speed and accuracy.
-- **Diarization.** `pyannote` segments the audio by voice and we align it to the
-  transcript by timestamp. With word-level timestamps we regroup into clean
-  per-speaker turns. It labels *distinct* speakers (`Speaker 1/2/…`), not names.
+- **Diarization.** Two backends are available — `pyannote` (default, lighter) and
+  `whisperx` (`--diarize-backend whisperx`). Both segment the audio by voice;
+  each backend produces `(start, end, speaker)` turns that flow through one
+  shared merge routine, so output is identical either way. With word-level
+  timestamps we regroup into clean per-speaker turns. It labels *distinct*
+  speakers (`Speaker 1/2/…`), not names.
+
+## Testing
+
+The regression suite is standard-library only (`unittest` + `unittest.mock`) and
+mocks the heavy/network backends, so it runs offline with no GPU or model
+downloads:
+
+```bash
+python -m unittest discover -s tests -v
+# or, if pytest is installed:
+pytest -q
+```
 
 ## Hardware notes
 
