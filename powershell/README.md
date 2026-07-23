@@ -133,5 +133,16 @@ $env:HF_TOKEN = "hf_xxx"
   failure; in the PowerShell port diarization runs inside transcription, so such
   a failure surfaces as exit 6.
 
+## Tests
+
+Offline Pester tests (mirroring the offline Python unittest suite) cover the
+pure/logic functions — no external tools or network:
+
+```powershell
+Invoke-Pester -Path ./powershell
+```
+
+They run in CI on Ubuntu and Windows via `../.github/workflows/ci.yml`.
+
 > **Maintainers:** any future change to the Python tool must be mirrored here to
 > preserve parity. See `../CLAUDE.md`.

@@ -1,5 +1,7 @@
 # plaude-local
 
+[![CI](https://github.com/thewongdirection/my-plaude/actions/workflows/ci.yml/badge.svg)](https://github.com/thewongdirection/my-plaude/actions/workflows/ci.yml)
+
 A small, **fully local / offline** speech-to-text tool in the spirit of Plaud.
 Point it at a `.wav` or `.mp3` recording and get a transcript back — no cloud,
 nothing leaves your machine. Runs on an **NVIDIA GPU (CUDA)** or **CPU**, on

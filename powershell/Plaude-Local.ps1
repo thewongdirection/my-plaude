@@ -554,9 +554,13 @@ function Invoke-Main {
     }
 }
 
-try {
-    exit (Invoke-Main)
-} catch {
-    Write-ErrLine "error: $($_.Exception.Message)"
-    exit 1
+# Only run when invoked directly - NOT when dot-sourced (e.g. by the Pester
+# tests), so the functions above can be tested in isolation.
+if ($MyInvocation.InvocationName -ne '.') {
+    try {
+        exit (Invoke-Main)
+    } catch {
+        Write-ErrLine "error: $($_.Exception.Message)"
+        exit 1
+    }
 }

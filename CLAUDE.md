@@ -37,7 +37,7 @@ Linux), FFmpeg is the sole arbiter of decodable input.
 ## Dev commands
 
 ```bash
-# Run the test suite (stdlib unittest, fully offline, no GPU/model downloads)
+# Python test suite (stdlib unittest, fully offline, no GPU/model downloads)
 python -m unittest discover -s tests -v
 # or, with pytest (pip install ".[dev]")
 pytest -q
@@ -45,6 +45,14 @@ pytest -q
 # Doctor / prerequisite check
 python -m plaude_local --check
 ```
+
+```powershell
+# PowerShell test suite (Pester 5, offline; mirrors the offline Python tests)
+Invoke-Pester -Path ./powershell
+```
+
+Both suites run in CI on every push via `.github/workflows/ci.yml` (Python on
+3.9/3.11/3.12; Pester on Ubuntu + Windows). Keep both green.
 
 ## Conventions
 
