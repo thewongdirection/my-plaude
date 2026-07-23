@@ -28,10 +28,12 @@ both **Windows and Linux**.
 
 - **Local & private** — no network calls at inference time.
 - **Cross-platform** — Windows and Linux, GPU or CPU (auto-detected).
-- **Virtually any audio format** — WAV, MP3, **M4A**, AAC, FLAC, OGG/Opus, WMA,
-  AIFF, ALAC, APE, WavPack, AMR, AC3, CAF, and more. Decoding is delegated to
-  the FFmpeg binary, so any codec/container FFmpeg can read is supported —
-  including pulling the audio track out of video files (MP4, MKV, MOV, WebM, …).
+- **Any format FFmpeg can decode** — there is no fixed format list. Decoding is
+  delegated entirely to FFmpeg, and the tool uses `ffprobe` to confirm a
+  decodable audio stream regardless of file extension. That covers WAV, MP3,
+  **M4A**, AAC, FLAC, OGG/Opus, WMA, AIFF, ALAC, APE, WavPack, AMR, AC3, CAF,
+  and anything else FFmpeg supports — including pulling the audio track out of
+  video files (MP4, MKV, MOV, WebM, …). If FFmpeg can read it, so can this tool.
 - **Best multilingual accuracy** — Whisper `large-v3`, ~99 languages, auto-detect.
 - **Always UTF-8 output** — Chinese, Japanese, Korean, and any non-Latin script
   round-trip correctly, to files and to stdout.
@@ -50,7 +52,7 @@ both **Windows and Linux**.
 | Component | Required? | For | Where to obtain |
 |-----------|-----------|-----|-----------------|
 | **Python 3.9+** | ✅ required | everything | https://www.python.org/downloads/ |
-| **FFmpeg** (binary) | ✅ required | reading WAV/MP3, default denoise | Windows: `winget install ffmpeg` · Linux: `apt install ffmpeg` · https://ffmpeg.org/download.html |
+| **FFmpeg** (binary, incl. `ffprobe`) | ✅ required | decoding **any** input format, default denoise | Windows: `winget install ffmpeg` · Linux: `apt install ffmpeg` · https://ffmpeg.org/download.html |
 | **faster-whisper** (pip) | ✅ required | transcription | `pip install faster-whisper` |
 | **NVIDIA GPU + CUDA/cuDNN** | ⭐ recommended | speed (`large-v3` in float16) | driver from NVIDIA; see [faster-whisper GPU notes](https://github.com/SYSTRAN/faster-whisper#gpu). CPU works without it. |
 | **deepfilternet** (pip) | ⚪ optional | better denoise (`--denoise deepfilter`) | `pip install deepfilternet` |
@@ -158,7 +160,7 @@ Result: all required prerequisites satisfied.
 ## Try it yourself (quick test)
 
 You don't need your own recording to smoke-test the setup — generate a short
-spoken clip with FFmpeg's synth, or just use any WAV/MP3 you have:
+spoken clip with FFmpeg's synth, or just use any audio/video file you have:
 
 ```bash
 # 1. confirm prerequisites
@@ -275,6 +277,10 @@ default (or to stdout with `--summary-output -`).
 
 ## How the pieces work
 
+- **Input formats.** No format allow-list. The file is handed to FFmpeg, and
+  `ffprobe` confirms it contains a decodable audio stream — so support tracks
+  exactly what your FFmpeg build can decode, whatever the extension. Files with
+  no audio stream get a clear error before any model runs.
 - **Denoising.** Default (`--denoise ffmpeg`) runs a speech-tuned FFmpeg filter
   chain (`highpass`, `lowpass`, `afftdn`, `dynaudnorm`) — no extra deps.
   `--denoise deepfilter` swaps in DeepFilterNet, a small neural denoiser that's
@@ -309,7 +315,7 @@ pytest -q
 It covers the output writers, device/compute resolution, the diarization merge
 (including the mixed worded/wordless regression case), audio-preprocessing
 dispatch, local summarization (chunking, backends, detection), the prerequisite
-checker, and the CLI (argument parsing, `--check`, error codes, WAV/MP3 input,
+checker, and the CLI (argument parsing, `--check`, error codes, input probing,
 UTF-8 output, and orchestration).
 
 ---

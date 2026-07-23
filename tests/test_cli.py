@@ -68,6 +68,13 @@ class TestCheck(unittest.TestCase):
 
 
 class TestErrorCodes(unittest.TestCase):
+    def setUp(self):
+        # Keep the ffprobe stream-check out of the way by default; tests that
+        # exercise probing live in TestInputProbing.
+        p = mock.patch.object(audio, "have_ffprobe", return_value=False)
+        p.start()
+        self.addCleanup(p.stop)
+
     def test_input_required_without_check(self):
         self.assertEqual(_run_quiet([]), 2)
 
@@ -91,6 +98,13 @@ class TestErrorCodes(unittest.TestCase):
 
 
 class TestOrchestration(unittest.TestCase):
+    def setUp(self):
+        # Deterministic regardless of whether ffprobe is installed on the host:
+        # skip the stream probe here and test it explicitly in TestInputProbing.
+        p = mock.patch.object(audio, "have_ffprobe", return_value=False)
+        p.start()
+        self.addCleanup(p.stop)
+
     def _input(self, d):
         f = pathlib.Path(d) / "rec.wav"
         f.write_bytes(b"x")
@@ -125,43 +139,6 @@ class TestOrchestration(unittest.TestCase):
                 rc = cli.run([str(f), "--denoise", "none", "-q"])
             self.assertEqual(rc, 0)
             self.assertTrue((pathlib.Path(d) / "rec.txt").is_file())
-
-    def _transcribe_ext(self, ext, quiet=True):
-        """Run the CLI on an input with the given extension; return (rc, stderr)."""
-        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
-        with tempfile.TemporaryDirectory() as d:
-            f = pathlib.Path(d) / ("clip" + ext)
-            f.write_bytes(b"x")
-            out = pathlib.Path(d) / "o.txt"
-            err = io.StringIO()
-            argv = [str(f), "-o", str(out), "--denoise", "none"]
-            if quiet:
-                argv.append("-q")
-            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
-                 mock.patch.object(audio, "prepare", return_value=f), \
-                 mock.patch.object(
-                     transcribe, "Transcriber",
-                     lambda **kw: _FakeEngine(segs, **kw)), \
-                 contextlib.redirect_stderr(err):
-                rc = cli.run(argv)
-            return rc, err.getvalue(), out.is_file()
-
-    def test_common_formats_accepted_without_note(self):
-        # m4a and many other FFmpeg-decodable formats are first-class: they
-        # transcribe and produce no "uncommon extension" note.
-        for ext in (".m4a", ".mp3", ".wav", ".flac", ".ogg", ".opus", ".aac",
-                    ".wma", ".aiff", ".mkv", ".mp4", ".mov", ".webm", ".amr",
-                    ".ac3", ".caf", ".wv", ".ape"):
-            rc, err, made = self._transcribe_ext(ext, quiet=False)
-            self.assertEqual(rc, 0, ext)
-            self.assertTrue(made, ext)
-            self.assertNotIn("uncommon extension", err, ext)
-
-    def test_unknown_extension_notes_but_proceeds(self):
-        rc, err, made = self._transcribe_ext(".xyz", quiet=False)
-        self.assertEqual(rc, 0)
-        self.assertTrue(made)
-        self.assertIn("uncommon extension", err)
 
     def test_output_is_utf8_for_non_latin_scripts(self):
         # Chinese + Japanese must round-trip as UTF-8 text.
@@ -275,6 +252,47 @@ class TestOrchestration(unittest.TestCase):
             # backend + device were forwarded
             self.assertEqual(m.call_args.kwargs["backend"], "pyannote")
             self.assertEqual(m.call_args.kwargs["device"], "cpu")
+
+
+class TestInputProbing(unittest.TestCase):
+    """FFmpeg (via ffprobe) is the sole arbiter of what input is decodable."""
+
+    _SEGS = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+
+    def _run(self, filename, *, ffprobe, codec):
+        with tempfile.TemporaryDirectory() as d:
+            f = pathlib.Path(d) / filename
+            f.write_bytes(b"x")
+            out = pathlib.Path(d) / "o.txt"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "have_ffprobe", return_value=ffprobe), \
+                 mock.patch.object(audio, "probe_audio_codec", return_value=codec), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(self._SEGS, **kw)), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-q"])
+            return rc, out.is_file()
+
+    def test_any_extension_accepted_when_ffprobe_finds_audio(self):
+        # Extension is irrelevant: if FFmpeg reports an audio codec, we proceed.
+        for name in ("clip.m4a", "clip.opus", "movie.mkv", "weird.qqq",
+                     "no_extension"):
+            rc, made = self._run(name, ffprobe=True, codec="aac")
+            self.assertEqual(rc, 0, name)
+            self.assertTrue(made, name)
+
+    def test_no_audio_stream_returns_error(self):
+        rc, made = self._run("video-without-audio.mp4", ffprobe=True, codec=None)
+        self.assertEqual(rc, 10)
+        self.assertFalse(made)
+
+    def test_missing_ffprobe_skips_probe_and_proceeds(self):
+        # Without ffprobe we can't pre-check; we still attempt the decode.
+        rc, made = self._run("clip.weirdext", ffprobe=False, codec=None)
+        self.assertEqual(rc, 0)
+        self.assertTrue(made)
 
 
 if __name__ == "__main__":

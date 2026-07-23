@@ -1,9 +1,11 @@
 """Audio loading and denoising.
 
 We lean on the FFmpeg *binary* (invoked via ``subprocess``) rather than pulling
-in Python audio libraries. FFmpeg is a single dependency that already handles
-both WAV and MP3 decoding plus a capable denoise filter chain, which keeps the
-Python dependency surface small.
+in Python audio libraries. This means the tool accepts **any input that FFmpeg
+can decode** - every audio codec/container FFmpeg supports, and the audio track
+of video files too - with no per-format handling on our side. FFmpeg also
+provides a capable denoise filter chain, keeping the Python dependency surface
+small.
 
 Two denoise strategies are offered:
 
@@ -39,6 +41,37 @@ class AudioError(RuntimeError):
 def have_ffmpeg() -> bool:
     """True if an ``ffmpeg`` binary is on PATH."""
     return shutil.which("ffmpeg") is not None
+
+
+def have_ffprobe() -> bool:
+    """True if an ``ffprobe`` binary is on PATH (ships alongside ffmpeg)."""
+    return shutil.which("ffprobe") is not None
+
+
+def probe_audio_codec(path: str | Path) -> Optional[str]:
+    """Return the codec of the first decodable audio stream, or None.
+
+    Uses ``ffprobe`` to ask FFmpeg directly whether the file contains an audio
+    stream it understands - so support tracks exactly what FFmpeg can decode,
+    independent of the file's extension. Returns None when there is no audio
+    stream (or ``ffprobe`` is unavailable / errors), letting the caller decide.
+    """
+    if not have_ffprobe():
+        return None
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "a:0",
+        "-show_entries", "stream=codec_name",
+        "-of", "default=nokey=1:noprint_wrappers=1",
+        str(path),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                errors="replace")
+    except FileNotFoundError:  # pragma: no cover - race: ffprobe vanished
+        return None
+    codec = result.stdout.strip()
+    return codec or None
 
 
 def _run_ffmpeg(args: list[str]) -> None:

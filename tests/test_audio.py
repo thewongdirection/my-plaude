@@ -9,6 +9,30 @@ from plaude_local import audio
 class TestHaveFfmpeg(unittest.TestCase):
     def test_returns_bool(self):
         self.assertIsInstance(audio.have_ffmpeg(), bool)
+        self.assertIsInstance(audio.have_ffprobe(), bool)
+
+
+class TestProbeAudioCodec(unittest.TestCase):
+    def test_returns_none_without_ffprobe(self):
+        with mock.patch.object(audio, "have_ffprobe", return_value=False):
+            self.assertIsNone(audio.probe_audio_codec("x.m4a"))
+
+    def test_parses_codec_name(self):
+        completed = mock.Mock(stdout="aac\n", returncode=0)
+        with mock.patch.object(audio, "have_ffprobe", return_value=True), \
+             mock.patch("subprocess.run", return_value=completed) as run:
+            codec = audio.probe_audio_codec("x.m4a")
+        self.assertEqual(codec, "aac")
+        # ffprobe is the tool invoked, selecting the first audio stream.
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[0], "ffprobe")
+        self.assertIn("a:0", argv)
+
+    def test_empty_output_means_no_audio_stream(self):
+        completed = mock.Mock(stdout="\n", returncode=0)
+        with mock.patch.object(audio, "have_ffprobe", return_value=True), \
+             mock.patch("subprocess.run", return_value=completed):
+            self.assertIsNone(audio.probe_audio_codec("silent.mp4"))
 
 
 class TestPrepareDispatch(unittest.TestCase):

@@ -24,40 +24,26 @@ MODEL_CHOICES = [
     "medium", "medium.en", "large-v2", "large-v3",
 ]
 
-# Decoding is delegated to the FFmpeg binary, which supports essentially every
-# audio codec and container in existence (and can pull the audio track out of
-# video files too). This set is only used to decide whether to print an
-# "unrecognized extension" hint - an unknown extension is still passed to FFmpeg
-# and will work if FFmpeg can decode it. WAV and MP3 are the primary targets;
-# m4a and the rest are first-class here so common recordings never warn.
-SUPPORTED_AUDIO_EXTS = {
-    # Lossy audio
-    ".mp3", ".m4a", ".m4b", ".m4p", ".aac", ".adts", ".ogg", ".oga", ".opus",
-    ".spx", ".wma", ".mp2", ".mpga", ".mpc", ".ra", ".rm", ".oma", ".aa",
-    ".aax", ".ac3", ".eac3", ".dts", ".amr", ".3ga", ".gsm", ".vqf",
-    # Lossless / uncompressed audio
-    ".wav", ".flac", ".alac", ".aiff", ".aif", ".aifc", ".ape", ".wv", ".tta",
-    ".au", ".snd", ".caf", ".w64", ".dsf", ".dff", ".shn", ".voc", ".sln",
-    ".mka",
-    # Video containers (FFmpeg extracts the audio track)
-    ".mp4", ".m4v", ".mov", ".qt", ".mkv", ".webm", ".avi", ".flv", ".f4v",
-    ".wmv", ".asf", ".ts", ".m2ts", ".mts", ".m2t", ".3gp", ".3g2", ".vob",
-    ".ogv", ".mpg", ".mpeg", ".mxf", ".divx",
-}
+# Input format support is delegated entirely to the FFmpeg binary: any audio
+# codec/container FFmpeg can decode is accepted (and the audio track of video
+# files too). We do not keep a per-format allow-list - FFmpeg (probed via
+# ffprobe) is the single source of truth for what is decodable.
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="plaude-local",
-        description="Local, offline speech-to-text. Transcribe WAV/MP3 with "
-                    "faster-whisper, with optional denoising, speaker "
-                    "diarization, and local-LLM summarization. Output is always "
-                    "UTF-8 (handles Chinese, Japanese, and other scripts).",
+        description="Local, offline speech-to-text. Transcribe audio in any "
+                    "FFmpeg-decodable format (wav, mp3, m4a, flac, ogg, video "
+                    "files, ...) with faster-whisper, with optional denoising, "
+                    "speaker diarization, and local-LLM summarization. Output is "
+                    "always UTF-8 (handles Chinese, Japanese, and other scripts).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("input", type=str, nargs="?", default=None,
-                   help="path to a .wav or .mp3 recording (also accepts m4a, "
-                        "flac, ogg, etc.)")
+                   help="path to an audio or video file in ANY format FFmpeg "
+                        "can decode (wav, mp3, m4a, aac, flac, ogg/opus, wma, "
+                        "mp4, mkv, ...)")
     p.add_argument(
         "-o", "--output", type=str, default=None,
         help="output file path (default: alongside the input, using --format's "
@@ -191,17 +177,23 @@ def run(argv: Optional[List[str]] = None) -> int:
         print(f"error: input file not found: {in_path}", file=sys.stderr)
         return 2
 
-    ext = in_path.suffix.lower()
-    if ext not in SUPPORTED_AUDIO_EXTS:
-        _log(args.quiet,
-             f"note: '{ext or 'no extension'}' is an uncommon extension; "
-             f"handing it to FFmpeg anyway, which decodes almost any codec. "
-             f"If FFmpeg can read it, transcription will proceed.")
-
     if not audio.have_ffmpeg():
         from . import preflight
         print("error: " + preflight.check_ffmpeg().remedy, file=sys.stderr)
         return 3
+
+    # Let FFmpeg decide what's decodable: probe for an audio stream regardless
+    # of file extension. This is what makes the tool accept anything FFmpeg
+    # supports. If ffprobe isn't available we skip the check and let the decode
+    # step surface any error.
+    if audio.have_ffprobe():
+        codec = audio.probe_audio_codec(in_path)
+        if codec is None:
+            print(f"error: FFmpeg found no decodable audio stream in {in_path}. "
+                  "Provide an audio file (or a video file that contains audio) "
+                  "in any FFmpeg-supported format.", file=sys.stderr)
+            return 10
+        _log(args.quiet, f"      input audio codec: {codec}")
 
     # Diarization needs word timestamps for the best merge.
     want_words = args.diarize
