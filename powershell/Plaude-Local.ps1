@@ -113,7 +113,7 @@ $Script:DefaultOllamaUrl = 'http://localhost:11434'
 $Script:DefaultLlamacppUrl = 'http://localhost:8080'
 $Script:DefaultOllamaModel = 'llama3.1'
 $Script:OverwriteTimeoutSeconds = 10
-$Script:Version = '0.1.0'
+$Script:ToolVersion = '0.1.0'
 $Script:QualityFixed = @{ NearSilentDb = -50.0; MostlySilence = 0.85 }
 
 # Emit UTF-8 to the console so CJK shows correctly regardless of code page.
@@ -589,10 +589,10 @@ function Get-QualityReport {
     }
 
     if ($AudioStats) {
-        $meanDb = $AudioStats.mean_volume_db
-        $sil = $AudioStats.silence_ratio
+        $meanDb = $AudioStats['mean_volume_db']
+        $sil = $AudioStats['silence_ratio']
         $metrics.mean_volume_db = $meanDb
-        $metrics.max_volume_db = $AudioStats.max_volume_db
+        $metrics.max_volume_db = $AudioStats['max_volume_db']
         $metrics.silence_ratio = _Round4 $sil
         if (($null -ne $meanDb) -and ($meanDb -le $t.NearSilentDb)) {
             $bad = $true; $reasons.Add(('near-silent audio (mean volume {0:N0} dB)' -f $meanDb))
@@ -651,7 +651,7 @@ function Invoke-Check {
 # Main
 # --------------------------------------------------------------------------- #
 function Invoke-Main {
-    if ($Version) { Write-Host "plaude-local (PowerShell) $($Script:Version)"; return 0 }
+    if ($Version) { Write-Host "plaude-local (PowerShell) $($Script:ToolVersion)"; return 0 }
     if ($Check) { return (Invoke-Check) }
 
     if (-not $InputFile) {

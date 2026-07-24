@@ -223,12 +223,18 @@ Describe 'Invoke-Prepare' {
 }
 
 Describe 'ConvertFrom-FfmpegLevels' {
-    $stderr = @'
+    BeforeAll {
+        # Assign inside BeforeAll (not the Describe body) so the value survives
+        # into the It blocks under Pester 5+, where the Describe body runs only
+        # at discovery time. Otherwise $stderr is unset at run time and throws
+        # under Set-StrictMode -Version Latest.
+        $stderr = @'
 [Parsed_volumedetect_0 @ 0x1] mean_volume: -23.4 dB
 [Parsed_volumedetect_0 @ 0x1] max_volume: -2.1 dB
 [silencedetect @ 0x2] silence_end: 3 | silence_duration: 3.0
 [silencedetect @ 0x2] silence_duration: 2.0
 '@
+    }
     It 'parses levels and computes silence ratio' {
         $s = ConvertFrom-FfmpegLevels -Text $stderr -Duration 10.0
         $s.mean_volume_db | Should -Be -23.4
@@ -279,5 +285,21 @@ Describe 'Get-QualityReport' {
     It 'flags mostly-silence audio as suspect' {
         $r = Get-QualityReport -AudioStats @{ mean_volume_db = -18.0; silence_ratio = 0.9 }
         $r.verdict | Should -Be 'suspect'
+    }
+}
+
+Describe 'Script invocation (CLI param binding)' {
+    # Regression: a [switch]$Version parameter once collided with a
+    # $Script:Version = '0.1.0' constant. At script scope they are the same
+    # variable, so assigning the version string to the switch-typed variable
+    # made EVERY direct invocation throw "Cannot convert ... to
+    # SwitchParameter" before the body ran. The dot-sourced tests above could
+    # not catch it, so exercise the real CLI path in a child process here.
+    It 'prints the version with -Version without a binding error' {
+        $script = Join-Path $PSScriptRoot 'Plaude-Local.ps1'
+        $exe = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        $out = & $exe -NoProfile -ExecutionPolicy Bypass -File $script -Version 2>&1
+        $LASTEXITCODE | Should -Be 0
+        ($out -join "`n") | Should -Match 'plaude-local \(PowerShell\) \d+\.\d+\.\d+'
     }
 }
