@@ -108,6 +108,19 @@ $env:HF_TOKEN = "hf_xxx"
 .\Plaude-Local.ps1 -Check
 ```
 
+## Prerequisite check & auto-provisioning
+
+Like the Python version, before each run the script checks for FFmpeg
+(`ffmpeg` + `ffprobe`) and, if missing, warns and offers to **install it
+automatically** (winget, or a self-contained download), **accept a path**
+(`-FfmpegLocation`), or **abort**. Use `-InstallMissing` to pre-authorize the
+download or `-NoProvision` to just error out.
+
+```powershell
+.\Plaude-Local.ps1 note.mp3 -FfmpegLocation 'C:\tools\ffmpeg\bin'
+.\Plaude-Local.ps1 note.mp3 -InstallMissing
+```
+
 ## Behavior parity with the Python version
 
 | Feature | Python (`plaude-local`) | PowerShell (`Plaude-Local.ps1`) |
@@ -125,6 +138,10 @@ $env:HF_TOKEN = "hf_xxx"
 | Models / device / compute | `--model/--device/--compute-type` | `-Model/-Device/-ComputeType` |
 | Diarization | `--diarize [--diarize-backend]` | `-Diarize [-DiarizeBackend]` |
 | Summarization | `--summarize` (Ollama/llama.cpp) | `-Summarize` (Ollama/llama.cpp) |
+| Prereq check + provision | (built-in) | (built-in) |
+| Provide ffmpeg | `--ffmpeg-location` | `-FfmpegLocation` |
+| Auto-install ffmpeg | `--install-missing` | `-InstallMissing` |
+| Disable provisioning | `--no-provision` | `-NoProvision` |
 | Doctor | `--check` | `-Check` |
 | Version | `--version` | `-Version` |
 | Exit codes | 2/3/4/5/6/8/9/10/11/12 | same meanings (diarize-only 7 → 6 here) |
@@ -146,6 +163,11 @@ $env:HF_TOKEN = "hf_xxx"
 - **Diarize error code**: Python returns exit 7 for a diarization-specific
   failure; in the PowerShell port diarization runs inside transcription, so such
   a failure surfaces as exit 6.
+- **FFmpeg auto-install source**: both ports prefer the platform package
+  manager (winget) and fall back to a self-contained download. The Python
+  version also supports a Linux static-build download and macOS Homebrew; the
+  PowerShell port targets Windows (winget / gyan.dev zip). Both accept
+  `-FfmpegLocation`/`--ffmpeg-location` and abort if declined.
 - **Quality report in JSON**: both ports log the verdict to stderr and honor
   `-OnBad`. In JSON output, the Python version nests the report under
   `meta.quality`; the PowerShell port adds it as a top-level `quality` field

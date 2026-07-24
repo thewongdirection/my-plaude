@@ -322,3 +322,71 @@ Describe 'Script invocation (CLI param binding)' {
         ($out -join "`n") | Should -Match 'plaude-local \(PowerShell\) \d+\.\d+\.\d+'
     }
 }
+
+Describe 'Register-FfmpegPath' {
+    It 'accepts a directory containing both binaries and updates PATH' {
+        Mock Test-Command { $true }   # post-PATH recheck resolves
+        $dir = Join-Path $TestDrive 'ff'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'ffmpeg.exe') -Value 'x'
+        Set-Content -LiteralPath (Join-Path $dir 'ffprobe.exe') -Value 'x'
+        Register-FfmpegPath -Location $dir | Should -BeTrue
+        $env:PATH | Should -Match ([regex]::Escape($dir))
+    }
+    It 'accepts a binary path and uses its parent directory' {
+        Mock Test-Command { $true }
+        $dir = Join-Path $TestDrive 'ff3'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $exe = Join-Path $dir 'ffmpeg.exe'
+        Set-Content -LiteralPath $exe -Value 'x'
+        Set-Content -LiteralPath (Join-Path $dir 'ffprobe.exe') -Value 'x'
+        Register-FfmpegPath -Location $exe | Should -BeTrue
+    }
+    It 'rejects a directory missing ffprobe' {
+        $dir = Join-Path $TestDrive 'ff2'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'ffmpeg.exe') -Value 'x'
+        Register-FfmpegPath -Location $dir | Should -BeFalse
+    }
+    It 'rejects a nonexistent directory' {
+        Register-FfmpegPath -Location (Join-Path $TestDrive 'nope') | Should -BeFalse
+    }
+}
+
+Describe 'Confirm-Ffmpeg' {
+    BeforeEach {
+        $FfmpegLocation = $null; $InstallMissing = $false; $NoProvision = $false; $Quiet = $true
+    }
+    It 'proceeds when ffmpeg is present' {
+        Mock Test-Command { $true }
+        Confirm-Ffmpeg | Should -BeTrue
+    }
+    It 'uses an explicit -FfmpegLocation when valid' {
+        Mock Test-Command { $false }
+        Mock Register-FfmpegPath { $true }
+        $FfmpegLocation = '/opt/ff'
+        Confirm-Ffmpeg | Should -BeTrue
+    }
+    It 'auto-installs when -InstallMissing and the install succeeds' {
+        Mock Test-Command { $false }
+        Mock Install-Ffmpeg { $true }
+        $InstallMissing = $true
+        Confirm-Ffmpeg | Should -BeTrue
+    }
+    It 'aborts when -InstallMissing but the install fails' {
+        Mock Test-Command { $false }
+        Mock Install-Ffmpeg { $false }
+        $InstallMissing = $true
+        Confirm-Ffmpeg | Should -BeFalse
+    }
+    It 'aborts non-interactively without authorization' {
+        Mock Test-Command { $false }
+        # Pester runs with redirected input -> non-interactive -> abort.
+        Confirm-Ffmpeg | Should -BeFalse
+    }
+    It 'aborts when -NoProvision is set' {
+        Mock Test-Command { $false }
+        $NoProvision = $true
+        Confirm-Ffmpeg | Should -BeFalse
+    }
+}

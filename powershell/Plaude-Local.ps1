@@ -90,6 +90,11 @@ param(
     [double]$MinLogprob = -1.0,
     [double]$MaxNoSpeech = 0.6,
 
+    # prerequisites / provisioning
+    [string]$FfmpegLocation,
+    [switch]$InstallMissing,
+    [switch]$NoProvision,
+
     # output behavior
     [Alias('y', 'Overwrite')]
     [switch]$Yes,
@@ -214,6 +219,93 @@ function Get-AudioCodec {
     $codec = ($out | Out-String).Trim()
     if ([string]::IsNullOrWhiteSpace($codec)) { return $null }
     return $codec
+}
+
+$Script:FfmpegDownloadWindows = 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
+
+function Register-FfmpegPath {
+    param([string]$Location)
+    $dir = if (Test-Path -LiteralPath $Location -PathType Leaf) { Split-Path $Location -Parent } else { $Location }
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return $false }
+    $hasFf = (Test-Path (Join-Path $dir 'ffmpeg.exe')) -or (Test-Path (Join-Path $dir 'ffmpeg'))
+    $hasPr = (Test-Path (Join-Path $dir 'ffprobe.exe')) -or (Test-Path (Join-Path $dir 'ffprobe'))
+    if (-not ($hasFf -and $hasPr)) { return $false }
+    $env:PATH = $dir + [System.IO.Path]::PathSeparator + $env:PATH
+    # Re-verify they actually resolve now (parity with Python's have_* recheck).
+    return ((Test-Command 'ffmpeg') -and (Test-Command 'ffprobe'))
+}
+
+function Install-Ffmpeg {
+    # Prefer winget when present; otherwise download a self-contained build.
+    if (Test-Command 'winget') {
+        & winget install --id Gyan.FFmpeg -e --source winget `
+            --accept-package-agreements --accept-source-agreements 2>&1 |
+            ForEach-Object { Write-Log ([string]$_) }
+        if ((Test-Command 'ffmpeg') -and (Test-Command 'ffprobe')) { return $true }
+    }
+    $target = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'plaude-local\ffmpeg'
+    try {
+        New-Item -ItemType Directory -Path $target -Force | Out-Null
+        $zip = Join-Path $target 'ffmpeg.zip'
+        Write-Log "downloading FFmpeg from $($Script:FfmpegDownloadWindows) ..."
+        Invoke-WebRequest -Uri $Script:FfmpegDownloadWindows -OutFile $zip
+        Expand-Archive -LiteralPath $zip -DestinationPath $target -Force
+        Remove-Item -LiteralPath $zip -ErrorAction SilentlyContinue
+        $exe = Get-ChildItem -LiteralPath $target -Recurse -Filter 'ffmpeg.exe' |
+            Select-Object -First 1
+        if ($exe -and (Register-FfmpegPath -Location $exe.DirectoryName)) {
+            Write-Log "installed FFmpeg to $target"
+            return $true
+        }
+    } catch {
+        Write-Log "automatic FFmpeg install failed: $($_.Exception.Message)"
+    }
+    return $false
+}
+
+function Confirm-Ffmpeg {
+    if (Test-Command 'ffmpeg') {
+        if (-not (Test-Command 'ffprobe') -and -not $Quiet) {
+            Write-ErrLine 'note: ffprobe not found (it ships with FFmpeg); stream checks and some quality metrics will be limited.'
+        }
+        return $true
+    }
+    Write-ErrLine 'warning: FFmpeg (ffmpeg + ffprobe) was not found on PATH. It is required to decode audio.'
+
+    if ($FfmpegLocation) {
+        if (Register-FfmpegPath -Location $FfmpegLocation) { Write-ErrLine "using FFmpeg from $FfmpegLocation"; return $true }
+        Write-ErrLine "error: no usable ffmpeg/ffprobe found at '$FfmpegLocation'."
+    }
+    if ($InstallMissing) {
+        Write-ErrLine 'attempting to download and install FFmpeg ...'
+        if (Install-Ffmpeg) { return $true }
+        Write-ErrLine 'error: automatic FFmpeg installation did not succeed.'
+        return $false
+    }
+    $interactive = -not [Console]::IsInputRedirected
+    if ($NoProvision -or (-not $interactive)) {
+        Write-ErrLine 'aborting: FFmpeg is unavailable. Install it (winget/apt/brew or https://ffmpeg.org/download.html), pass -FfmpegLocation PATH, or re-run with -InstallMissing.'
+        return $false
+    }
+    while ($true) {
+        $choice = (Read-Host 'Choose: [i]nstall automatically, provide a [p]ath, or [a]bort?').Trim().ToLower()
+        switch ($choice) {
+            { $_ -in 'i', 'install' } {
+                if (Install-Ffmpeg) { return $true }
+                Write-ErrLine 'automatic installation failed; try providing a path instead.'
+            }
+            { $_ -in 'p', 'path' } {
+                $loc = (Read-Host 'Enter the folder containing ffmpeg/ffprobe (or the ffmpeg binary)').Trim()
+                if ($loc -and (Register-FfmpegPath -Location $loc)) { Write-ErrLine "using FFmpeg from $loc"; return $true }
+                Write-ErrLine 'that path did not contain a usable ffmpeg + ffprobe.'
+            }
+            { $_ -in 'a', 'abort', 'n', 'no', '' } {
+                Write-ErrLine 'aborting at user request: required FFmpeg not provided.'
+                return $false
+            }
+            default { Write-ErrLine "unrecognized choice '$choice'; please enter i, p, or a." }
+        }
+    }
 }
 
 function Get-MediaDuration {
@@ -710,10 +802,9 @@ function Invoke-Main {
         Write-ErrLine "error: input file not found: $InputFile"
         return 2
     }
-    if (-not (Test-Command 'ffmpeg')) {
-        Write-ErrLine 'error: ffmpeg not found on PATH. Install it: winget install ffmpeg'
-        return 3
-    }
+    # Thorough prerequisite gate: ensure ffmpeg + ffprobe, offering to install
+    # them or accept a path, else abort.
+    if (-not (Confirm-Ffmpeg)) { return 3 }
 
     # FFmpeg is the arbiter of decodability (parity with the Python version).
     if (Test-Command 'ffprobe') {

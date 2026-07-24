@@ -295,6 +295,31 @@ All outputs are written as **UTF-8**, so non-Latin scripts are preserved:
 Summaries (from `--summarize`) are written to `<transcript>.summary.md` by
 default (or to stdout with `--summary-output -`).
 
+### Prerequisite check & auto-provisioning
+
+Before each run, the tool verifies that **FFmpeg** (`ffmpeg` + `ffprobe`) is
+available. If it isn't, it warns and offers to fix it interactively:
+
+- **install automatically** — downloads FFmpeg from an official source
+  (winget on Windows, Homebrew on macOS, or a self-contained static build) and
+  adds it to the run's PATH;
+- **provide a path** — you point it at an existing `ffmpeg`/`ffprobe`; or
+- **abort** — the run stops.
+
+For non-interactive/scripted use: pass `--ffmpeg-location PATH` to use an
+existing install, `--install-missing` to pre-authorize the download, or
+`--no-provision` to just error out. If FFmpeg can't be provided, the run aborts
+(exit 3). GPU users: CUDA/cuDNN runtime DLLs are reported by `--check` but not
+auto-installed (they're large and system-specific) — see the GPU notes.
+
+```bash
+# Point at an existing ffmpeg if it isn't on PATH
+plaude-local note.mp3 --ffmpeg-location "C:\tools\ffmpeg\bin"
+
+# Let it download FFmpeg automatically (e.g. first run on a fresh machine)
+plaude-local note.mp3 --install-missing
+```
+
 ### Output file and overwriting
 
 If you don't pass `-o/--output`, the transcript is written to **`output.<format>`**
@@ -310,6 +335,9 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
 | `-o` / `--output` | `output.<format>` | output file path; `-` for stdout |
 | `-y` / `--yes` / `--overwrite` | off | overwrite output without the 10 s prompt |
 | `--check` / `--doctor` | — | verify prerequisites and exit |
+| `--ffmpeg-location PATH` | — | folder/binary to use if ffmpeg isn't on PATH |
+| `--install-missing` | off | auto-download+install missing FFmpeg (no prompt) |
+| `--no-provision` | off | don't offer to install/locate; just error out |
 | `--model` | `large-v3` | Whisper model size or local path |
 | `--device` | `auto` | `auto` picks CUDA if present, else CPU |
 | `--compute-type` | `auto` | `float16` on GPU, `int8` on CPU |

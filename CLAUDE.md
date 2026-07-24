@@ -49,6 +49,7 @@ See `CONTRIBUTING.md` for the human-facing statement of this same policy.
 | `summarize.py` | local LLM summary via Ollama / llama.cpp over stdlib `urllib` |
 | `quality.py` | bad-recording assessment (no-speech/noise/silence) + `--assess-only` |
 | `preflight.py` | prerequisite checks with remedies (`--check`) |
+| `provision.py` | pre-run FFmpeg gate: warn + offer install / accept path / abort |
 | `formats.py` | txt / srt / vtt / json writers |
 
 Design constraints: lean dependencies (core = only `faster-whisper`; extras are

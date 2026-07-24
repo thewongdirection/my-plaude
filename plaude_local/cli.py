@@ -151,6 +151,18 @@ def build_parser() -> argparse.ArgumentParser:
     g_qual.add_argument("--max-no-speech", type=float, default=0.6, metavar="P",
                         help="no_speech_prob above which speech is unlikely")
 
+    # Prerequisites / provisioning
+    g_pre = p.add_argument_group("prerequisites")
+    g_pre.add_argument("--ffmpeg-location", default=None, metavar="PATH",
+                       help="folder containing ffmpeg/ffprobe (or the ffmpeg "
+                            "binary) to use if they are not on PATH")
+    g_pre.add_argument("--install-missing", action="store_true",
+                       help="if FFmpeg is missing, download and install it "
+                            "automatically (no prompt) from an official source")
+    g_pre.add_argument("--no-provision", action="store_true",
+                       help="do not offer to install/locate missing prerequisites; "
+                            "just error out")
+
     p.add_argument("-q", "--quiet", action="store_true",
                    help="suppress progress messages on stderr")
     p.add_argument("--version", action="version",
@@ -289,9 +301,14 @@ def run(argv: Optional[List[str]] = None) -> int:
         print(f"error: input file not found: {in_path}", file=sys.stderr)
         return 2
 
-    if not audio.have_ffmpeg():
-        from . import preflight
-        print("error: " + preflight.check_ffmpeg().remedy, file=sys.stderr)
+    # Thorough prerequisite gate: ensure ffmpeg + ffprobe are available, and if
+    # not, warn and offer to install them / accept a path, else abort.
+    from . import provision
+    if not provision.ensure_ffmpeg(
+            ffmpeg_location=args.ffmpeg_location,
+            install_missing=args.install_missing,
+            no_provision=args.no_provision,
+            quiet=args.quiet):
         return 3
 
     # Let FFmpeg decide what's decodable: probe for an audio stream regardless
