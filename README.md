@@ -150,6 +150,16 @@ from the local cache only. This applies to the Whisper transcription weights too
 not just diarization. To move to an air-gapped machine, copy your
 `~/.cache/huggingface` folder across and always pass `--offline`.
 
+**Prep a machine with no internet at all.** The helper
+`tools/prepare_offline_bundle.py` (PowerShell: `tools/Prepare-OfflineBundle.ps1`)
+enumerates and pre-downloads every prerequisite — FFmpeg, Python wheels, CUDA
+DLLs, and models — then zips them so a recipient can install fully offline:
+
+```bash
+python tools/prepare_offline_bundle.py --list          # see what it will fetch
+python tools/prepare_offline_bundle.py --include cuda   # build the zip
+```
+
 For **summarization** start a local LLM server (pick one):
 
 ```bash
