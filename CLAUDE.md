@@ -47,6 +47,7 @@ See `CONTRIBUTING.md` for the human-facing statement of this same policy.
 | `transcribe.py` | faster-whisper (CTranslate2) wrapper; device/compute auto-resolve |
 | `diarize.py` | pyannote + whisperx backends → shared `merge_turns` |
 | `summarize.py` | local LLM summary via Ollama / llama.cpp over stdlib `urllib` |
+| `quality.py` | bad-recording assessment (no-speech/noise/silence) + `--assess-only` |
 | `preflight.py` | prerequisite checks with remedies (`--check`) |
 | `formats.py` | txt / srt / vtt / json writers |
 
@@ -82,4 +83,5 @@ Keep both suites green when changing either implementation.
   suite stays offline.
 - Exit codes are part of the contract; keep them stable and mirrored across both
   implementations (2 input, 3 ffmpeg, 4 diarize-token, 5 audio, 6 transcribe,
-  7 diarize, 8 summarize, 9 write, 10 no-audio-stream, 11 overwrite-declined).
+  7 diarize, 8 summarize, 9 write, 10 no-audio-stream, 11 overwrite-declined,
+  12 bad-recording under --on-bad fail).

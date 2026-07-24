@@ -100,6 +100,61 @@ def probe_audio_codec(path: str | Path) -> Optional[str]:
     return codec or None
 
 
+def probe_duration(path: str | Path) -> Optional[float]:
+    """Return the media duration in seconds via ffprobe, or None."""
+    if not have_ffprobe():
+        return None
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=nokey=1:noprint_wrappers=1", str(path),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
+    except FileNotFoundError:  # pragma: no cover
+        return None
+    try:
+        return float(result.stdout.strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def probe_levels(path: str | Path) -> dict:
+    """Measure loudness and silence with FFmpeg for a fast, model-free triage.
+
+    Returns a dict with ``mean_volume_db``, ``max_volume_db`` (both may be None)
+    and ``silence_ratio`` (0..1, fraction of the file detected as silence).
+    Requires only the ffmpeg binary; used by ``--assess-only``.
+    """
+    import re
+
+    stats: dict = {"mean_volume_db": None, "max_volume_db": None,
+                   "silence_ratio": None}
+    cmd = [
+        "ffmpeg", "-hide_banner", "-nostats", "-i", str(path),
+        "-af", "volumedetect,silencedetect=noise=-30dB:d=0.5",
+        "-f", "null", "-",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                errors="replace")
+    except FileNotFoundError as exc:  # pragma: no cover
+        raise AudioError("ffmpeg not found on PATH.") from exc
+    err = result.stderr or ""
+
+    m = re.search(r"mean_volume:\s*(-?\d+(?:\.\d+)?) dB", err)
+    if m:
+        stats["mean_volume_db"] = float(m.group(1))
+    m = re.search(r"max_volume:\s*(-?\d+(?:\.\d+)?) dB", err)
+    if m:
+        stats["max_volume_db"] = float(m.group(1))
+
+    silence = sum(float(x) for x in re.findall(r"silence_duration:\s*(\d+(?:\.\d+)?)", err))
+    duration = probe_duration(path)
+    if duration and duration > 0:
+        stats["silence_ratio"] = max(0.0, min(1.0, silence / duration))
+    return stats
+
+
 def _run_ffmpeg(args: list[str]) -> None:
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *args]
     try:

@@ -133,6 +133,24 @@ def build_parser() -> argparse.ArgumentParser:
     g_sum.add_argument("--summarize-max-chars", type=int, default=8000,
                        help="chunk size for long transcripts")
 
+    # Quality assessment
+    g_qual = p.add_argument_group("recording quality")
+    g_qual.add_argument("--assess-only", action="store_true",
+                        help="fast model-free triage of the audio (loudness / "
+                             "silence) - report a verdict and exit, no transcription")
+    g_qual.add_argument("--on-bad", choices=["warn", "skip", "fail"], default="warn",
+                        help="action when a recording is judged bad: warn (write "
+                             "anyway, default), skip (write nothing, exit 0), or "
+                             "fail (write nothing, exit 12)")
+    g_qual.add_argument("--min-speech", type=float, default=0.15, metavar="FRAC",
+                        help="min speech coverage (0-1) before flagging")
+    g_qual.add_argument("--max-compression", type=float, default=2.4, metavar="R",
+                        help="compression ratio above which output looks repetitive")
+    g_qual.add_argument("--min-logprob", type=float, default=-1.0, metavar="LP",
+                        help="avg_logprob below which confidence is too low")
+    g_qual.add_argument("--max-no-speech", type=float, default=0.6, metavar="P",
+                        help="no_speech_prob above which speech is unlikely")
+
     p.add_argument("-q", "--quiet", action="store_true",
                    help="suppress progress messages on stderr")
     p.add_argument("--version", action="version",
@@ -230,6 +248,31 @@ def _run_check() -> int:
     return 1 if preflight.missing_required(checks) else 0
 
 
+def _thresholds(args) -> "object":
+    from .quality import Thresholds
+    return Thresholds(
+        min_speech=args.min_speech,
+        max_compression=args.max_compression,
+        min_logprob=args.min_logprob,
+        max_no_speech=args.max_no_speech,
+    )
+
+
+def _run_assess_only(in_path: Path, args) -> int:
+    """Fast, model-free triage: measure loudness/silence and report a verdict."""
+    from . import quality
+    try:
+        stats = audio.probe_levels(in_path)
+    except audio.AudioError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 5
+    report = quality.assess(audio_stats=stats, thresholds=_thresholds(args))
+    print(report.summary(), file=sys.stderr)
+    if report.is_bad and args.on_bad == "fail":
+        return 12
+    return 0
+
+
 def run(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -263,6 +306,10 @@ def run(argv: Optional[List[str]] = None) -> int:
                   "in any FFmpeg-supported format.", file=sys.stderr)
             return 10
         _log(args.quiet, f"      input audio codec: {codec}")
+
+    # Fast, model-free triage: report a verdict and exit without transcribing.
+    if args.assess_only:
+        return _run_assess_only(in_path, args)
 
     # Diarization needs word timestamps for the best merge.
     want_words = args.diarize
@@ -336,6 +383,14 @@ def run(argv: Optional[List[str]] = None) -> int:
             return 6
         _log(args.quiet, f"      detected language: {meta.get('language')}")
 
+        # Assess quality from the RAW segments (before diarization rebuilds
+        # them and drops the per-segment metrics).
+        from . import quality
+        quality_report = quality.assess(
+            segments=segments, duration=meta.get("duration"),
+            thresholds=_thresholds(args))
+        _log(args.quiet, "      " + quality_report.summary())
+
         # 3. Diarize (optional)
         if args.diarize:
             from . import diarize
@@ -357,12 +412,26 @@ def run(argv: Optional[List[str]] = None) -> int:
         else:
             _log(args.quiet, "[3/4] diarization skipped")
 
+    # A bad recording triggers the --on-bad policy (default: warn and continue).
+    if quality_report.is_bad:
+        if args.on_bad == "skip":
+            print(f"skipped: bad recording - {quality_report.summary()}",
+                  file=sys.stderr)
+            return 0
+        if args.on_bad == "fail":
+            print(f"error: bad recording - {quality_report.summary()}",
+                  file=sys.stderr)
+            return 12
+        print(f"warning: {quality_report.summary()} (writing anyway; "
+              "use --on-bad to change)", file=sys.stderr)
+
     # 4. Render + write transcript (UTF-8)
     # "timestamps" is an internal rendering hint for the txt writer (show a clock
     # when speakers are present). Only inject it for txt so it never leaks into
-    # the user-facing JSON meta block.
+    # the user-facing JSON meta block. The quality report is surfaced in JSON.
     if args.format == "txt":
         meta["timestamps"] = args.diarize
+    meta["quality"] = quality_report.as_dict()
     text = formats.render(segments, args.format, meta=meta)
     transcript_out = args.output if args.output else _default_output(args.format)
     if transcript_out != "-" and not _confirm_overwrite(

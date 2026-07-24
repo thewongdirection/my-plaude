@@ -81,6 +81,15 @@ param(
     [string]$SummaryOutput,
     [int]$SummarizeMaxChars = 8000,
 
+    # recording quality
+    [switch]$AssessOnly,
+    [ValidateSet('warn', 'skip', 'fail')]
+    [string]$OnBad = 'warn',
+    [double]$MinSpeech = 0.15,
+    [double]$MaxCompression = 2.4,
+    [double]$MinLogprob = -1.0,
+    [double]$MaxNoSpeech = 0.6,
+
     # output behavior
     [Alias('y', 'Overwrite')]
     [switch]$Yes,
@@ -105,6 +114,7 @@ $Script:DefaultLlamacppUrl = 'http://localhost:8080'
 $Script:DefaultOllamaModel = 'llama3.1'
 $Script:OverwriteTimeoutSeconds = 10
 $Script:Version = '0.1.0'
+$Script:QualityFixed = @{ NearSilentDb = -50.0; MostlySilence = 0.85 }
 
 # Emit UTF-8 to the console so CJK shows correctly regardless of code page.
 try {
@@ -204,6 +214,43 @@ function Get-AudioCodec {
     $codec = ($out | Out-String).Trim()
     if ([string]::IsNullOrWhiteSpace($codec)) { return $null }
     return $codec
+}
+
+function Get-MediaDuration {
+    param([string]$Path)
+    if (-not (Test-Command 'ffprobe')) { return $null }
+    $out = & ffprobe -v error -show_entries format=duration `
+        -of default=nokey=1:noprint_wrappers=1 -- $Path 2>$null
+    $val = ($out | Out-String).Trim()
+    $d = 0.0
+    if ([double]::TryParse($val, [ref]$d)) { return $d }
+    return $null
+}
+
+function ConvertFrom-FfmpegLevels {
+    # Pure parser (unit-tested): ffmpeg volumedetect/silencedetect stderr -> stats.
+    param([string]$Text, $Duration)
+    $stats = @{ mean_volume_db = $null; max_volume_db = $null; silence_ratio = $null }
+    $m = [regex]::Match($Text, 'mean_volume:\s*(-?\d+(?:\.\d+)?) dB')
+    if ($m.Success) { $stats.mean_volume_db = [double]$m.Groups[1].Value }
+    $m = [regex]::Match($Text, 'max_volume:\s*(-?\d+(?:\.\d+)?) dB')
+    if ($m.Success) { $stats.max_volume_db = [double]$m.Groups[1].Value }
+    $silence = 0.0
+    foreach ($mm in [regex]::Matches($Text, 'silence_duration:\s*(\d+(?:\.\d+)?)')) {
+        $silence += [double]$mm.Groups[1].Value
+    }
+    if ($Duration -and $Duration -gt 0) {
+        $stats.silence_ratio = [Math]::Max(0.0, [Math]::Min(1.0, $silence / $Duration))
+    }
+    return $stats
+}
+
+function Get-AudioStats {
+    param([string]$Path)
+    $err = & ffmpeg -hide_banner -nostats -i $Path `
+        -af 'volumedetect,silencedetect=noise=-30dB:d=0.5' -f null - 2>&1 |
+        Out-String
+    return ConvertFrom-FfmpegLevels -Text $err -Duration (Get-MediaDuration $Path)
 }
 
 function Invoke-Ffmpeg {
@@ -315,17 +362,15 @@ function Resolve-ComputeType {
 function Invoke-Transcribe {
     param([string]$AudioPath, [string]$WorkDir, [string]$Dev, [string]$Compute, [string]$Token)
 
-    # When summarizing a non-txt format we ask for 'all' so a plain-text copy
-    # (for the LLM) is produced alongside the requested format.
-    $outFormat = if ($Summarize -and $Format -ne 'txt') { 'all' } else { $Format }
-
+    # Always request 'all' so we get JSON (per-segment quality metrics) and a
+    # plain-text copy (for summarization) alongside the requested format.
     $a = @(
         $AudioPath,
         '--model', $Model,
         '--device', $Dev,
         '--compute_type', $Compute,
         '--output_dir', $WorkDir,
-        '--output_format', $outFormat,
+        '--output_format', 'all',
         '--beam_size', "$BeamSize",
         # Always pass VAD explicitly (parity with Python's vad_filter=not no_vad).
         '--vad_filter', $(if ($NoVad) { 'False' } else { 'True' })
@@ -451,6 +496,125 @@ function Invoke-Summarize {
 }
 
 # --------------------------------------------------------------------------- #
+# Recording quality assessment - parity with plaude_local/quality.py
+# --------------------------------------------------------------------------- #
+function Get-Thresholds {
+    return @{
+        MinSpeech = $MinSpeech; MaxCompression = $MaxCompression
+        MinLogprob = $MinLogprob; MaxNoSpeech = $MaxNoSpeech
+        NearSilentDb = $Script:QualityFixed.NearSilentDb
+        MostlySilence = $Script:QualityFixed.MostlySilence
+    }
+}
+
+function _MeanOrNull {
+    param([object[]]$Values)
+    $nums = @($Values | Where-Object { $null -ne $_ })
+    if ($nums.Count -eq 0) { return $null }
+    return ($nums | Measure-Object -Average).Average
+}
+
+function _Prop {
+    # Null-safe property read (parity with Python's dict.get): returns $null for
+    # an absent property instead of throwing under Set-StrictMode -Version Latest.
+    param($Obj, [string]$Name)
+    $p = $Obj.PSObject.Properties[$Name]
+    if ($p) { return $p.Value }
+    return $null
+}
+
+function _Round4 {
+    param($Value)
+    if ($null -ne $Value) { return [Math]::Round([double]$Value, 4) }
+    return $null
+}
+
+function _Pct {
+    # Match Python's "{:.0%}" (e.g. 0.05 -> "5%"), no space before '%'.
+    param($Value)
+    return ('{0:0}%' -f ($Value * 100))
+}
+
+function Get-QualityReport {
+    param($Segments, $Duration, [hashtable]$AudioStats, [hashtable]$Thresholds)
+    $t = if ($Thresholds) { $Thresholds } else { Get-Thresholds }
+    $reasons = New-Object System.Collections.Generic.List[string]
+    $metrics = @{}
+    $bad = $false; $suspect = $false
+
+    if ($null -ne $Segments) {
+        $segList = @($Segments)
+        $text = (($segList | ForEach-Object { [string](_Prop $_ 'text') }) -join '').Trim()
+        $speech = 0.0
+        foreach ($s in $segList) {
+            $speech += [Math]::Max(0.0, [double](_Prop $s 'end') - [double](_Prop $s 'start'))
+        }
+        $coverage = if ($Duration -and $Duration -gt 0) { $speech / $Duration } else { $null }
+        $avgNoSpeech = _MeanOrNull ($segList | ForEach-Object { _Prop $_ 'no_speech_prob' })
+        $avgLogprob = _MeanOrNull ($segList | ForEach-Object { _Prop $_ 'avg_logprob' })
+        $comps = @($segList | ForEach-Object { _Prop $_ 'compression_ratio' } | Where-Object { $null -ne $_ })
+        $maxComp = if ($comps.Count) { ($comps | Measure-Object -Maximum).Maximum } else { $null }
+
+        $metrics.num_segments = $segList.Count
+        $metrics.char_count = $text.Length
+        $metrics.speech_coverage = _Round4 $coverage
+        $metrics.avg_no_speech_prob = _Round4 $avgNoSpeech
+        $metrics.avg_logprob = _Round4 $avgLogprob
+        $metrics.max_compression_ratio = _Round4 $maxComp
+
+        if (-not $text -or $segList.Count -eq 0) {
+            $bad = $true; $reasons.Add('no speech detected (empty transcript)')
+        } else {
+            $strongNoSpeech = ($null -ne $avgNoSpeech) -and ($avgNoSpeech -ge $t.MaxNoSpeech)
+            $almostNone = ($null -ne $coverage) -and ($coverage -lt 0.02)
+            if ($almostNone -or ($strongNoSpeech -and ($null -ne $coverage) -and ($coverage -lt $t.MinSpeech))) {
+                $part = if ($null -ne $coverage) { '(coverage ' + (_Pct $coverage) } else { '(unknown coverage' }
+                $part += if ($null -ne $avgNoSpeech) { ', no-speech {0:N2})' -f $avgNoSpeech } else { ')' }
+                $bad = $true; $reasons.Add('little or no speech ' + $part)
+            } else {
+                if (($null -ne $coverage) -and ($coverage -lt $t.MinSpeech)) {
+                    $suspect = $true; $reasons.Add('low speech coverage (' + (_Pct $coverage) + ')')
+                }
+                if ($strongNoSpeech) {
+                    $suspect = $true; $reasons.Add(('high no-speech probability ({0:N2})' -f $avgNoSpeech))
+                }
+            }
+            if (($null -ne $avgLogprob) -and ($avgLogprob -lt $t.MinLogprob)) {
+                $suspect = $true; $reasons.Add(('low transcription confidence (avg_logprob {0:N2})' -f $avgLogprob))
+            }
+            if (($null -ne $maxComp) -and ($maxComp -gt $t.MaxCompression)) {
+                $suspect = $true; $reasons.Add(('repetitive output (compression ratio {0:N2}) - possible noise' -f $maxComp))
+            }
+        }
+    }
+
+    if ($AudioStats) {
+        $meanDb = $AudioStats.mean_volume_db
+        $sil = $AudioStats.silence_ratio
+        $metrics.mean_volume_db = $meanDb
+        $metrics.max_volume_db = $AudioStats.max_volume_db
+        $metrics.silence_ratio = _Round4 $sil
+        if (($null -ne $meanDb) -and ($meanDb -le $t.NearSilentDb)) {
+            $bad = $true; $reasons.Add(('near-silent audio (mean volume {0:N0} dB)' -f $meanDb))
+        }
+        if ($null -ne $sil) {
+            if ($sil -ge 0.98) { $bad = $true; $reasons.Add('almost entirely silence (' + (_Pct $sil) + ')') }
+            elseif ($sil -ge $t.MostlySilence) { $suspect = $true; $reasons.Add('mostly silence (' + (_Pct $sil) + ')') }
+        }
+    }
+
+    $verdict = if ($bad) { 'bad' } elseif ($suspect) { 'suspect' } else { 'ok' }
+    return @{ verdict = $verdict; reasons = $reasons.ToArray(); metrics = $metrics }
+}
+
+function Format-QualitySummary {
+    param([hashtable]$Report)
+    $head = "quality: $($Report.verdict.ToUpper())"
+    if ($Report.reasons.Count -gt 0) { return "$head - $(($Report.reasons) -join '; ')" }
+    return $head
+}
+
+# --------------------------------------------------------------------------- #
 # Prerequisite checker (-Check) - parity with plaude_local/preflight.py
 # --------------------------------------------------------------------------- #
 function Invoke-Check {
@@ -513,6 +677,15 @@ function Invoke-Main {
         Write-Log "      input audio codec: $codec"
     }
 
+    # Fast, model-free triage: report a verdict and exit without transcribing.
+    if ($AssessOnly) {
+        $stats = Get-AudioStats -Path $InputFile
+        $report = Get-QualityReport -AudioStats $stats -Thresholds (Get-Thresholds)
+        Write-ErrLine (Format-QualitySummary $report)
+        if ($report.verdict -eq 'bad' -and $OnBad -eq 'fail') { return 12 }
+        return 0
+    }
+
     $token = $HfToken
     if (-not $token -and $env:HF_TOKEN) { $token = $env:HF_TOKEN }
     if ($Diarize -and -not $token) {
@@ -567,6 +740,33 @@ function Invoke-Main {
         $transcriptText = [System.IO.File]::ReadAllText($producedPath, [System.Text.Encoding]::UTF8)
 
         Write-Log $(if ($Diarize) { '[3/4] diarization handled by the engine' } else { '[3/4] diarization skipped' })
+
+        # Assess recording quality from the JSON metrics whisper-ctranslate2 wrote.
+        $jsonPath = Join-Path $work ([System.IO.Path]::GetFileNameWithoutExtension($prepared) + '.json')
+        $report = $null
+        if (Test-Path -LiteralPath $jsonPath) {
+            $jsonObj = (Get-Content -LiteralPath $jsonPath -Raw -Encoding UTF8) | ConvertFrom-Json
+            $segs = if ($jsonObj.PSObject.Properties['segments']) { $jsonObj.segments } else { @() }
+            $report = Get-QualityReport -Segments $segs -Duration (Get-MediaDuration $InputFile) -Thresholds (Get-Thresholds)
+            Write-Log ('      ' + (Format-QualitySummary $report))
+        }
+
+        # A bad recording triggers the -OnBad policy (default: warn and continue).
+        if ($report -and $report.verdict -eq 'bad') {
+            if ($OnBad -eq 'skip') { Write-ErrLine ('skipped: bad recording - ' + (Format-QualitySummary $report)); return 0 }
+            if ($OnBad -eq 'fail') { Write-ErrLine ('error: bad recording - ' + (Format-QualitySummary $report)); return 12 }
+            Write-ErrLine ('warning: ' + (Format-QualitySummary $report) + ' (writing anyway; use -OnBad to change)')
+        }
+
+        # For JSON output, surface the quality report (top-level field; the
+        # Python port nests it under meta.quality - see Known differences).
+        if ($Format -eq 'json' -and $report) {
+            try {
+                $obj = $transcriptText | ConvertFrom-Json
+                $obj | Add-Member -NotePropertyName quality -NotePropertyValue $report -Force
+                $transcriptText = $obj | ConvertTo-Json -Depth 12
+            } catch { }
+        }
 
         # 4. Write transcript (UTF-8, output.<fmt> default, overwrite guard)
         $transcriptOut = if ($Output) { $Output } else { Get-DefaultOutput -Fmt $Format }

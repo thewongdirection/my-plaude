@@ -43,7 +43,7 @@ what makes the PowerShell edition a true equivalent rather than a wrapper.
 
 `2` input · `3` ffmpeg · `4` diarize-token · `5` audio · `6` transcribe ·
 `7` diarize · `8` summarize · `9` write · `10` no-audio-stream ·
-`11` overwrite-declined
+`11` overwrite-declined · `12` bad-recording (under `--on-bad fail`)
 
 ## Running the tests
 

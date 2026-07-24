@@ -193,6 +193,32 @@ class TestToWav(unittest.TestCase):
         self.assertEqual(args[args.index("-af") + 1], "highpass=f=90")
 
 
+class TestProbeLevels(unittest.TestCase):
+    _STDERR = (
+        "[Parsed_volumedetect_0 @ 0x1] mean_volume: -23.4 dB\n"
+        "[Parsed_volumedetect_0 @ 0x1] max_volume: -2.1 dB\n"
+        "[silencedetect @ 0x2] silence_start: 0\n"
+        "[silencedetect @ 0x2] silence_end: 3 | silence_duration: 3.0\n"
+        "[silencedetect @ 0x2] silence_duration: 2.0\n"
+    )
+
+    def test_parses_levels_and_silence_ratio(self):
+        completed = mock.Mock(stderr=self._STDERR, returncode=0)
+        with mock.patch("subprocess.run", return_value=completed), \
+             mock.patch.object(audio, "probe_duration", return_value=10.0):
+            stats = audio.probe_levels("x.wav")
+        self.assertEqual(stats["mean_volume_db"], -23.4)
+        self.assertEqual(stats["max_volume_db"], -2.1)
+        self.assertAlmostEqual(stats["silence_ratio"], 0.5)  # (3+2)/10
+
+    def test_silence_ratio_none_without_duration(self):
+        completed = mock.Mock(stderr=self._STDERR, returncode=0)
+        with mock.patch("subprocess.run", return_value=completed), \
+             mock.patch.object(audio, "probe_duration", return_value=None):
+            stats = audio.probe_levels("x.wav")
+        self.assertIsNone(stats["silence_ratio"])
+
+
 class TestFfmpegErrors(unittest.TestCase):
     def test_missing_binary_message(self):
         with mock.patch("subprocess.run", side_effect=FileNotFoundError()):

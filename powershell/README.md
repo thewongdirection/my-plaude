@@ -91,6 +91,10 @@ $env:HF_TOKEN = "hf_xxx"
 .\Plaude-Local.ps1 muffled.m4a -Enhance strong
 .\Plaude-Local.ps1 faint.wav -Gain 8
 
+# Flag / triage bad recordings
+.\Plaude-Local.ps1 suspect.wav -AssessOnly       # fast, no transcription
+.\Plaude-Local.ps1 clip.mp3 -OnBad fail          # exit 12 on a bad recording
+
 # Summarize with a local LLM
 .\Plaude-Local.ps1 meeting.mp3 -Summarize -SummarizeModel llama3.1
 
@@ -115,13 +119,15 @@ $env:HF_TOKEN = "hf_xxx"
 | Denoise | `--denoise ffmpeg/deepfilter/none` | `-Denoise ffmpeg/deepfilter/none` |
 | Enhance | `--enhance none/speech/strong/resemble` | `-Enhance none/speech/strong/resemble` |
 | Gain | `--gain DB` | `-Gain DB` |
+| Quality triage | `--assess-only` | `-AssessOnly` |
+| Bad-recording policy | `--on-bad warn/skip/fail` | `-OnBad warn/skip/fail` |
 | Transcription engine | faster-whisper (CTranslate2) | whisper-ctranslate2 (same engine) |
 | Models / device / compute | `--model/--device/--compute-type` | `-Model/-Device/-ComputeType` |
 | Diarization | `--diarize [--diarize-backend]` | `-Diarize [-DiarizeBackend]` |
 | Summarization | `--summarize` (Ollama/llama.cpp) | `-Summarize` (Ollama/llama.cpp) |
 | Doctor | `--check` | `-Check` |
 | Version | `--version` | `-Version` |
-| Exit codes | 2/3/4/5/6/8/9/10/11 | same meanings (diarize-only 7 → 6 here) |
+| Exit codes | 2/3/4/5/6/8/9/10/11/12 | same meanings (diarize-only 7 → 6 here) |
 
 ### Known differences
 
@@ -140,6 +146,10 @@ $env:HF_TOKEN = "hf_xxx"
 - **Diarize error code**: Python returns exit 7 for a diarization-specific
   failure; in the PowerShell port diarization runs inside transcription, so such
   a failure surfaces as exit 6.
+- **Quality report in JSON**: both ports log the verdict to stderr and honor
+  `-OnBad`. In JSON output, the Python version nests the report under
+  `meta.quality`; the PowerShell port adds it as a top-level `quality` field
+  (because the JSON file is produced by `whisper-ctranslate2`). Same data.
 - **`-Enhance resemble`**: the PowerShell port drives the `resemble-enhance`
   **CLI** (which processes a directory), whereas the Python version calls the
   Resemble-Enhance Python API directly. Same model, equivalent result. The

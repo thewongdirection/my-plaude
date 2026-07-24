@@ -221,3 +221,63 @@ Describe 'Invoke-Prepare' {
         Should -Invoke ConvertTo-Wav -Times 2 -Exactly
     }
 }
+
+Describe 'ConvertFrom-FfmpegLevels' {
+    $stderr = @'
+[Parsed_volumedetect_0 @ 0x1] mean_volume: -23.4 dB
+[Parsed_volumedetect_0 @ 0x1] max_volume: -2.1 dB
+[silencedetect @ 0x2] silence_end: 3 | silence_duration: 3.0
+[silencedetect @ 0x2] silence_duration: 2.0
+'@
+    It 'parses levels and computes silence ratio' {
+        $s = ConvertFrom-FfmpegLevels -Text $stderr -Duration 10.0
+        $s.mean_volume_db | Should -Be -23.4
+        $s.max_volume_db | Should -Be -2.1
+        $s.silence_ratio | Should -Be 0.5
+    }
+    It 'leaves silence ratio null without a duration' {
+        (ConvertFrom-FfmpegLevels -Text $stderr -Duration $null).silence_ratio |
+            Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Get-QualityReport' {
+    BeforeEach {
+        $MinSpeech = 0.15; $MaxCompression = 2.4; $MinLogprob = -1.0; $MaxNoSpeech = 0.6
+    }
+    It 'flags a good recording as ok' {
+        $segs = @([pscustomobject]@{ start = 0; end = 9; text = 'clear speech';
+            no_speech_prob = 0.03; avg_logprob = -0.3; compression_ratio = 1.4 })
+        (Get-QualityReport -Segments $segs -Duration 10.0).verdict | Should -Be 'ok'
+    }
+    It 'flags an empty transcript as bad' {
+        $segs = @([pscustomobject]@{ start = 0; end = 0; text = '';
+            no_speech_prob = 0.9; avg_logprob = -2.0; compression_ratio = 3.0 })
+        (Get-QualityReport -Segments $segs -Duration 10.0).verdict | Should -Be 'bad'
+    }
+    It 'flags low confidence as suspect' {
+        $segs = @([pscustomobject]@{ start = 0; end = 9; text = 'garbled';
+            no_speech_prob = 0.2; avg_logprob = -1.6; compression_ratio = 1.4 })
+        (Get-QualityReport -Segments $segs -Duration 10.0).verdict | Should -Be 'suspect'
+    }
+    It 'does not throw and stays ok when segments lack metric fields' {
+        # Parity with Python's dict.get: absent metrics must be treated as null
+        # under Set-StrictMode -Version Latest, not throw.
+        $segs = @([pscustomobject]@{ start = 0; end = 5; text = 'hello' })
+        (Get-QualityReport -Segments $segs -Duration 10.0).verdict | Should -Be 'ok'
+    }
+    It 'rounds metrics to 4 decimals (parity with Python)' {
+        $segs = @([pscustomobject]@{ start = 0; end = 3.33333; text = 'hi';
+            no_speech_prob = 0.123456; avg_logprob = -0.5; compression_ratio = 1.4 })
+        $r = Get-QualityReport -Segments $segs -Duration 10.0
+        $r.metrics.avg_no_speech_prob | Should -Be 0.1235
+    }
+    It 'flags near-silent audio as bad' {
+        $r = Get-QualityReport -AudioStats @{ mean_volume_db = -62.0; silence_ratio = 0.4 }
+        $r.verdict | Should -Be 'bad'
+    }
+    It 'flags mostly-silence audio as suspect' {
+        $r = Get-QualityReport -AudioStats @{ mean_volume_db = -18.0; silence_ratio = 0.9 }
+        $r.verdict | Should -Be 'suspect'
+    }
+}

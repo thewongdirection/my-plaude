@@ -43,6 +43,8 @@ both **Windows and Linux**.
   round-trip correctly, to files and to stdout.
 - **Optional** neural denoising, **voice enhancement** (soft/garbled audio),
   speaker diarization (two backends), and local-LLM summarization.
+- **Bad-recording detection** — flags empty/no-speech, near-silent, or noisy
+  recordings (warn by default), with a fast `--assess-only` triage mode.
 - **Lean core** — the CLI, audio I/O, output writers, and summarization
   transport are standard-library only; `faster-whisper` is the sole required
   pip package. Everything else is an opt-in extra.
@@ -254,6 +256,15 @@ plaude-local meeting.mp3 --denoise deepfilter --diarize --summarize -f txt
 # Keep the cleaned audio for inspection
 plaude-local noisy.mp3 --denoise deepfilter --keep-clean cleaned.wav
 
+# Flag bad recordings (warn by default; transcript still written)
+plaude-local maybe-empty.mp3
+
+# Fast triage of a file without transcribing (loudness / silence check)
+plaude-local suspect.wav --assess-only
+
+# In batch jobs: exit non-zero (12) on a bad recording instead of writing
+plaude-local clip.mp3 --on-bad fail
+
 # Check your environment
 plaude-local --check
 ```
@@ -302,6 +313,8 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
 | `--gain DB` | `0` | manual volume adjustment in dB (e.g. `6`, `-3`) |
 | `--diarize` | off | speaker tagging (optional extra) |
 | `--diarize-backend` | `pyannote` | `pyannote` or `whisperx` |
+| `--assess-only` | off | fast audio triage (loudness/silence), then exit |
+| `--on-bad` | `warn` | on a bad recording: `warn`, `skip`, or `fail` (exit 12) |
 | `--summarize` | off | summarize via local LLM |
 | `--summarize-backend` | `auto` | `auto`, `ollama`, or `llamacpp` |
 | `--summarize-model` | — | e.g. `llama3.1` (Ollama) |
@@ -336,6 +349,15 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
   Each produces `(start, end, speaker)` turns that flow through one shared merge
   routine, so output is identical either way. Labels *distinct* speakers
   (`Speaker 1/2/…`), not names.
+- **Quality assessment.** After transcription, checks Whisper's own per-segment
+  signals — `no_speech_prob` (no speech), `avg_logprob` (garbled/uncertain),
+  `compression_ratio` (repetitive/hallucinated noise) — plus speech coverage, and
+  reports a verdict (`ok`/`suspect`/`bad`, included in the JSON output). A bad
+  recording triggers `--on-bad` (default `warn`: still writes the transcript;
+  `skip`: writes nothing; `fail`: exit 12). `--assess-only` runs a fast,
+  model-free triage from FFmpeg loudness/silence stats without transcribing.
+  These are heuristics, so `warn` is the default — a transcript is never dropped
+  silently.
 - **Summarization.** Sends the transcript to a local LLM server (Ollama or
   llama.cpp) over HTTP using only the standard library. Long transcripts are
   chunked and combined (map-reduce). The prompt asks the model to preserve the

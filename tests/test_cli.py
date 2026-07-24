@@ -1,4 +1,5 @@
 """Regression tests for the CLI: argument parsing, error codes, orchestration."""
+import json
 
 import contextlib
 import io
@@ -465,6 +466,94 @@ class TestInputProbing(unittest.TestCase):
         rc, made = self._run("clip.weirdext", ffprobe=False, codec=None)
         self.assertEqual(rc, 0)
         self.assertTrue(made)
+
+
+class TestQualityGate(unittest.TestCase):
+    def setUp(self):
+        p = mock.patch.object(audio, "have_ffprobe", return_value=False)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def _input(self, d):
+        f = pathlib.Path(d) / "rec.wav"
+        f.write_bytes(b"x")
+        return f
+
+    _BAD = [{"start": 0.0, "end": 0.0, "text": "", "speaker": None,
+             "no_speech_prob": 0.99, "avg_logprob": -2.0, "compression_ratio": 3.0}]
+
+    def test_assess_only_warn_returns_zero(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            bad_stats = {"mean_volume_db": -62.0, "max_volume_db": -40.0,
+                         "silence_ratio": 0.99}
+            err = io.StringIO()
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "probe_levels", return_value=bad_stats), \
+                 contextlib.redirect_stderr(err):
+                rc = cli.run([str(f), "--assess-only", "-q"])
+            self.assertEqual(rc, 0)
+            self.assertIn("BAD", err.getvalue())
+
+    def test_assess_only_fail_returns_12(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            bad_stats = {"mean_volume_db": -62.0, "silence_ratio": 0.99}
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "probe_levels", return_value=bad_stats), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                rc = cli.run([str(f), "--assess-only", "--on-bad", "fail", "-q"])
+            self.assertEqual(rc, 12)
+
+    def _run_bad(self, extra):
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            out = pathlib.Path(d) / "o.txt"
+            err = io.StringIO()
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(self._BAD, **kw)), \
+                 contextlib.redirect_stderr(err):
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none"]
+                             + extra + ["-q"])
+            return rc, out.exists(), err.getvalue()
+
+    def test_on_bad_warn_default_still_writes(self):
+        rc, exists, err = self._run_bad([])
+        self.assertEqual(rc, 0)
+        self.assertTrue(exists)
+        self.assertIn("warning", err.lower())
+
+    def test_on_bad_skip_writes_nothing(self):
+        rc, exists, _ = self._run_bad(["--on-bad", "skip"])
+        self.assertEqual(rc, 0)
+        self.assertFalse(exists)
+
+    def test_on_bad_fail_returns_12_and_writes_nothing(self):
+        rc, exists, _ = self._run_bad(["--on-bad", "fail"])
+        self.assertEqual(rc, 12)
+        self.assertFalse(exists)
+
+    def test_quality_in_json_meta(self):
+        segs = [{"start": 0.0, "end": 9.0, "text": "clear speech here",
+                 "speaker": None, "no_speech_prob": 0.03, "avg_logprob": -0.3,
+                 "compression_ratio": 1.4}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            out = pathlib.Path(d) / "o.json"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)):
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none",
+                              "-f", "json", "-q"])
+            self.assertEqual(rc, 0)
+            data = json.loads(out.read_text(encoding="utf-8"))
+            self.assertIn("quality", data["meta"])
+            self.assertEqual(data["meta"]["quality"]["verdict"], "ok")
 
 
 if __name__ == "__main__":

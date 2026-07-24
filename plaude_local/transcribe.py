@@ -15,6 +15,10 @@ class TranscribeError(RuntimeError):
     """Raised when the ASR backend is unavailable or fails."""
 
 
+def _maybe_float(value: Any) -> Optional[float]:
+    return float(value) if value is not None else None
+
+
 def resolve_device(device: str) -> str:
     """Resolve ``"auto"`` to ``"cuda"`` when a CUDA device is present, else ``"cpu"``.
 
@@ -110,6 +114,11 @@ class Transcriber:
                 "end": float(seg.end),
                 "text": seg.text,
                 "speaker": None,
+                # Quality signals faster-whisper reports per segment; used by
+                # quality.assess() to flag bad/empty/noisy recordings.
+                "avg_logprob": _maybe_float(getattr(seg, "avg_logprob", None)),
+                "no_speech_prob": _maybe_float(getattr(seg, "no_speech_prob", None)),
+                "compression_ratio": _maybe_float(getattr(seg, "compression_ratio", None)),
             }
             if word_timestamps and seg.words:
                 entry["words"] = [
