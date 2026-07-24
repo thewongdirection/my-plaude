@@ -41,8 +41,8 @@ both **Windows and Linux**.
 - **Best multilingual accuracy** — Whisper `large-v3`, ~99 languages, auto-detect.
 - **Always UTF-8 output** — Chinese, Japanese, Korean, and any non-Latin script
   round-trip correctly, to files and to stdout.
-- **Optional** neural denoising, speaker diarization (two backends), and
-  local-LLM summarization.
+- **Optional** neural denoising, **voice enhancement** (soft/garbled audio),
+  speaker diarization (two backends), and local-LLM summarization.
 - **Lean core** — the CLI, audio I/O, output writers, and summarization
   transport are standard-library only; `faster-whisper` is the sole required
   pip package. Everything else is an opt-in extra.
@@ -60,6 +60,7 @@ both **Windows and Linux**.
 | **faster-whisper** (pip) | ✅ required | transcription | `pip install faster-whisper` |
 | **NVIDIA GPU + CUDA/cuDNN** | ⭐ recommended | speed (`large-v3` in float16) | driver from NVIDIA; see [faster-whisper GPU notes](https://github.com/SYSTRAN/faster-whisper#gpu). CPU works without it. |
 | **deepfilternet** (pip) | ⚪ optional | better denoise (`--denoise deepfilter`) | `pip install deepfilternet` |
+| **resemble-enhance** (pip) | ⚪ optional | neural voice restoration (`--enhance resemble`) | `pip install resemble-enhance` |
 | **pyannote.audio** (pip) + HF token | ⚪ optional | diarization, pyannote backend | `pip install "pyannote.audio>=3.1"`; token at https://hf.co/settings/tokens; accept terms at https://hf.co/pyannote/speaker-diarization-3.1 |
 | **whisperx** (pip) + HF token | ⚪ optional | diarization, WhisperX backend | `pip install whisperx` (+ HF token as above) |
 | **Ollama** *or* **llama.cpp** server | ⚪ optional | summarization (`--summarize`) | Ollama: https://ollama.com/download · llama.cpp: https://github.com/ggml-org/llama.cpp |
@@ -218,6 +219,18 @@ plaude-local 会议.mp3 --language zh
 # Stronger neural denoise (needs: pip install deepfilternet)
 plaude-local noisy.wav --denoise deepfilter
 
+# Enhance a too-soft recording (loudness normalization, no extra deps)
+plaude-local quiet.mp3 --enhance speech
+
+# Garbled / muffled voice: compression + presence EQ + normalization
+plaude-local muffled.m4a --enhance strong
+
+# Just make it louder by 8 dB
+plaude-local faint.wav --gain 8
+
+# Neural restoration for badly degraded audio (needs: pip install resemble-enhance)
+plaude-local bad-recording.mp3 --enhance resemble
+
 # Speaker diarization — pyannote backend (needs HF_TOKEN)
 export HF_TOKEN=hf_xxx
 plaude-local interview.mp3 --diarize
@@ -285,6 +298,8 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
 | `--language` | auto | language code, or auto-detect |
 | `--format` | `txt` | `txt`, `srt`, `vtt`, `json` |
 | `--denoise` | `ffmpeg` | `ffmpeg`, `deepfilter`, or `none` |
+| `--enhance` | `none` | voice enhancement: `speech`, `strong`, `resemble` |
+| `--gain DB` | `0` | manual volume adjustment in dB (e.g. `6`, `-3`) |
 | `--diarize` | off | speaker tagging (optional extra) |
 | `--diarize-backend` | `pyannote` | `pyannote` or `whisperx` |
 | `--summarize` | off | summarize via local LLM |
@@ -306,6 +321,14 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
   `--denoise deepfilter` swaps in DeepFilterNet, a small neural denoiser that's
   better on hard/noisy audio and still real-time on CPU. Everything is resampled
   to 16 kHz mono for Whisper.
+- **Enhancement.** Applied *after* denoise, for soft or garbled voice.
+  `--enhance speech` runs FFmpeg speech normalization + loudness (fixes
+  too-quiet recordings); `--enhance strong` adds compression and a presence EQ
+  boost for muffled/uneven delivery — both need no extra dependencies.
+  `--enhance resemble` uses Resemble-Enhance, a neural model that *restores*
+  degraded speech (optional extra, GPU-friendly). `--gain N` applies a manual
+  N-dB volume change. Enhancement improves clarity but can't fully recover
+  speech that's clipped or destroyed.
 - **Transcription.** `faster-whisper` runs Whisper via CTranslate2 with int8/
   float16 quantization, so `large-v3` fits on an 8 GB GPU and also runs on CPU.
   Voice-activity detection trims silence.
@@ -358,6 +381,14 @@ UTF-8 output, and orchestration).
   the pyannote model terms once (see Prerequisites).
 - **`--summarize` says no server** → start Ollama (`ollama serve`) or a
   llama.cpp `llama-server`; check the URL with `--summarize-url` if non-default.
+
+## Contributing
+
+This project ships a Python implementation and a **feature-parity PowerShell
+port** (`powershell/`). **Every change must be made to both, keeping them at
+100% feature parity** — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (and
+[`CLAUDE.md`](CLAUDE.md) for automated/agent contributors) for the required
+workflow and checklist.
 
 ## License
 

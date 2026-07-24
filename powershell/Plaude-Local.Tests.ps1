@@ -157,3 +157,67 @@ Describe 'Write-Utf8File' {
         [System.Text.Encoding]::UTF8.GetString($bytes) | Should -Match '你好世界'
     }
 }
+
+Describe 'Get-EnhanceFilters' {
+    It 'returns null for none with no gain' {
+        Get-EnhanceFilters -Mode 'none' -GainDb 0.0 | Should -BeNullOrEmpty
+    }
+    It 'returns just a volume filter for none + gain' {
+        Get-EnhanceFilters -Mode 'none' -GainDb 6 | Should -Be 'volume=6dB'
+    }
+    It 'builds the speech chain' {
+        Get-EnhanceFilters -Mode 'speech' -GainDb 0.0 | Should -Match 'speechnorm'
+    }
+    It 'builds the strong chain with compressor and EQ' {
+        $f = Get-EnhanceFilters -Mode 'strong' -GainDb 0.0
+        $f | Should -Match 'acompressor'
+        $f | Should -Match 'equalizer'
+    }
+    It 'appends gain to a chain' {
+        (Get-EnhanceFilters -Mode 'speech' -GainDb -3) | Should -Match 'volume=-3dB$'
+    }
+    It 'formats fractional gain with a dot on any locale (invariant)' {
+        # Force a comma-decimal culture; the filter must still use '.'.
+        $old = [System.Threading.Thread]::CurrentThread.CurrentCulture
+        try {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::GetCultureInfo('de-DE')
+            Get-EnhanceFilters -Mode 'none' -GainDb -3.5 | Should -Be 'volume=-3.5dB'
+        } finally {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = $old
+        }
+    }
+}
+
+Describe 'Invoke-Prepare' {
+    It 'is a single pass when no enhance and no gain' {
+        $Denoise = 'none'; $Enhance = 'none'; $Gain = 0.0
+        Mock ConvertTo-Wav {}
+        $out = Invoke-Prepare -Src (Join-Path $TestDrive 'in.wav') -WorkDir $TestDrive
+        $out | Should -Match 'prepared\.wav$'
+        Should -Invoke ConvertTo-Wav -Times 1 -Exactly
+    }
+    It 'uses two passes (denoise -> enhance) for speech' {
+        $Denoise = 'none'; $Enhance = 'speech'; $Gain = 0.0
+        Mock ConvertTo-Wav {}
+        Invoke-Prepare -Src (Join-Path $TestDrive 'in.wav') -WorkDir $TestDrive | Out-Null
+        Should -Invoke ConvertTo-Wav -Times 2 -Exactly
+    }
+    It 'routes deepfilter denoise into an intermediate, then enhances' {
+        $Denoise = 'deepfilter'; $Enhance = 'speech'; $Gain = 0.0
+        Mock ConvertTo-Wav {}
+        Mock Invoke-DeepFilter {}
+        Invoke-Prepare -Src (Join-Path $TestDrive 'in.wav') -WorkDir $TestDrive | Out-Null
+        Should -Invoke Invoke-DeepFilter -Times 1 -Exactly
+        Should -Invoke ConvertTo-Wav -Times 1 -Exactly   # only the enhance pass
+    }
+    It 'runs resemble then a volume pass when gain is set' {
+        $Denoise = 'none'; $Enhance = 'resemble'; $Gain = 6
+        Mock ConvertTo-Wav {}
+        Mock Invoke-ResembleEnhance {}
+        Mock Move-Item {}
+        Invoke-Prepare -Src (Join-Path $TestDrive 'in.wav') -WorkDir $TestDrive | Out-Null
+        Should -Invoke Invoke-ResembleEnhance -Times 1 -Exactly
+        # denoise pass + gain volume pass
+        Should -Invoke ConvertTo-Wav -Times 2 -Exactly
+    }
+}

@@ -58,6 +58,9 @@ param(
     # audio preprocessing
     [ValidateSet('ffmpeg', 'deepfilter', 'none')]
     [string]$Denoise = 'ffmpeg',
+    [ValidateSet('none', 'speech', 'strong', 'resemble')]
+    [string]$Enhance = 'none',
+    [double]$Gain = 0.0,
     [string]$KeepClean,
 
     # diarization
@@ -91,6 +94,12 @@ $ErrorActionPreference = 'Stop'
 # --- constants (parity with the Python version) ---------------------------- #
 $Script:TargetSr = 16000
 $Script:FfmpegDenoiseChain = 'highpass=f=90,lowpass=f=7500,afftdn=nf=-25,dynaudnorm'
+$Script:EnhanceChains = @{
+    speech = 'highpass=f=80,speechnorm=e=6.25:r=0.0005:l=1,loudnorm=I=-16:TP=-1.5:LRA=11'
+    strong = 'highpass=f=80,acompressor=threshold=-18dB:ratio=3:attack=20:release=250,' +
+             'equalizer=f=3000:width_type=q:w=1.5:g=4,speechnorm=e=12.5:r=0.0005:l=1,' +
+             'loudnorm=I=-16:TP=-1.5:LRA=11'
+}
 $Script:DefaultOllamaUrl = 'http://localhost:11434'
 $Script:DefaultLlamacppUrl = 'http://localhost:8080'
 $Script:DefaultOllamaModel = 'llama3.1'
@@ -126,6 +135,13 @@ function Write-Utf8File {
     # UTF-8 without BOM.
     $enc = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($Path, $Text, $enc)
+}
+
+function Format-Db {
+    param([double]$Db)
+    # Always use '.' as the decimal separator so the ffmpeg 'volume=<n>dB'
+    # filter parses on every locale (parity with Python's f-string).
+    return $Db.ToString([System.Globalization.CultureInfo]::InvariantCulture)
 }
 
 function Get-DefaultOutput {
@@ -223,15 +239,58 @@ function Invoke-DeepFilter {
     Remove-Item -LiteralPath $tmp48 -ErrorAction SilentlyContinue
 }
 
+function Get-EnhanceFilters {
+    param([string]$Mode, [double]$GainDb)
+    $parts = @()
+    if ($Script:EnhanceChains.ContainsKey($Mode)) { $parts += $Script:EnhanceChains[$Mode] }
+    if ($GainDb -ne 0.0) { $parts += "volume=$(Format-Db $GainDb)dB" }
+    if ($parts.Count -eq 0) { return $null }
+    return ($parts -join ',')
+}
+
+function Invoke-ResembleEnhance {
+    param([string]$Src, [string]$Dst)
+    if (-not (Test-Command 'resemble-enhance')) {
+        throw "Resemble-Enhance's 'resemble-enhance' command not found. Install it (pip install resemble-enhance) or use -Enhance speech / -Enhance strong / -Enhance none."
+    }
+    # The resemble-enhance CLI processes a directory of wavs into an output dir.
+    $inDir = Join-Path (Split-Path $Dst -Parent) 're_in'
+    $outDir = Join-Path (Split-Path $Dst -Parent) 're_out'
+    New-Item -ItemType Directory -Path $inDir, $outDir -Force | Out-Null
+    Copy-Item -LiteralPath $Src -Destination (Join-Path $inDir 'audio.wav') -Force
+    & resemble-enhance $inDir $outDir 2>&1 | ForEach-Object { Write-Log ([string]$_) }
+    if ($LASTEXITCODE -ne 0) { throw "resemble-enhance failed (exit $LASTEXITCODE)." }
+    $enhanced = Get-ChildItem -LiteralPath $outDir -Filter '*.wav' | Select-Object -First 1
+    if (-not $enhanced) { throw 'resemble-enhance produced no output.' }
+    ConvertTo-Wav -Src $enhanced.FullName -Dst $Dst -Filters $null  # 16 kHz mono
+}
+
 function Invoke-Prepare {
     param([string]$Src, [string]$WorkDir)
-    $dst = Join-Path $WorkDir ([System.IO.Path]::GetFileNameWithoutExtension($Src) + '.prepared.wav')
+    $stem = [System.IO.Path]::GetFileNameWithoutExtension($Src)
+    $final = Join-Path $WorkDir ($stem + '.prepared.wav')
+    $needEnhance = ($Enhance -ne 'none') -or ($Gain -ne 0.0)
+    $denoiseDst = if ($needEnhance) { Join-Path $WorkDir ($stem + '.denoised.wav') } else { $final }
+
     switch ($Denoise) {
-        'none'       { ConvertTo-Wav -Src $Src -Dst $dst -Filters $null }
-        'ffmpeg'     { ConvertTo-Wav -Src $Src -Dst $dst -Filters $Script:FfmpegDenoiseChain }
-        'deepfilter' { Invoke-DeepFilter -Src $Src -Dst $dst }
+        'none'       { ConvertTo-Wav -Src $Src -Dst $denoiseDst -Filters $null }
+        'ffmpeg'     { ConvertTo-Wav -Src $Src -Dst $denoiseDst -Filters $Script:FfmpegDenoiseChain }
+        'deepfilter' { Invoke-DeepFilter -Src $Src -Dst $denoiseDst }
     }
-    return $dst
+
+    if (-not $needEnhance) { return $final }
+
+    if ($Enhance -eq 'resemble') {
+        Invoke-ResembleEnhance -Src $denoiseDst -Dst $final
+        if ($Gain -ne 0.0) {
+            $gained = Join-Path $WorkDir ($stem + '.gained.wav')
+            ConvertTo-Wav -Src $final -Dst $gained -Filters "volume=$(Format-Db $Gain)dB"
+            Move-Item -LiteralPath $gained -Destination $final -Force
+        }
+    } else {
+        ConvertTo-Wav -Src $denoiseDst -Dst $final -Filters (Get-EnhanceFilters -Mode $Enhance -GainDb $Gain)
+    }
+    return $final
 }
 
 # --------------------------------------------------------------------------- #
@@ -402,6 +461,7 @@ function Invoke-Check {
     $gpu = (Test-Command 'nvidia-smi')
     $rows += [pscustomobject]@{ Name = 'NVIDIA GPU (optional)'; Ok = $true; Req = $false; Remedy = $(if ($gpu) { '' } else { 'no nvidia-smi found; will run on CPU' }) }
     $rows += [pscustomobject]@{ Name = 'DeepFilterNet (optional)'; Ok = (Test-Command 'deepFilter'); Req = $false; Remedy = 'pip install deepfilternet  (for -Denoise deepfilter)' }
+    $rows += [pscustomobject]@{ Name = 'Resemble-Enhance (optional)'; Ok = (Test-Command 'resemble-enhance'); Req = $false; Remedy = 'pip install resemble-enhance  (for -Enhance resemble)' }
     $summ = Get-SummBackend -OllamaUrl $Script:DefaultOllamaUrl -LlamacppUrl $Script:DefaultLlamacppUrl
     $rows += [pscustomobject]@{ Name = 'Local LLM server (optional)'; Ok = [bool]$summ; Req = $false; Remedy = 'start Ollama (https://ollama.com/download) or llama.cpp server (for -Summarize)' }
 
@@ -488,7 +548,7 @@ function Invoke-Main {
     $work = Join-Path ([System.IO.Path]::GetTempPath()) ("plaude-local-" + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work -Force | Out-Null
     try {
-        Write-Log "[1/4] preparing audio (denoise=$Denoise) ..."
+        Write-Log "[1/4] preparing audio (denoise=$Denoise, enhance=$Enhance, gain=$(Format-Db $Gain)dB) ..."
         try {
             $prepared = Invoke-Prepare -Src $InputFile -WorkDir $work
         } catch { Write-ErrLine "error: $($_.Exception.Message)"; return 5 }

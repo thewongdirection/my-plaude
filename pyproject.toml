@@ -21,6 +21,8 @@ dependencies = [
 [project.optional-dependencies]
 # Neural denoiser - better than the default ffmpeg filter chain on noisy audio.
 denoise = ["deepfilternet>=0.5.6"]
+# Neural speech enhancement/restoration (--enhance resemble).
+enhance = ["resemble-enhance>=0.0.1"]
 # Speaker diarization ("who said what"), pyannote backend. Pulls in torch.
 diarize = ["pyannote.audio>=3.1"]
 # Speaker diarization, WhisperX backend (--diarize-backend whisperx).
@@ -28,7 +30,8 @@ diarize-whisperx = ["whisperx>=3.1"]
 # Test suite.
 dev = ["pytest>=7.0"]
 # Everything.
-all = ["deepfilternet>=0.5.6", "pyannote.audio>=3.1", "whisperx>=3.1"]
+all = ["deepfilternet>=0.5.6", "resemble-enhance>=0.0.1",
+       "pyannote.audio>=3.1", "whisperx>=3.1"]
 
 [project.scripts]
 plaude-local = "plaude_local.cli:main"

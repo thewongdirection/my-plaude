@@ -83,6 +83,7 @@ class TestReport(unittest.TestCase):
         names = [c.name for c in checks]
         self.assertIn("FFmpeg (audio decode/denoise)", names)
         self.assertIn("faster-whisper (ASR engine)", names)
+        self.assertIn("Resemble-Enhance (--enhance resemble)", names)
 
 
 if __name__ == "__main__":

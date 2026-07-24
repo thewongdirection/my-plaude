@@ -87,8 +87,16 @@ def build_parser() -> argparse.ArgumentParser:
     g_audio.add_argument("--denoise", choices=["ffmpeg", "deepfilter", "none"],
                          default="ffmpeg",
                          help="denoise strategy before transcription")
+    g_audio.add_argument("--enhance", choices=["none", "speech", "strong", "resemble"],
+                         default="none",
+                         help="voice enhancement after denoise: speech (fix soft "
+                              "volume), strong (garbled/muffled), resemble (neural "
+                              "restoration, optional extra)")
+    g_audio.add_argument("--gain", type=float, default=0.0, metavar="DB",
+                         help="manual volume adjustment in decibels "
+                              "(e.g. 6 to boost, -3 to attenuate)")
     g_audio.add_argument("--keep-clean", default=None, metavar="PATH",
-                         help="also save the denoised 16kHz wav to PATH")
+                         help="also save the denoised/enhanced 16kHz wav to PATH")
 
     # Diarization
     g_diar = p.add_argument_group("speaker diarization (optional)")
@@ -285,10 +293,13 @@ def run(argv: Optional[List[str]] = None) -> int:
             return 8
 
     with tempfile.TemporaryDirectory(prefix="plaude-local-") as tmp:
-        # 1. Preprocess / denoise
-        _log(args.quiet, f"[1/4] preparing audio (denoise={args.denoise}) ...")
+        # 1. Preprocess / denoise / enhance
+        _log(args.quiet,
+             f"[1/4] preparing audio (denoise={args.denoise}, "
+             f"enhance={args.enhance}, gain={args.gain}dB) ...")
         try:
-            prepared = audio.prepare(in_path, tmp, denoise=args.denoise)
+            prepared = audio.prepare(in_path, tmp, denoise=args.denoise,
+                                     enhance=args.enhance, gain_db=args.gain)
         except audio.AudioError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 5

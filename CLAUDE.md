@@ -6,24 +6,44 @@ Local, offline speech-to-text CLI. Two implementations that must stay in sync:
   `plaude_local.cli:main` / `python -m plaude_local`.
 - **PowerShell** — `powershell/Plaude-Local.ps1` (Windows-first port).
 
-## ⚠️ Feature-parity requirement (do not skip)
+## ⚠️ 100% feature-parity requirement (MANDATORY, do not skip)
 
-**Every change to the Python tool MUST be mirrored in the PowerShell version,
-and vice versa.** When you add/modify a flag, default, exit code, output
-behavior, or pipeline stage in one, make the equivalent change in the other in
-the same commit, and update both READMEs (`README.md` and
-`powershell/README.md`), including the parity table in the PowerShell README.
+**The Python tool (`plaude_local/`) and the PowerShell tool
+(`powershell/Plaude-Local.ps1`) MUST remain at 100% feature parity at all
+times.** Every change to one MUST be mirrored in the other **in the same
+commit** — this applies to *all* future changes, enhancements, and feature
+additions, without exception. There is no "Python-only" or "PowerShell-only"
+change.
 
-If a feature genuinely cannot be reproduced in PowerShell (or Python), document
-the difference in the "Known differences" section of `powershell/README.md`
-rather than silently letting them drift.
+When you add or modify anything user-facing or behavioral, do ALL of the
+following in the same commit:
+
+1. **Implement it in both** `plaude_local/` and `powershell/Plaude-Local.ps1`
+   (flags, defaults, choices/ValidateSets, exit codes, output/overwrite
+   behavior, pipeline stages, error messages, `--check`/`-Check` entries).
+2. **Test it in both** — add regression tests to `tests/` (Python `unittest`)
+   and `powershell/Plaude-Local.Tests.ps1` (Pester), kept offline (mock heavy
+   / external / network backends).
+3. **Document it in both** READMEs (`README.md` and `powershell/README.md`),
+   including the **parity table** in `powershell/README.md`, and update this
+   file's architecture table if a module's responsibility changes.
+
+Before committing any change, re-read the parity table in
+`powershell/README.md` and confirm every row still matches.
+
+If a feature genuinely cannot be reproduced 1:1 (e.g. it depends on a Python
+library with no PowerShell-usable equivalent), you MUST still implement the
+closest working equivalent AND record the exact difference in the "Known
+differences" section of `powershell/README.md`. Silent drift is not allowed.
+
+See `CONTRIBUTING.md` for the human-facing statement of this same policy.
 
 ## Architecture (Python)
 
 | Module | Responsibility |
 |--------|----------------|
 | `cli.py` | argument parsing, orchestration, output/overwrite, `--check` |
-| `audio.py` | FFmpeg probe (`ffprobe`) + denoise; input is anything FFmpeg decodes |
+| `audio.py` | FFmpeg probe (`ffprobe`) + denoise + enhance (speech/strong/resemble) + gain; input is anything FFmpeg decodes |
 | `transcribe.py` | faster-whisper (CTranslate2) wrapper; device/compute auto-resolve |
 | `diarize.py` | pyannote + whisperx backends → shared `merge_turns` |
 | `summarize.py` | local LLM summary via Ollama / llama.cpp over stdlib `urllib` |

@@ -34,6 +34,7 @@ it.
 | **whisper-ctranslate2** | ✅ | transcription (faster-whisper engine) | `pip install whisper-ctranslate2` |
 | **NVIDIA GPU + CUDA/cuDNN** | ⭐ recommended | speed | NVIDIA driver + CUDA runtime |
 | **DeepFilterNet** (`deepFilter`) | ⚪ optional | `-Denoise deepfilter` | `pip install deepfilternet` |
+| **Resemble-Enhance** (`resemble-enhance`) | ⚪ optional | `-Enhance resemble` | `pip install resemble-enhance` |
 | **pyannote/whisperx + HF token** | ⚪ optional | `-Diarize` | handled by whisper-ctranslate2; `pip install pyannote.audio`; set `$env:HF_TOKEN` |
 | **Ollama** or **llama.cpp** server | ⚪ optional | `-Summarize` | https://ollama.com/download · https://github.com/ggml-org/llama.cpp |
 
@@ -85,6 +86,11 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 $env:HF_TOKEN = "hf_xxx"
 .\Plaude-Local.ps1 interview.mp3 -Diarize
 
+# Enhance soft or garbled voice (after denoise)
+.\Plaude-Local.ps1 quiet.mp3 -Enhance speech
+.\Plaude-Local.ps1 muffled.m4a -Enhance strong
+.\Plaude-Local.ps1 faint.wav -Gain 8
+
 # Summarize with a local LLM
 .\Plaude-Local.ps1 meeting.mp3 -Summarize -SummarizeModel llama3.1
 
@@ -107,6 +113,8 @@ $env:HF_TOKEN = "hf_xxx"
 | Overwrite prompt | prompt, auto-overwrite after 10 s; `--yes` skips | same (`-Yes`) |
 | UTF-8 output (file + stdout) | yes | yes |
 | Denoise | `--denoise ffmpeg/deepfilter/none` | `-Denoise ffmpeg/deepfilter/none` |
+| Enhance | `--enhance none/speech/strong/resemble` | `-Enhance none/speech/strong/resemble` |
+| Gain | `--gain DB` | `-Gain DB` |
 | Transcription engine | faster-whisper (CTranslate2) | whisper-ctranslate2 (same engine) |
 | Models / device / compute | `--model/--device/--compute-type` | `-Model/-Device/-ComputeType` |
 | Diarization | `--diarize [--diarize-backend]` | `-Diarize [-DiarizeBackend]` |
@@ -132,6 +140,10 @@ $env:HF_TOKEN = "hf_xxx"
 - **Diarize error code**: Python returns exit 7 for a diarization-specific
   failure; in the PowerShell port diarization runs inside transcription, so such
   a failure surfaces as exit 6.
+- **`-Enhance resemble`**: the PowerShell port drives the `resemble-enhance`
+  **CLI** (which processes a directory), whereas the Python version calls the
+  Resemble-Enhance Python API directly. Same model, equivalent result. The
+  `speech`/`strong` FFmpeg enhancement modes and `-Gain` are identical to Python.
 
 ## Tests
 

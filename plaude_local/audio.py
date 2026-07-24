@@ -1,18 +1,27 @@
-"""Audio loading and denoising.
+"""Audio loading, denoising, and enhancement.
 
 We lean on the FFmpeg *binary* (invoked via ``subprocess``) rather than pulling
 in Python audio libraries. This means the tool accepts **any input that FFmpeg
 can decode** - every audio codec/container FFmpeg supports, and the audio track
 of video files too - with no per-format handling on our side. FFmpeg also
-provides a capable denoise filter chain, keeping the Python dependency surface
-small.
+provides capable denoise and enhancement filter chains, keeping the Python
+dependency surface small.
 
-Two denoise strategies are offered:
+The preprocessing runs in two stages (denoise, then enhance):
 
+Denoise (``denoise=``):
 * ``ffmpeg``     - a cheap DSP filter chain (default). No extra Python deps.
 * ``deepfilter`` - DeepFilterNet, a small neural denoiser (optional extra),
                    noticeably better on hard/noisy recordings.
 * ``none``       - skip denoising entirely.
+
+Enhance (``enhance=``) - for soft or garbled voice, applied after denoise:
+* ``none``     - no enhancement (default).
+* ``speech``   - FFmpeg speech normalization + loudness (fixes soft volume).
+* ``strong``   - FFmpeg compression + presence EQ + normalization (garbled /
+                 muffled / uneven voice).
+* ``resemble`` - Resemble-Enhance neural speech restoration (optional extra).
+Plus ``gain_db`` for a manual volume boost/cut in decibels.
 
 Whisper wants 16 kHz mono audio, so every path here normalizes to that.
 """
@@ -22,7 +31,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 TARGET_SR = 16000  # Whisper's expected sample rate
 
@@ -32,6 +41,23 @@ TARGET_SR = 16000  # Whisper's expected sample rate
 #   afftdn     - FFmpeg's adaptive FFT denoiser
 #   dynaudnorm - gentle single-pass loudness normalization
 _FFMPEG_DENOISE_CHAIN = "highpass=f=90,lowpass=f=7500,afftdn=nf=-25,dynaudnorm"
+
+# Enhancement filter chains (applied after denoise) for soft/garbled voice.
+#   speechnorm - lifts soft passages of speech without crushing loud ones
+#   loudnorm   - EBU R128 loudness normalization to a broadcast-ish target
+#   acompressor- evens out level swings (mumbled/uneven delivery)
+#   equalizer  - a presence boost around 3 kHz for consonant intelligibility
+_FFMPEG_ENHANCE_CHAINS = {
+    "speech": "highpass=f=80,speechnorm=e=6.25:r=0.0005:l=1,"
+              "loudnorm=I=-16:TP=-1.5:LRA=11",
+    "strong": "highpass=f=80,"
+              "acompressor=threshold=-18dB:ratio=3:attack=20:release=250,"
+              "equalizer=f=3000:width_type=q:w=1.5:g=4,"
+              "speechnorm=e=12.5:r=0.0005:l=1,"
+              "loudnorm=I=-16:TP=-1.5:LRA=11",
+}
+
+ENHANCE_MODES = ("none", "speech", "strong", "resemble")
 
 
 class AudioError(RuntimeError):
@@ -123,33 +149,102 @@ def _denoise_deepfilter(src: Path, dst: Path) -> None:
         tmp48.unlink(missing_ok=True)
 
 
+def _enhance_filters(enhance: str, gain_db: float) -> Optional[str]:
+    """Build the FFmpeg ``-af`` string for an enhancement mode + optional gain.
+
+    Returns None when there is nothing to do (``enhance='none'`` and no gain).
+    The ``resemble`` mode is neural (handled separately); here it contributes
+    only the optional gain.
+    """
+    parts: List[str] = []
+    chain = _FFMPEG_ENHANCE_CHAINS.get(enhance)
+    if chain:
+        parts.append(chain)
+    if gain_db:
+        parts.append(f"volume={gain_db}dB")
+    return ",".join(parts) if parts else None
+
+
+def _enhance_resemble(src: Path, dst: Path) -> None:
+    """Neural speech restoration via Resemble-Enhance (optional, lazy import)."""
+    try:
+        import torch
+        import torchaudio
+        from resemble_enhance.enhancer.inference import enhance as re_enhance
+    except ImportError as exc:
+        raise AudioError(
+            "Resemble-Enhance is not installed. Install the optional extra with "
+            "`pip install resemble-enhance` (also pulls in torch), or use "
+            "--enhance speech / --enhance strong / --enhance none."
+        ) from exc
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dwav, sr = torchaudio.load(str(src))
+    dwav = dwav.mean(dim=0)  # mix down to mono
+    try:
+        wav, new_sr = re_enhance(dwav, sr, device)
+    except Exception as exc:
+        raise AudioError(f"Resemble-Enhance failed: {exc}") from exc
+
+    tmp = dst.with_name(dst.stem + ".re.wav")
+    torchaudio.save(str(tmp), wav.unsqueeze(0).cpu(), new_sr)
+    try:
+        _to_wav(tmp, dst, filters=None)  # normalize to 16 kHz mono
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def prepare(
     input_path: str | Path,
     workdir: str | Path,
     *,
     denoise: str = "ffmpeg",
+    enhance: str = "none",
+    gain_db: float = 0.0,
 ) -> Path:
     """Produce a 16 kHz mono WAV ready for transcription.
 
-    Returns the path to the prepared WAV inside ``workdir``.
+    Runs denoise, then (optionally) enhancement. Returns the path to the
+    prepared WAV inside ``workdir``.
 
-    ``denoise`` is one of ``"ffmpeg"``, ``"deepfilter"`` or ``"none"``.
+    * ``denoise``: ``"ffmpeg"``, ``"deepfilter"`` or ``"none"``.
+    * ``enhance``: ``"none"``, ``"speech"``, ``"strong"`` or ``"resemble"``.
+    * ``gain_db``: manual volume adjustment in dB (0 = none).
     """
+    if enhance not in ENHANCE_MODES:
+        raise AudioError(f"unknown enhance mode: {enhance!r}")
+
     src = Path(input_path)
     if not src.is_file():
         raise AudioError(f"input file not found: {src}")
 
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
-    out = workdir / (src.stem + ".prepared.wav")
+    final = workdir / (src.stem + ".prepared.wav")
+
+    # If we'll enhance, denoise into an intermediate; otherwise straight to final.
+    need_enhance = enhance != "none" or bool(gain_db)
+    denoise_dst = (workdir / (src.stem + ".denoised.wav")) if need_enhance else final
 
     if denoise == "none":
-        _to_wav(src, out, filters=None)
+        _to_wav(src, denoise_dst, filters=None)
     elif denoise == "ffmpeg":
-        _to_wav(src, out, filters=_FFMPEG_DENOISE_CHAIN)
+        _to_wav(src, denoise_dst, filters=_FFMPEG_DENOISE_CHAIN)
     elif denoise == "deepfilter":
-        _denoise_deepfilter(src, out)
+        _denoise_deepfilter(src, denoise_dst)
     else:
         raise AudioError(f"unknown denoise mode: {denoise!r}")
 
-    return out
+    if not need_enhance:
+        return final  # denoise_dst is final
+
+    if enhance == "resemble":
+        _enhance_resemble(denoise_dst, final)
+        if gain_db:  # apply the manual gain as a follow-up pass
+            gained = workdir / (src.stem + ".gained.wav")
+            _to_wav(final, gained, filters=f"volume={gain_db}dB")
+            gained.replace(final)
+    else:
+        _to_wav(denoise_dst, final, filters=_enhance_filters(enhance, gain_db))
+
+    return final

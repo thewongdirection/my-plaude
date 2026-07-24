@@ -110,6 +110,22 @@ class TestOrchestration(unittest.TestCase):
         f.write_bytes(b"x")
         return f
 
+    def test_enhance_and_gain_forwarded_to_prepare(self):
+        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            out = pathlib.Path(d) / "o.txt"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f) as prep, \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)):
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none",
+                              "--enhance", "speech", "--gain", "6", "-q"])
+            self.assertEqual(rc, 0)
+            self.assertEqual(prep.call_args.kwargs["enhance"], "speech")
+            self.assertEqual(prep.call_args.kwargs["gain_db"], 6.0)
+
     def test_happy_path_writes_transcript(self):
         segs = [
             {"start": 0.0, "end": 1.0, "text": " Hello.", "speaker": None},

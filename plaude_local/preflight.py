@@ -139,6 +139,13 @@ def check_deepfilternet() -> Check:
     )
 
 
+def check_resemble() -> Check:
+    return _module_check(
+        "resemble_enhance", "Resemble-Enhance (--enhance resemble)", False,
+        "pip install resemble-enhance",
+    )
+
+
 def check_pyannote() -> Check:
     return _module_check(
         "pyannote.audio", "pyannote.audio (--diarize, pyannote backend)", False,
@@ -184,6 +191,7 @@ def run_all() -> List[Check]:
         check_faster_whisper(),
         check_gpu(),
         check_deepfilternet(),
+        check_resemble(),
         check_pyannote(),
         check_whisperx(),
         check_summarizer(),
