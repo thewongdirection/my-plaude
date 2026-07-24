@@ -54,6 +54,7 @@ param(
     [int]$BeamSize = 5,
     [switch]$NoVad,
     [string]$ModelDir,
+    [switch]$Offline,
 
     # audio preprocessing
     [ValidateSet('ffmpeg', 'deepfilter', 'none')]
@@ -435,6 +436,17 @@ function Invoke-Prepare {
 # --------------------------------------------------------------------------- #
 # Transcription via whisper-ctranslate2 (same faster-whisper/CTranslate2 engine)
 # --------------------------------------------------------------------------- #
+function Set-HfOffline {
+    # Force Hugging Face model loads to use only the local cache: HF_HUB_OFFLINE
+    # (whisper-ctranslate2 / pyannote weights) + TRANSFORMERS_OFFLINE (whisperx).
+    # The "download once online, then run fully offline" flow. Parity with the
+    # Python cli.apply_offline(). No-op when disabled.
+    param([bool]$Enabled)
+    if (-not $Enabled) { return }
+    $env:HF_HUB_OFFLINE = '1'
+    $env:TRANSFORMERS_OFFLINE = '1'
+}
+
 function Resolve-Device {
     if ($Device -ne 'auto') { return $Device }
     # nvidia-smi present and succeeds -> assume CUDA available.
@@ -793,6 +805,8 @@ function Invoke-Check {
 function Invoke-Main {
     if ($Version) { Write-Host "plaude-local (PowerShell) $($Script:ToolVersion)"; return 0 }
     if ($Check) { return (Invoke-Check) }
+
+    Set-HfOffline -Enabled $Offline
 
     if (-not $InputFile) {
         Write-ErrLine 'error: an input audio file is required (or use -Check to verify your setup).'

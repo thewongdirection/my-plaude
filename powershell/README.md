@@ -136,6 +136,7 @@ download or `-NoProvision` to just error out.
 | Bad-recording policy | `--on-bad warn/skip/fail` | `-OnBad warn/skip/fail` |
 | Transcription engine | faster-whisper (CTranslate2) | whisper-ctranslate2 (same engine) |
 | Models / device / compute | `--model/--device/--compute-type` | `-Model/-Device/-ComputeType` |
+| Offline (cache-only models) | `--offline` | `-Offline` |
 | Diarization | `--diarize [--diarize-backend]` | `-Diarize [-DiarizeBackend]` |
 | Summarization | `--summarize` (Ollama/llama.cpp) | `-Summarize` (Ollama/llama.cpp) |
 | Prereq check + provision | (built-in) | (built-in) |

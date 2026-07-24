@@ -50,6 +50,38 @@ class TestParser(unittest.TestCase):
         self.assertTrue(args.diarize)
         self.assertEqual(args.diarize_backend, "whisperx")
 
+    def test_offline_defaults_false(self):
+        self.assertFalse(cli.build_parser().parse_args(["in.wav"]).offline)
+        self.assertTrue(
+            cli.build_parser().parse_args(["in.wav", "--offline"]).offline
+        )
+
+
+class TestOffline(unittest.TestCase):
+    def setUp(self):
+        self._saved = {
+            k: os.environ.get(k) for k in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")
+        }
+        for k in self._saved:
+            os.environ.pop(k, None)
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_disabled_sets_nothing(self):
+        cli.apply_offline(False)
+        self.assertNotIn("HF_HUB_OFFLINE", os.environ)
+        self.assertNotIn("TRANSFORMERS_OFFLINE", os.environ)
+
+    def test_enabled_sets_both_offline_flags(self):
+        cli.apply_offline(True)
+        self.assertEqual(os.environ["HF_HUB_OFFLINE"], "1")
+        self.assertEqual(os.environ["TRANSFORMERS_OFFLINE"], "1")
+
 
 class TestCheck(unittest.TestCase):
     def test_check_all_ok_returns_zero(self):

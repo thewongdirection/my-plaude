@@ -288,6 +288,29 @@ Describe 'Get-QualityReport' {
     }
 }
 
+Describe 'Set-HfOffline' {
+    BeforeEach {
+        $script:savedHub = $env:HF_HUB_OFFLINE
+        $script:savedTfm = $env:TRANSFORMERS_OFFLINE
+        Remove-Item Env:HF_HUB_OFFLINE -ErrorAction SilentlyContinue
+        Remove-Item Env:TRANSFORMERS_OFFLINE -ErrorAction SilentlyContinue
+    }
+    AfterEach {
+        if ($null -eq $script:savedHub) { Remove-Item Env:HF_HUB_OFFLINE -ErrorAction SilentlyContinue } else { $env:HF_HUB_OFFLINE = $script:savedHub }
+        if ($null -eq $script:savedTfm) { Remove-Item Env:TRANSFORMERS_OFFLINE -ErrorAction SilentlyContinue } else { $env:TRANSFORMERS_OFFLINE = $script:savedTfm }
+    }
+    It 'sets nothing when disabled (parity with Python apply_offline)' {
+        Set-HfOffline -Enabled $false
+        $env:HF_HUB_OFFLINE | Should -BeNullOrEmpty
+        $env:TRANSFORMERS_OFFLINE | Should -BeNullOrEmpty
+    }
+    It 'sets both offline flags when enabled' {
+        Set-HfOffline -Enabled $true
+        $env:HF_HUB_OFFLINE | Should -Be '1'
+        $env:TRANSFORMERS_OFFLINE | Should -Be '1'
+    }
+}
+
 Describe 'Get-CudaBootstrap' {
     # Parity with the Python entry point: the PowerShell GPU path runs
     # whisper-ctranslate2 through a bootstrap that registers the nvidia-*-cu12

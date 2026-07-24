@@ -134,9 +134,21 @@ For **diarization** you also need a free Hugging Face token:
 ```bash
 # 1. create a token: https://hf.co/settings/tokens
 # 2. accept model terms: https://hf.co/pyannote/speaker-diarization-3.1
+#    (this also gates https://hf.co/pyannote/segmentation-3.0 — accept it too)
 # 3. expose it:
 export HF_TOKEN=hf_xxx            # Windows: set HF_TOKEN=hf_xxx
 ```
+
+The token is only used **once, to download the gated speaker model** — it is a
+download credential, not a cloud service. Your audio never leaves the machine;
+diarization (like transcription and summarization) runs entirely on your CPU/GPU.
+
+**Download once, then run fully offline.** After the weights are cached (from any
+first run that reached the network), add `--offline` to guarantee no network
+access — it sets `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` so every model loads
+from the local cache only. This applies to the Whisper transcription weights too,
+not just diarization. To move to an air-gapped machine, copy your
+`~/.cache/huggingface` folder across and always pass `--offline`.
 
 For **summarization** start a local LLM server (pick one):
 
@@ -348,6 +360,7 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
 | `--gain DB` | `0` | manual volume adjustment in dB (e.g. `6`, `-3`) |
 | `--diarize` | off | speaker tagging (optional extra) |
 | `--diarize-backend` | `pyannote` | `pyannote` or `whisperx` |
+| `--offline` | off | use only cached models; never touch the network |
 | `--assess-only` | off | fast audio triage (loudness/silence), then exit |
 | `--on-bad` | `warn` | on a bad recording: `warn`, `skip`, or `fail` (exit 12) |
 | `--summarize` | off | summarize via local LLM |

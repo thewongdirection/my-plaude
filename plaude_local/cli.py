@@ -81,6 +81,10 @@ def build_parser() -> argparse.ArgumentParser:
                          help="disable voice-activity filtering of silence")
     g_model.add_argument("--model-dir", default=None, metavar="DIR",
                          help="directory to cache/download model weights")
+    g_model.add_argument("--offline", action="store_true",
+                         help="never reach the network: use only already-cached "
+                              "models (sets HF_HUB_OFFLINE / TRANSFORMERS_OFFLINE). "
+                              "Download the weights once online, then run offline.")
 
     # Audio preprocessing
     g_audio = p.add_argument_group("audio preprocessing")
@@ -285,11 +289,27 @@ def _run_assess_only(in_path: Path, args) -> int:
     return 0
 
 
+def apply_offline(enabled: bool) -> None:
+    """Force Hugging Face model loads to use only the local cache.
+
+    Sets ``HF_HUB_OFFLINE`` (faster-whisper / pyannote weights) and
+    ``TRANSFORMERS_OFFLINE`` (whisperx) so no network request is made — the
+    "download once online, then run fully offline" flow. A no-op when disabled,
+    and it never clears the variables if the user already set them.
+    """
+    if not enabled:
+        return
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
+
 def run(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.check:
         return _run_check()
+
+    apply_offline(args.offline)
 
     if not args.input:
         print("error: an input audio file is required (or use --check to verify "
