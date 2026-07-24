@@ -355,14 +355,15 @@ def _run_dashboard(args, segments, meta, whisper_translate_segs) -> int:
     # rows (pairs). English uses Whisper's segments so rows line up; a non-English
     # LLM translation is prose, so the Side-by-Side falls back to a single block.
     pairs = None
-    if target == "en":
+    if target == source_lang:
+        # Target language == source: no translation needed.
+        translation_label = dashboard.language_name(target) if target else "Original"
+        translation_text = transcript_text
+        pairs = dashboard.align_segments(segments, segments)
+    elif target == "en":
         translation_label = "English"
-        if source_lang == "en":
-            translation_text = transcript_text
-            pairs = dashboard.align_segments(segments, segments)
-        else:
-            translation_text = formats.to_text(whisper_translate_segs or [])
-            pairs = dashboard.align_segments(segments, whisper_translate_segs or [])
+        translation_text = formats.to_text(whisper_translate_segs or [])
+        pairs = dashboard.align_segments(segments, whisper_translate_segs or [])
     else:
         translation_label = dashboard.language_name(target)
         _log(args.quiet, f"      translating to {translation_label} (LLM) ...")

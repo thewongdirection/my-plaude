@@ -733,6 +733,17 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn("Summary unavailable", html)
 
+    def test_target_equals_source_skips_translation(self):
+        # zh audio + --translate-to zh: no Whisper/LLM translate; translation==transcript.
+        eng = _DashEngine(
+            [{"start": 0.0, "end": 2.0, "text": "你好", "speaker": None}], [], "zh")
+        with mock.patch.object(summarize, "translate") as tr:
+            rc, html, _ = self._run(eng, ["--translate-to", "zh"])
+        self.assertEqual(rc, 0)
+        tr.assert_not_called()
+        self.assertEqual(eng.passes, 1)          # no separate translate pass
+        self.assertIn("Translated-Chinese", html)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1133,26 +1133,27 @@ function Invoke-Main {
             $target = $TranslateTo.ToLower()
             $translationText = ''
             $pairs = $null   # time-aligned Side-by-Side rows (English/Whisper only)
-            if ($target -eq 'en') {
+            if ($target -eq $srcLang.ToLower()) {
+                # Target language == source: no translation needed.
+                $translationLabel = if ($target) { Get-LanguageName $target } else { 'Original' }
+                $translationText = $transcriptText
+                $pairs = Get-AlignedPairs -OrigSegments $segs -TransSegments $segs
+            } elseif ($target -eq 'en') {
+                # Source is non-English (target==source handled above) -> Whisper translate.
                 $translationLabel = 'English'
-                if ($srcLang.ToLower() -eq 'en') {
-                    $translationText = $transcriptText
-                    $pairs = Get-AlignedPairs -OrigSegments $segs -TransSegments $segs
-                } else {
-                    Write-Log '      translating to English (Whisper) ...'
-                    $trWork = Join-Path $work 'translate'
-                    New-Item -ItemType Directory -Force -Path $trWork | Out-Null
-                    try {
-                        $trPath = Invoke-Transcribe -AudioPath $prepared -WorkDir $trWork -Dev $dev -Compute $compute -Token $token -Task translate
-                        $translationText = [System.IO.File]::ReadAllText($trPath, [System.Text.Encoding]::UTF8)
-                        $trJson = [System.IO.Path]::ChangeExtension($trPath, '.json')
-                        if (Test-Path -LiteralPath $trJson) {
-                            $trObj = (Get-Content -LiteralPath $trJson -Raw -Encoding UTF8) | ConvertFrom-Json
-                            $trSegs = if ($trObj.PSObject.Properties['segments']) { $trObj.segments } else { @() }
-                            $pairs = Get-AlignedPairs -OrigSegments $segs -TransSegments $trSegs
-                        }
-                    } catch { Write-ErrLine "error: $($_.Exception.Message)"; return 6 }
-                }
+                Write-Log '      translating to English (Whisper) ...'
+                $trWork = Join-Path $work 'translate'
+                New-Item -ItemType Directory -Force -Path $trWork | Out-Null
+                try {
+                    $trPath = Invoke-Transcribe -AudioPath $prepared -WorkDir $trWork -Dev $dev -Compute $compute -Token $token -Task translate
+                    $translationText = [System.IO.File]::ReadAllText($trPath, [System.Text.Encoding]::UTF8)
+                    $trJson = [System.IO.Path]::ChangeExtension($trPath, '.json')
+                    if (Test-Path -LiteralPath $trJson) {
+                        $trObj = (Get-Content -LiteralPath $trJson -Raw -Encoding UTF8) | ConvertFrom-Json
+                        $trSegs = if ($trObj.PSObject.Properties['segments']) { $trObj.segments } else { @() }
+                        $pairs = Get-AlignedPairs -OrigSegments $segs -TransSegments $trSegs
+                    }
+                } catch { Write-ErrLine "error: $($_.Exception.Message)"; return 6 }
             } else {
                 $translationLabel = Get-LanguageName $target
             }
