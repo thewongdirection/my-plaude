@@ -132,3 +132,59 @@ Describe 'Get-AlignedPairs' {
         $rows[1].X | Should -Be ''
     }
 }
+
+Describe 'Invoke-TranslateLines' {
+    It 'parses numbered lines, strips reasoning, keeps alignment' {
+        Mock Invoke-LlmCall { "<think>plan</think>`n1. Hello`n2. World" }
+        # Direct assignment (as the CLI uses it) unwraps the returned string[].
+        $out = Invoke-TranslateLines -Lines @('a', 'b') -TargetLanguage 'English' -Backend 'ollama' -Model 'm' -Url 'http://x' -MaxChars 8000
+        $out.Count | Should -Be 2
+        $out[0] | Should -Be 'Hello'
+        $out[1] | Should -Be 'World'
+    }
+    It 'leaves unmatched lines empty' {
+        Mock Invoke-LlmCall { '1. Hi' }
+        $out = Invoke-TranslateLines -Lines @('a', 'b') -TargetLanguage 'English' -Backend 'ollama' -Model 'm' -Url 'http://x' -MaxChars 8000
+        $out[1] | Should -Be ''
+    }
+}
+
+Describe 'Resolve-TranslateEngine' {
+    It 'returns the explicit choice' {
+        $TranslateEngine = 'whisper'
+        Resolve-TranslateEngine | Should -Be 'whisper'
+    }
+    It 'auto resolves to llm when a backend is reachable' {
+        $TranslateEngine = 'auto'
+        Mock Get-SummBackend { 'ollama' }
+        Resolve-TranslateEngine | Should -Be 'llm'
+    }
+    It 'auto resolves to whisper when no backend' {
+        $TranslateEngine = 'auto'
+        Mock Get-SummBackend { $null }
+        Resolve-TranslateEngine | Should -Be 'whisper'
+    }
+}
+
+Describe 'Get-DefaultOllamaModel' {
+    It 'returns the first installed model' {
+        Mock Invoke-RestMethod { [pscustomobject]@{ models = @([pscustomobject]@{ name = 'gemma4:latest' }, [pscustomobject]@{ name = 'llama3.1' }) } }
+        Get-DefaultOllamaModel | Should -Be 'gemma4:latest'
+    }
+    It 'returns null when the server is unreachable' {
+        Mock Invoke-RestMethod { throw 'down' }
+        Get-DefaultOllamaModel | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Get-DashboardHtml provenance' {
+    It 'renders the transcription and translation engines' {
+        $doc = Get-DashboardHtml -Title 'T' -Language 'en' -SpeechDurationS 5 -WordCount 1 `
+            -Summary 's' -SummaryNote '' -Transcript 'a' -Translation 'b' `
+            -TranslationLabel 'Translated-English' -Cjk $false -Pairs $null `
+            -TranscriptionEngine 'whisper-ctranslate2 ENG' -TranslationEngine 'LLM MODELX'
+        $doc | Should -Match 'class="prov"'
+        $doc | Should -Match 'whisper-ctranslate2 ENG'
+        $doc | Should -Match 'LLM MODELX'
+    }
+}

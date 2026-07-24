@@ -19,6 +19,7 @@ network by injecting a fake call function.
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from typing import Callable, List, Optional
@@ -87,6 +88,22 @@ def ollama_available(url: str = DEFAULT_OLLAMA_URL) -> bool:
 
 def llamacpp_available(url: str = DEFAULT_LLAMACPP_URL) -> bool:
     return _get_ok(url.rstrip("/") + "/health")
+
+
+def default_ollama_model(url: str = DEFAULT_OLLAMA_URL, timeout: float = 3.0) -> Optional[str]:
+    """The model to use when none is specified: the first one Ollama has installed.
+
+    Ollama has no notion of a designated default, so we take the first entry from
+    ``/api/tags`` (the installed models). Returns ``None`` if the server is
+    unreachable or has no models pulled.
+    """
+    try:
+        with urllib.request.urlopen(url.rstrip("/") + "/api/tags", timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        models = data.get("models") or []
+        return models[0].get("name") if models else None
+    except Exception:
+        return None
 
 
 def detect_backend(
@@ -250,6 +267,59 @@ def translate_text(
     )
 
 
+def build_aligned_translate_prompt(numbered: str, target_language: str) -> str:
+    """Prompt to translate numbered lines, preserving the line count."""
+    return (
+        f"Translate each numbered line below into {target_language}. Output EXACTLY "
+        "the same number of lines, each starting with its number and a period, then "
+        f"the {target_language} translation of that line only. Consider the whole "
+        "passage for context, but do not merge, split, reorder, add, or drop lines, "
+        f"and output nothing but the numbered {target_language} lines.\n\n{numbered}"
+        f"\n\n{target_language} (numbered):"
+    )
+
+
+_NUM_LINE = re.compile(r"(?m)^\s*(\d+)[.\):]\s*(.*)$")
+_THINK = re.compile(r"(?is)<think>.*?</think>")
+
+
+def translate_lines(
+    lines: List[str],
+    call: Callable[[str], str],
+    *,
+    target_language: str,
+    max_chars: int = DEFAULT_MAX_CHARS,
+) -> List[str]:
+    """Translate segment lines, keeping one output line per input line.
+
+    Batches lines (with full-batch context) into <= ``max_chars`` requests and
+    parses the numbered replies back per line, so the Side-by-Side stays aligned
+    while the LLM does the (more accurate) translation. Lines that cannot be
+    matched come back empty. Returns a list the same length as ``lines``.
+    """
+    out = [""] * len(lines)
+    batch: List[int] = []
+    blen = 0
+    batches: List[List[int]] = []
+    for i, ln in enumerate(lines):
+        add = len(ln) + 6
+        if batch and blen + add > max_chars:
+            batches.append(batch)
+            batch, blen = [], 0
+        batch.append(i)
+        blen += add
+    if batch:
+        batches.append(batch)
+
+    for group in batches:
+        numbered = "\n".join(f"{n + 1}. {lines[idx]}" for n, idx in enumerate(group))
+        resp = _THINK.sub("", call(build_aligned_translate_prompt(numbered, target_language)))
+        got = {int(m.group(1)): m.group(2).strip() for m in _NUM_LINE.finditer(resp)}
+        for n, idx in enumerate(group):
+            out[idx] = got.get(n + 1, "")
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Public entry point
 # --------------------------------------------------------------------------- #
@@ -274,9 +344,16 @@ def _resolve_call(
 
     if backend == "ollama":
         base = url or DEFAULT_OLLAMA_URL
-        chosen_model = model or DEFAULT_OLLAMA_MODEL
+        # Default to whatever model Ollama has installed (no hard-coded name).
+        chosen_model = model or default_ollama_model(base)
+        if not chosen_model:
+            raise SummarizeError(
+                "no Ollama model available. Pull one (e.g. `ollama pull llama3.1`) "
+                "or pass an explicit model via --summarize-model / --translate-model."
+            )
         return lambda p: _ollama_call(p, chosen_model, base, timeout)
     if backend == "llamacpp":
+        # llama.cpp serves a single preloaded model; no name needed.
         base = url or DEFAULT_LLAMACPP_URL
         return lambda p: _llamacpp_call(p, model, base, timeout)
     raise SummarizeError(
@@ -324,3 +401,21 @@ def translate(
     """
     call = _resolve_call(backend, model, url, timeout)
     return translate_text(text, call, target_language=target_language, max_chars=max_chars)
+
+
+def translate_segments(
+    lines: List[str],
+    *,
+    target_language: str = "English",
+    backend: str = "auto",
+    model: Optional[str] = None,
+    url: Optional[str] = None,
+    timeout: float = 120.0,
+    max_chars: int = DEFAULT_MAX_CHARS,
+) -> List[str]:
+    """Translate per-segment lines with a local LLM (accuracy-first, aligned).
+
+    Returns one translated line per input line so the Side-by-Side stays aligned.
+    """
+    call = _resolve_call(backend, model, url, timeout)
+    return translate_lines(lines, call, target_language=target_language, max_chars=max_chars)

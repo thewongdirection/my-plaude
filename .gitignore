@@ -26,4 +26,8 @@ Thumbs.db
 *.mp3
 *.srt
 *.vtt
+*.m4a
+# Generated dashboards / reports from local (private) audio — never commit
+outputs/
+functional_test_report.md
 !sample/*

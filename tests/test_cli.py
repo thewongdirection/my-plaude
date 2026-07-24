@@ -683,6 +683,7 @@ class TestDashboard(unittest.TestCase):
                 with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
                      mock.patch.object(audio, "prepare", return_value=f), \
                      mock.patch.object(transcribe, "Transcriber", lambda **kw: engine), \
+                     mock.patch.object(summarize, "detect_backend", return_value=None), \
                      sm:
                     rc = cli.run([str(f), "-o", "dash.html", "--denoise", "none"] + extra + ["-q"])
                 html = ""
@@ -732,6 +733,30 @@ class TestDashboard(unittest.TestCase):
         rc, html, _ = self._run(eng, [], summary_error=True)
         self.assertEqual(rc, 0)
         self.assertIn("Summary unavailable", html)
+
+    def test_shows_transcription_and_translation_provenance(self):
+        eng = _DashEngine(
+            [{"start": 0.0, "end": 3.0, "text": "你好世界", "speaker": None}],
+            [{"start": 0.0, "end": 3.0, "text": "Hello world", "speaker": None}], "zh")
+        rc, html, _ = self._run(eng, ["--translate-engine", "whisper"])
+        self.assertEqual(rc, 0)
+        self.assertIn("faster-whisper", html)          # transcription engine
+        self.assertIn("Whisper translate", html)       # translation engine
+
+    def test_llm_engine_translates_and_aligns_per_segment(self):
+        eng = _DashEngine(
+            [{"start": 0.0, "end": 2.0, "text": "你好", "speaker": None},
+             {"start": 2.0, "end": 4.0, "text": "世界", "speaker": None}], [], "zh")
+        with mock.patch.object(summarize, "translate_segments",
+                               return_value=["Hello", "World"]) as ts:
+            rc, html, _ = self._run(eng, ["--translate-engine", "llm", "--translate-model", "m"])
+        self.assertEqual(rc, 0)
+        ts.assert_called_once()
+        self.assertEqual(eng.passes, 1)                # no Whisper translate pass
+        self.assertIn("Hello", html)
+        self.assertIn("World", html)
+        self.assertEqual(html.count('class="sbs-o'), 2)  # 2 aligned rows
+        self.assertIn("LLM · m", html)                 # provenance
 
     def test_target_equals_source_skips_translation(self):
         # zh audio + --translate-to zh: no Whisper/LLM translate; translation==transcript.

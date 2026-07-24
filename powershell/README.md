@@ -128,8 +128,10 @@ download or `-NoProvision` to just error out.
 | Input formats | anything FFmpeg decodes (ffprobe-gated) | same |
 | Default output | **HTML dashboard** (`output.html`) | same |
 | Output format | `--format html`(default)`/txt/srt/vtt/json` | `-Format html/txt/srt/vtt/json` |
-| Dashboard | summary + Transcribed / Translated-*lang* / Side-by-Side tabs | same |
+| Dashboard | summary + provenance line + Transcribed / Translated-*lang* / Side-by-Side tabs | same |
 | Translation target | `--translate-to LANG` (default en) | `-TranslateTo LANG` |
+| Translation engine | `--translate-engine auto/whisper/llm` (accuracy-first: LLM if a server is up) | `-TranslateEngine auto/whisper/llm` |
+| Translation model | `--translate-model NAME` (defaults to server's first model) | `-TranslateModel NAME` |
 | Split text outputs | `--split-outputs` / `--transcription-file` / `--translation-file` | `-SplitOutputs` / `-TranscriptionFile` / `-TranslationFile` |
 | Overwrite prompt | prompt, auto-overwrite after 10 s; `--yes` skips | same (`-Yes`) |
 | UTF-8 output (file + stdout) | yes | yes |

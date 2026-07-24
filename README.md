@@ -313,11 +313,20 @@ By default (`--format html`) every run produces a self-contained, theme-aware
 
 - a header showing the **detected language**, rough **speech duration**, and
   **word count**;
+- a **provenance line** naming the **transcription engine** and the
+  **translation engine/model** actually used for the run;
 - a **≤250-word summary of critical topics** (local LLM; degrades gracefully to
   a note if no Ollama/llama.cpp server is running); and
-- three tabs: **Transcribed** (original), **Translated-*Language*** (English by
-  default, via Whisper's native translation; other targets via the local LLM,
-  set with `--translate-to`), and **Side-by-Side**.
+- three tabs: **Transcribed** (original), **Translated-*Language*** (target set
+  with `--translate-to`, default English), and a **segment-aligned Side-by-Side**.
+
+Translation is **accuracy-first**: `--translate-engine auto` (the default) uses
+the **local LLM** whenever an Ollama/llama.cpp server is reachable — translating
+line-by-line so the Side-by-Side stays aligned — and otherwise falls back to
+Whisper's native (English-only) translate task. Force a specific engine with
+`--translate-engine whisper|llm`, and pick a dedicated translation model with
+`--translate-model` (independent of `--summarize-model`; both default to the
+first model your local server reports when unset).
 
 `--split-outputs` (or `--transcription-file` / `--translation-file`) also writes
 the transcription and translation as plain text files (defaults
@@ -326,6 +335,7 @@ the transcription and translation as plain text files (defaults
 ```bash
 plaude-local interview.m4a                       # -> output.html dashboard
 plaude-local rede.mp3 --translate-to en --split-outputs
+plaude-local rede.mp3 --translate-engine llm --translate-model deepseek-r1  # accuracy-first LLM
 plaude-local notes.wav --format txt              # plain transcript instead
 ```
 
@@ -397,7 +407,9 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
 | `--compute-type` | `auto` | `float16` on GPU, `int8` on CPU |
 | `--language` | auto | language code, or auto-detect |
 | `--format` | `html` | `html` dashboard (default), or `txt`/`srt`/`vtt`/`json` |
-| `--translate-to` | `en` | translation-tab language (English via Whisper; others via LLM) |
+| `--translate-to` | `en` | translation-tab target language |
+| `--translate-engine` | `auto` | `auto` (LLM if a server is up, else Whisper), `whisper`, or `llm` |
+| `--translate-model` | — | model for LLM translation (defaults to the server's first model) |
 | `--split-outputs` | off | also write transcription + translation as text files |
 | `--transcription-file` | `transcription.txt` | path for the split transcription |
 | `--translation-file` | `translation.txt` | path for the split translation |

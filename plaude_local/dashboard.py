@@ -93,6 +93,8 @@ h1{font-family:var(--font-read);font-weight:600;letter-spacing:-.01em;font-size:
 .stat{flex:1 1 150px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);}
 .stat .label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 6px;}
 .stat .value{font-size:1.5rem;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;}
+.prov{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--font-mono);font-size:.72rem;color:var(--muted);margin:0 0 24px;}
+.prov b{color:var(--text);font-weight:600;}
 .summary{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:12px;padding:18px 22px;box-shadow:var(--shadow);margin:0 0 8px;}
 .summary h2{font-family:var(--font-read);font-size:1.15rem;margin:0 0 10px;}
 .summary .body{color:var(--text);}
@@ -186,6 +188,8 @@ def build_dashboard_html(
     summary_note: Optional[str] = None,
     cjk: bool = False,
     pairs=None,
+    transcription_engine: str = "",
+    translation_engine: str = "",
 ) -> str:
     lang_disp = language_name(language)
     lang_code = f" ({language})" if language else ""
@@ -197,6 +201,14 @@ def build_dashboard_html(
     if not pairs:
         pairs = [(transcript, translation)]
     sbs = _sbs_html(pairs, cjk_cls, lang_disp, tr_tab)
+    prov = ""
+    if transcription_engine or translation_engine:
+        parts = []
+        if transcription_engine:
+            parts.append(f'<span>Transcription <b>{_html.escape(transcription_engine)}</b></span>')
+        if translation_engine:
+            parts.append(f'<span>Translation <b>{_html.escape(translation_engine)}</b></span>')
+        prov = f'  <div class="prov">{"".join(parts)}</div>\n'
     return (
         f"<title>{_html.escape(title)}</title>\n<style>{_CSS}</style>\n"
         '<div class="wrap">\n'
@@ -207,6 +219,7 @@ def build_dashboard_html(
         f'    <div class="stat"><p class="label">Speech duration</p><div class="value">{_html.escape(format_duration(speech_duration_s))}</div></div>\n'
         f'    <div class="stat"><p class="label">Words</p><div class="value">{word_count:,}</div></div>\n'
         "  </div>\n"
+        f"{prov}"
         '  <section class="summary"><h2>Critical topics</h2>'
         f"{_summary_html(summary, summary_note)}</section>\n"
         '  <div class="tabs" role="tablist" aria-label="Views">\n'

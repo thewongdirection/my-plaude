@@ -62,6 +62,18 @@ def build_parser() -> argparse.ArgumentParser:
              "local LLM.",
     )
     p.add_argument(
+        "--translate-model", default=None, metavar="NAME",
+        help="local LLM model for LLM translation (Ollama). Default: the server's "
+             "first installed model.",
+    )
+    p.add_argument(
+        "--translate-engine", choices=["auto", "whisper", "llm"], default="auto",
+        help="how to translate: 'llm' (local LLM — most accurate, any language), "
+             "'whisper' (Whisper's translate task — English only, fast, keeps the "
+             "aligned Side-by-Side), or 'auto' (default: accuracy-first — LLM when "
+             "a local LLM server is running, else Whisper for English).",
+    )
+    p.add_argument(
         "--split-outputs", action="store_true",
         help="also write the transcription and translation to separate text "
              "files (see --transcription-file / --translation-file).",
@@ -316,6 +328,17 @@ def _run_assess_only(in_path: Path, args) -> int:
     return 0
 
 
+def _resolve_translate_engine(args) -> str:
+    """Resolve ``--translate-engine`` ('auto' is accuracy-first)."""
+    if args.translate_engine != "auto":
+        return args.translate_engine
+    from . import summarize as summ
+    reachable = summ.detect_backend(
+        args.summarize_url or summ.DEFAULT_OLLAMA_URL,
+        args.summarize_url or summ.DEFAULT_LLAMACPP_URL)
+    return "llm" if reachable else "whisper"
+
+
 def disable_telemetry() -> None:
     """Turn off Hugging Face usage telemetry so a normal run never phones home.
 
@@ -342,7 +365,7 @@ def apply_offline(enabled: bool) -> None:
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 
-def _run_dashboard(args, segments, meta, whisper_translate_segs) -> int:
+def _run_dashboard(args, segments, meta, whisper_translate_segs, translate_engine="whisper") -> int:
     """Build + write the HTML dashboard (default output): summary + tabs."""
     from . import dashboard
     from . import summarize as summ
@@ -350,30 +373,45 @@ def _run_dashboard(args, segments, meta, whisper_translate_segs) -> int:
     transcript_text = formats.to_text(segments)
     source_lang = (meta.get("language") or "").lower()
     target = (args.translate_to or "en").lower()
+    seg_texts = [(s.get("text") or "").strip() for s in segments]
 
     # Translation for the "Translated-<lang>" tab, plus time-aligned Side-by-Side
     # rows (pairs). English uses Whisper's segments so rows line up; a non-English
     # LLM translation is prose, so the Side-by-Side falls back to a single block.
+    whisper_model = meta.get("model") or args.model
+    transcription_engine = f"faster-whisper · {whisper_model}"
+    translation_engine = ""
     pairs = None
     if target == source_lang:
         # Target language == source: no translation needed.
         translation_label = dashboard.language_name(target) if target else "Original"
         translation_text = transcript_text
         pairs = dashboard.align_segments(segments, segments)
-    elif target == "en":
+        translation_engine = "none (same as source)"
+    elif translate_engine == "whisper" and target == "en":
         translation_label = "English"
         translation_text = formats.to_text(whisper_translate_segs or [])
         pairs = dashboard.align_segments(segments, whisper_translate_segs or [])
+        translation_engine = f"Whisper translate · {whisper_model}"
     else:
-        translation_label = dashboard.language_name(target)
+        # LLM translation (accuracy-first), aligned line-by-line so the
+        # Side-by-Side still lines up. Whisper can only produce English.
+        translation_label = "English" if target == "en" else dashboard.language_name(target)
         _log(args.quiet, f"      translating to {translation_label} (LLM) ...")
         try:
-            translation_text = summ.translate(
-                transcript_text, target_language=translation_label,
-                backend=args.summarize_backend, model=args.summarize_model,
+            translated = summ.translate_segments(
+                seg_texts, target_language=translation_label,
+                backend=args.summarize_backend, model=args.translate_model,
                 url=args.summarize_url, max_chars=args.summarize_max_chars)
+            translation_text = "\n".join(t for t in translated if t).strip()
+            pairs = list(zip(seg_texts, translated))
+            shown = (args.translate_model
+                     or summ.default_ollama_model(args.summarize_url or summ.DEFAULT_OLLAMA_URL)
+                     or "default")
+            translation_engine = f"LLM · {shown}"
         except summ.SummarizeError as exc:
             translation_text = ""
+            translation_engine = "LLM · unavailable"
             _log(args.quiet, f"      translation unavailable: {exc}")
 
     # <=250-word critical-topics summary (graceful when no LLM is reachable).
@@ -396,7 +434,9 @@ def _run_dashboard(args, segments, meta, whisper_translate_segs) -> int:
         summary=summary_text, summary_note=summary_note,
         transcript=transcript_text, translation=translation_text,
         translation_label=f"Translated-{translation_label}",
-        cjk=source_lang in ("zh", "ja", "ko"), pairs=pairs)
+        cjk=source_lang in ("zh", "ja", "ko"), pairs=pairs,
+        transcription_engine=transcription_engine,
+        translation_engine=translation_engine)
 
     out = args.output if args.output else _default_output("html")
     if out != "-" and not _confirm_overwrite(out, assume_yes=args.yes, quiet=args.quiet):
@@ -498,6 +538,7 @@ def run(argv: Optional[List[str]] = None) -> int:
             return 8
 
     whisper_translate_segs = None  # English translation segments (dashboard only)
+    translate_engine = _resolve_translate_engine(args) if args.format == "html" else "whisper"
     with tempfile.TemporaryDirectory(prefix="plaude-local-") as tmp:
         # 1. Preprocess / denoise / enhance
         _log(args.quiet,
@@ -542,10 +583,12 @@ def run(argv: Optional[List[str]] = None) -> int:
             return 6
         _log(args.quiet, f"      detected language: {meta.get('language')}")
 
-        # For the HTML dashboard's English tab, run Whisper's native translate
-        # task (a second decode pass) unless the source is already English or a
-        # non-English target was requested (that goes through the LLM later).
+        # For the HTML dashboard's English tab via the Whisper engine, run
+        # Whisper's native translate task (a second decode pass). Skipped when the
+        # source is already English, a non-English target was requested, or the
+        # (accuracy-first) LLM engine will do the translation instead.
         if (args.format == "html" and args.translate_to == "en"
+                and translate_engine == "whisper"
                 and (meta.get("language") or "").lower() != "en"):
             _log(args.quiet, "      translating to English (Whisper) ...")
             try:
@@ -604,7 +647,7 @@ def run(argv: Optional[List[str]] = None) -> int:
     # 4a. HTML dashboard (default format): summary + Transcribed / Translated /
     # Side-by-Side tabs, plus optional split text files.
     if args.format == "html":
-        return _run_dashboard(args, segments, meta, whisper_translate_segs)
+        return _run_dashboard(args, segments, meta, whisper_translate_segs, translate_engine)
 
     # 4. Render + write transcript (UTF-8)
     # "timestamps" is an internal rendering hint for the txt writer (show a clock

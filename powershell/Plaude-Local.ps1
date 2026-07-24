@@ -43,6 +43,9 @@ param(
     [string]$Format = 'html',
 
     [string]$TranslateTo = 'en',
+    [string]$TranslateModel,
+    [ValidateSet('auto', 'whisper', 'llm')]
+    [string]$TranslateEngine = 'auto',
     [switch]$SplitOutputs,
     [string]$TranscriptionFile,
     [string]$TranslationFile,
@@ -686,6 +689,58 @@ function Invoke-TranslateText {
     return ($parts -join "`n")
 }
 
+function Get-DefaultOllamaModel {
+    # The model to use when none is specified: the first Ollama has installed.
+    param([string]$Url = $Script:DefaultOllamaUrl)
+    try {
+        $resp = Invoke-RestMethod -Uri "$($Url.TrimEnd('/'))/api/tags" -TimeoutSec 3
+        if ($resp.models -and @($resp.models).Count -gt 0) { return [string]$resp.models[0].name }
+    } catch { }
+    return $null
+}
+
+function Build-AlignedTranslatePrompt {
+    param([string]$Numbered, [string]$TargetLanguage)
+    return "Translate each numbered line below into $TargetLanguage. Output EXACTLY the same number of lines, each starting with its number and a period, then the $TargetLanguage translation of that line only. Consider the whole passage for context, but do not merge, split, reorder, add, or drop lines, and output nothing but the numbered $TargetLanguage lines.`n`n$Numbered`n`n$TargetLanguage (numbered):"
+}
+
+function Invoke-TranslateLines {
+    # Accuracy-first, alignment-preserving LLM translation: one output line per
+    # input segment line. Parity with summarize.translate_lines.
+    param([string[]]$Lines, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars)
+    $out = New-Object 'string[]' $Lines.Count
+    for ($i = 0; $i -lt $out.Count; $i++) { $out[$i] = '' }
+    $batches = New-Object System.Collections.Generic.List[object]
+    $cur = New-Object System.Collections.Generic.List[int]; $clen = 0
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $add = $Lines[$i].Length + 6
+        if ($cur.Count -gt 0 -and ($clen + $add) -gt $MaxChars) {
+            $batches.Add($cur.ToArray()); $cur = New-Object System.Collections.Generic.List[int]; $clen = 0
+        }
+        $cur.Add($i); $clen += $add
+    }
+    if ($cur.Count -gt 0) { $batches.Add($cur.ToArray()) }
+    foreach ($group in $batches) {
+        $lines = for ($k = 0; $k -lt $group.Count; $k++) { "$($k + 1). $($Lines[$group[$k]])" }
+        $numbered = $lines -join "`n"
+        $resp = Invoke-LlmCall -Prompt (Build-AlignedTranslatePrompt -Numbered $numbered -TargetLanguage $TargetLanguage) -Backend $Backend -Model $Model -Url $Url
+        $resp = [regex]::Replace($resp, '(?is)<think>.*?</think>', '')
+        $got = @{}
+        foreach ($m in [regex]::Matches($resp, '(?m)^\s*(\d+)[.\):]\s*(.*)$')) { $got[[int]$m.Groups[1].Value] = $m.Groups[2].Value.Trim() }
+        for ($n = 0; $n -lt $group.Count; $n++) {
+            $out[$group[$n]] = if ($got.ContainsKey($n + 1)) { $got[$n + 1] } else { '' }
+        }
+    }
+    return , $out
+}
+
+function Resolve-TranslateEngine {
+    if ($TranslateEngine -ne 'auto') { return $TranslateEngine }
+    $oUrl = if ($SummarizeUrl) { $SummarizeUrl } else { $Script:DefaultOllamaUrl }
+    $lUrl = if ($SummarizeUrl) { $SummarizeUrl } else { $Script:DefaultLlamacppUrl }
+    if (Get-SummBackend -OllamaUrl $oUrl -LlamacppUrl $lUrl) { return 'llm' } else { return 'whisper' }
+}
+
 # --------------------------------------------------------------------------- #
 # Recording quality assessment - parity with plaude_local/quality.py
 # --------------------------------------------------------------------------- #
@@ -915,7 +970,8 @@ function Get-DashboardHtml {
     param(
         [string]$Title, [string]$Language, $SpeechDurationS, [int]$WordCount,
         [string]$Summary, [string]$SummaryNote, [string]$Transcript,
-        [string]$Translation, [string]$TranslationLabel, [bool]$Cjk, $Pairs
+        [string]$Translation, [string]$TranslationLabel, [bool]$Cjk, $Pairs,
+        [string]$TranscriptionEngine = '', [string]$TranslationEngine = ''
     )
     $css = @'
 :root{--bg:#f6f7f9;--surface:#fff;--text:#1a1d23;--muted:#5b6270;--accent:#0e7c86;--accent-ink:#0a5b62;--accent-soft:#e2f1f1;--border:#e4e7eb;--shadow:0 1px 2px rgba(20,25,35,.04),0 8px 24px rgba(20,25,35,.06);--font-sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--font-read:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Songti SC","Noto Serif CJK SC","Microsoft YaHei",serif;--font-mono:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;}
@@ -931,6 +987,8 @@ h1{font-family:var(--font-read);font-weight:600;font-size:clamp(1.7rem,4vw,2.4re
 .stat{flex:1 1 150px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);}
 .stat .label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 6px;}
 .stat .value{font-size:1.5rem;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;}
+.prov{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--font-mono);font-size:.72rem;color:var(--muted);margin:0 0 24px;}
+.prov b{color:var(--text);font-weight:600;}
 .summary{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:12px;padding:18px 22px;box-shadow:var(--shadow);margin:0 0 8px;}
 .summary h2{font-family:var(--font-read);font-size:1.15rem;margin:0 0 10px;}
 .summary .note{color:var(--muted);font-style:italic;}
@@ -981,6 +1039,10 @@ IDS.forEach(x=>document.getElementById("tab-"+x).addEventListener("click",()=>se
     [void]$sb.Append("<div class=`"stat`"><p class=`"label`">Speech duration</p><div class=`"value`">$dur</div></div>")
     [void]$sb.Append("<div class=`"stat`"><p class=`"label`">Words</p><div class=`"value`">$wc</div></div>")
     [void]$sb.Append("</div>`n")
+    $provParts = @()
+    if ($TranscriptionEngine) { $provParts += "<span>Transcription <b>$(& $enc $TranscriptionEngine)</b></span>" }
+    if ($TranslationEngine) { $provParts += "<span>Translation <b>$(& $enc $TranslationEngine)</b></span>" }
+    if ($provParts.Count -gt 0) { [void]$sb.Append("<div class=`"prov`">$($provParts -join '')</div>`n") }
     [void]$sb.Append("<section class=`"summary`"><h2>Critical topics</h2>$sumInner</section>`n")
     [void]$sb.Append('<div class="tabs" role="tablist" aria-label="Views">')
     [void]$sb.Append('<button class="tab" role="tab" id="tab-transcribed" aria-controls="panel-transcribed" aria-selected="true">Transcribed</button>')
@@ -1132,14 +1194,29 @@ function Invoke-Main {
 
             $target = $TranslateTo.ToLower()
             $translationText = ''
-            $pairs = $null   # time-aligned Side-by-Side rows (English/Whisper only)
+            $pairs = $null   # time-aligned Side-by-Side rows
+            $engine = Resolve-TranslateEngine
+            $sep = [char]0x00B7
+            $transcriptionEngine = "whisper-ctranslate2 $sep $Model"
+            $translationEngine = ''
+
+            # Resolve the LLM backend/model/url (summary + LLM translation).
+            $sBackend = $SummarizeBackend
+            $oUrl = if ($SummarizeUrl) { $SummarizeUrl } else { $Script:DefaultOllamaUrl }
+            $lUrl = if ($SummarizeUrl) { $SummarizeUrl } else { $Script:DefaultLlamacppUrl }
+            if ($sBackend -eq 'auto') { $sBackend = Get-SummBackend -OllamaUrl $oUrl -LlamacppUrl $lUrl }
+            $sUrl = if ($sBackend -eq 'llamacpp') { $lUrl } else { $oUrl }
+            $sModel = if ($SummarizeModel) { $SummarizeModel } elseif ($sBackend -eq 'ollama') { Get-DefaultOllamaModel -Url $oUrl } else { $null }
+            $tModel = if ($TranslateModel) { $TranslateModel } elseif ($sBackend -eq 'ollama') { Get-DefaultOllamaModel -Url $oUrl } else { $null }
+            $segTexts = @($segs | ForEach-Object { ([string]$_.text).Trim() })
+
             if ($target -eq $srcLang.ToLower()) {
                 # Target language == source: no translation needed.
                 $translationLabel = if ($target) { Get-LanguageName $target } else { 'Original' }
                 $translationText = $transcriptText
                 $pairs = Get-AlignedPairs -OrigSegments $segs -TransSegments $segs
-            } elseif ($target -eq 'en') {
-                # Source is non-English (target==source handled above) -> Whisper translate.
+                $translationEngine = 'none (same as source)'
+            } elseif ($engine -eq 'whisper' -and $target -eq 'en') {
                 $translationLabel = 'English'
                 Write-Log '      translating to English (Whisper) ...'
                 $trWork = Join-Path $work 'translate'
@@ -1154,23 +1231,22 @@ function Invoke-Main {
                         $pairs = Get-AlignedPairs -OrigSegments $segs -TransSegments $trSegs
                     }
                 } catch { Write-ErrLine "error: $($_.Exception.Message)"; return 6 }
+                $translationEngine = "Whisper translate $sep $Model"
             } else {
-                $translationLabel = Get-LanguageName $target
-            }
-
-            # Resolve the LLM backend for the summary (and any non-English translation).
-            $sBackend = $SummarizeBackend
-            $oUrl = if ($SummarizeUrl) { $SummarizeUrl } else { $Script:DefaultOllamaUrl }
-            $lUrl = if ($SummarizeUrl) { $SummarizeUrl } else { $Script:DefaultLlamacppUrl }
-            if ($sBackend -eq 'auto') { $sBackend = Get-SummBackend -OllamaUrl $oUrl -LlamacppUrl $lUrl }
-            $sModel = if ($SummarizeModel) { $SummarizeModel } else { $Script:DefaultOllamaModel }
-            $sUrl = if ($sBackend -eq 'llamacpp') { $lUrl } else { $oUrl }
-
-            if ($target -ne 'en') {
+                # LLM (accuracy-first), aligned line-by-line so Side-by-Side lines up.
+                $translationLabel = if ($target -eq 'en') { 'English' } else { Get-LanguageName $target }
                 if ($sBackend) {
                     Write-Log "      translating to $translationLabel (LLM) ..."
-                    try { $translationText = Invoke-TranslateText -Text $transcriptText -TargetLanguage $translationLabel -Backend $sBackend -Model $sModel -Url $sUrl -MaxChars $SummarizeMaxChars }
-                    catch { $translationText = ''; Write-Log "      translation unavailable: $($_.Exception.Message)" }
+                    try {
+                        $translated = Invoke-TranslateLines -Lines $segTexts -TargetLanguage $translationLabel -Backend $sBackend -Model $tModel -Url $sUrl -MaxChars $SummarizeMaxChars
+                        $translationText = (($translated | Where-Object { $_ }) -join "`n").Trim()
+                        $rowList = New-Object System.Collections.Generic.List[object]
+                        for ($i = 0; $i -lt $segTexts.Count; $i++) { $rowList.Add([pscustomobject]@{ O = $segTexts[$i]; X = $translated[$i] }) }
+                        $pairs = $rowList.ToArray()
+                        $translationEngine = "LLM $sep $(if ($tModel) { $tModel } else { 'default' })"
+                    } catch { $translationText = ''; $translationEngine = "LLM $sep unavailable"; Write-Log "      translation unavailable: $($_.Exception.Message)" }
+                } else {
+                    $translationEngine = "LLM $sep unavailable"
                 }
             }
 
@@ -1188,7 +1264,8 @@ function Invoke-Main {
             $htmlDoc = Get-DashboardHtml -Title $title -Language $srcLang -SpeechDurationS $speechS `
                 -WordCount (Get-WordCount $transcriptText) -Summary $summaryText -SummaryNote $summaryNote `
                 -Transcript $transcriptText -Translation $translationText `
-                -TranslationLabel "Translated-$translationLabel" -Cjk $cjk -Pairs $pairs
+                -TranslationLabel "Translated-$translationLabel" -Cjk $cjk -Pairs $pairs `
+                -TranscriptionEngine $transcriptionEngine -TranslationEngine $translationEngine
 
             $dashOut = if ($Output) { $Output } else { Get-DefaultOutput -Fmt 'html' }
             if ($dashOut -eq '-') {

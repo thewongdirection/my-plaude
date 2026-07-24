@@ -176,5 +176,42 @@ class TestSummarizeEntryPoint(unittest.TestCase):
             summarize.summarize("t", backend="bogus")
 
 
+class TestTranslateLines(unittest.TestCase):
+    def test_parses_numbered_lines(self):
+        out = summarize.translate_lines(
+            ["你好", "世界"], lambda p: "1. Hello\n2. World", target_language="English")
+        self.assertEqual(out, ["Hello", "World"])
+
+    def test_strips_reasoning_and_marks_unmatched_empty(self):
+        out = summarize.translate_lines(
+            ["a", "b"], lambda p: "<think>plan</think>\n1. Hi", target_language="English")
+        self.assertEqual(out, ["Hi", ""])
+
+    def test_batches_by_max_chars(self):
+        calls = []
+
+        def fake(p):
+            calls.append(p)
+            return "1. x"
+
+        summarize.translate_lines(["aaaa", "bbbb", "cccc"], fake,
+                                  target_language="English", max_chars=8)
+        self.assertGreater(len(calls), 1)
+
+
+class TestDefaultOllamaModel(unittest.TestCase):
+    def test_returns_first_installed_model(self):
+        payload = {"models": [{"name": "gemma4:latest"}, {"name": "llama3.1"}]}
+        with mock.patch.object(summarize.urllib.request, "urlopen") as uo:
+            uo.return_value.__enter__.return_value.read.return_value = \
+                __import__("json").dumps(payload).encode()
+            self.assertEqual(summarize.default_ollama_model(), "gemma4:latest")
+
+    def test_none_when_unreachable(self):
+        with mock.patch.object(summarize.urllib.request, "urlopen",
+                               side_effect=OSError("down")):
+            self.assertIsNone(summarize.default_ollama_model())
+
+
 if __name__ == "__main__":
     unittest.main()
