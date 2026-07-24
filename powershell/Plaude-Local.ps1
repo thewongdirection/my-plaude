@@ -442,6 +442,13 @@ function Invoke-Prepare {
 # --------------------------------------------------------------------------- #
 # Transcription via whisper-ctranslate2 (same faster-whisper/CTranslate2 engine)
 # --------------------------------------------------------------------------- #
+function Disable-HfTelemetry {
+    # Local-first: no Hugging Face telemetry on any run. Set-default style (an
+    # explicit opt-in is respected). Parity with Python cli.disable_telemetry().
+    if (-not $env:HF_HUB_DISABLE_TELEMETRY) { $env:HF_HUB_DISABLE_TELEMETRY = '1' }
+    if (-not $env:DISABLE_TELEMETRY) { $env:DISABLE_TELEMETRY = '1' }
+}
+
 function Set-HfOffline {
     # Force Hugging Face model loads to use only the local cache: HF_HUB_OFFLINE
     # (whisper-ctranslate2 / pyannote weights) + TRANSFORMERS_OFFLINE (whisperx).
@@ -1005,6 +1012,7 @@ function Invoke-Main {
     if ($Version) { Write-Host "plaude-local (PowerShell) $($Script:ToolVersion)"; return 0 }
     if ($Check) { return (Invoke-Check) }
 
+    Disable-HfTelemetry
     Set-HfOffline -Enabled $Offline
 
     if (-not $InputFile) {

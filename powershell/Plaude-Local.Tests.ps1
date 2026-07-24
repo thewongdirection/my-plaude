@@ -301,6 +301,29 @@ Describe 'Get-QualityReport' {
     }
 }
 
+Describe 'Disable-HfTelemetry' {
+    BeforeEach {
+        $script:sHub = $env:HF_HUB_DISABLE_TELEMETRY
+        $script:sGen = $env:DISABLE_TELEMETRY
+        Remove-Item Env:HF_HUB_DISABLE_TELEMETRY -ErrorAction SilentlyContinue
+        Remove-Item Env:DISABLE_TELEMETRY -ErrorAction SilentlyContinue
+    }
+    AfterEach {
+        if ($null -eq $script:sHub) { Remove-Item Env:HF_HUB_DISABLE_TELEMETRY -ErrorAction SilentlyContinue } else { $env:HF_HUB_DISABLE_TELEMETRY = $script:sHub }
+        if ($null -eq $script:sGen) { Remove-Item Env:DISABLE_TELEMETRY -ErrorAction SilentlyContinue } else { $env:DISABLE_TELEMETRY = $script:sGen }
+    }
+    It 'disables HF telemetry by default' {
+        Disable-HfTelemetry
+        $env:HF_HUB_DISABLE_TELEMETRY | Should -Be '1'
+        $env:DISABLE_TELEMETRY | Should -Be '1'
+    }
+    It 'respects an explicit opt-in' {
+        $env:HF_HUB_DISABLE_TELEMETRY = '0'
+        Disable-HfTelemetry
+        $env:HF_HUB_DISABLE_TELEMETRY | Should -Be '0'
+    }
+}
+
 Describe 'Set-HfOffline' {
     BeforeEach {
         $script:savedHub = $env:HF_HUB_OFFLINE

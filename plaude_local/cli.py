@@ -316,6 +316,18 @@ def _run_assess_only(in_path: Path, args) -> int:
     return 0
 
 
+def disable_telemetry() -> None:
+    """Turn off Hugging Face usage telemetry so a normal run never phones home.
+
+    plaude-local is local-first: the only network touch is a one-time model
+    download. huggingface_hub otherwise emits anonymous telemetry on model loads,
+    so disable it by default (both the hub-specific and generic switches). Uses
+    setdefault, so a user who explicitly opts in is still respected.
+    """
+    os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+    os.environ.setdefault("DISABLE_TELEMETRY", "1")
+
+
 def apply_offline(enabled: bool) -> None:
     """Force Hugging Face model loads to use only the local cache.
 
@@ -412,6 +424,7 @@ def _run_dashboard(args, segments, meta, whisper_translate_segs) -> int:
 
 def run(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    disable_telemetry()  # local-first: no HF telemetry on any run
 
     if args.check:
         return _run_check()

@@ -145,6 +145,12 @@ The token is only used **once, to download the gated speaker model** — it is a
 download credential, not a cloud service. Your audio never leaves the machine;
 diarization (like transcription and summarization) runs entirely on your CPU/GPU.
 
+> **Local-first by default.** Summarization/translation use your local LLM
+> (Ollama/llama.cpp over localhost); the only network touch is the one-time model
+> download from Hugging Face. plaude-local also **disables Hugging Face telemetry
+> by default** (`HF_HUB_DISABLE_TELEMETRY`), so a normal run never phones home.
+> Add `--offline` after the first download to guarantee zero network access.
+
 **Download once, then run fully offline.** After the weights are cached (from any
 first run that reached the network), add `--offline` to guarantee no network
 access — it sets `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` so every model loads

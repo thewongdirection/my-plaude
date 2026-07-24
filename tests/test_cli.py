@@ -84,6 +84,31 @@ class TestOffline(unittest.TestCase):
         self.assertEqual(os.environ["TRANSFORMERS_OFFLINE"], "1")
 
 
+class TestTelemetry(unittest.TestCase):
+    def setUp(self):
+        self._saved = {k: os.environ.get(k)
+                       for k in ("HF_HUB_DISABLE_TELEMETRY", "DISABLE_TELEMETRY")}
+        for k in self._saved:
+            os.environ.pop(k, None)
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_disables_hf_telemetry_by_default(self):
+        cli.disable_telemetry()
+        self.assertEqual(os.environ["HF_HUB_DISABLE_TELEMETRY"], "1")
+        self.assertEqual(os.environ["DISABLE_TELEMETRY"], "1")
+
+    def test_respects_explicit_opt_in(self):
+        os.environ["HF_HUB_DISABLE_TELEMETRY"] = "0"  # user opted back in
+        cli.disable_telemetry()
+        self.assertEqual(os.environ["HF_HUB_DISABLE_TELEMETRY"], "0")
+
+
 class TestCheck(unittest.TestCase):
     def test_check_all_ok_returns_zero(self):
         ok = [Check("Python", True, True), Check("FFmpeg", True, True)]
