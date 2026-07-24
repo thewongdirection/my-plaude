@@ -50,8 +50,31 @@ def build_parser() -> argparse.ArgumentParser:
              "the current directory. Use '-' to write to stdout. Always UTF-8.",
     )
     p.add_argument(
-        "-f", "--format", choices=formats.FORMATS, default="txt",
-        help="output format",
+        "-f", "--format", choices=list(formats.FORMATS) + ["html"], default="html",
+        help="output format. Default 'html' produces an interactive dashboard "
+             "(summary + Transcribed / Translated / Side-by-Side tabs); "
+             "txt/srt/vtt/json produce the plain transcript.",
+    )
+    p.add_argument(
+        "--translate-to", default="en", metavar="LANG",
+        help="target language for the dashboard's translation tab (default: en). "
+             "English uses Whisper's native translation; other languages use the "
+             "local LLM.",
+    )
+    p.add_argument(
+        "--split-outputs", action="store_true",
+        help="also write the transcription and translation to separate text "
+             "files (see --transcription-file / --translation-file).",
+    )
+    p.add_argument(
+        "--transcription-file", default=None, metavar="PATH",
+        help="write the transcription here (implies --split-outputs; "
+             "default: transcription.txt).",
+    )
+    p.add_argument(
+        "--translation-file", default=None, metavar="PATH",
+        help="write the translation here (implies --split-outputs; "
+             "default: translation.txt).",
     )
     p.add_argument(
         "-y", "--yes", "--overwrite", action="store_true", dest="yes",
@@ -307,6 +330,78 @@ def apply_offline(enabled: bool) -> None:
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 
+def _run_dashboard(args, segments, meta, whisper_english) -> int:
+    """Build + write the HTML dashboard (default output): summary + tabs."""
+    from . import dashboard
+    from . import summarize as summ
+
+    transcript_text = formats.to_text(segments)
+    source_lang = (meta.get("language") or "").lower()
+    target = (args.translate_to or "en").lower()
+
+    # Translation for the "Translated-<lang>" tab.
+    if target == "en":
+        translation_label = "English"
+        translation_text = transcript_text if source_lang == "en" else (whisper_english or "")
+    else:
+        translation_label = dashboard.language_name(target)
+        _log(args.quiet, f"      translating to {translation_label} (LLM) ...")
+        try:
+            translation_text = summ.translate(
+                transcript_text, target_language=translation_label,
+                backend=args.summarize_backend, model=args.summarize_model,
+                url=args.summarize_url, max_chars=args.summarize_max_chars)
+        except summ.SummarizeError as exc:
+            translation_text = ""
+            _log(args.quiet, f"      translation unavailable: {exc}")
+
+    # <=250-word critical-topics summary (graceful when no LLM is reachable).
+    summary_text, summary_note = None, None
+    _log(args.quiet, "      summarizing critical topics ...")
+    try:
+        summary_text = summ.summarize(
+            transcript_text, topics=True, max_words=250,
+            backend=args.summarize_backend, model=args.summarize_model,
+            url=args.summarize_url, max_chars=args.summarize_max_chars)
+    except summ.SummarizeError as exc:
+        summary_note = f"Summary unavailable ({exc})."
+
+    speech_s = sum(max(0.0, float(s.get("end", 0)) - float(s.get("start", 0)))
+                   for s in segments) or meta.get("duration")
+    html_doc = dashboard.build_dashboard_html(
+        title=f"{Path(args.input).stem} — transcript dashboard",
+        language=meta.get("language"), speech_duration_s=speech_s,
+        word_count=dashboard.count_words(transcript_text),
+        summary=summary_text, summary_note=summary_note,
+        transcript=transcript_text, translation=translation_text,
+        translation_label=f"Translated-{translation_label}",
+        cjk=source_lang in ("zh", "ja", "ko"))
+
+    out = args.output if args.output else _default_output("html")
+    if out != "-" and not _confirm_overwrite(out, assume_yes=args.yes, quiet=args.quiet):
+        print(f"aborted: {out} was not overwritten.", file=sys.stderr)
+        return 11
+    try:
+        _write_utf8(html_doc, out)
+    except OSError as exc:
+        print(f"error: could not write dashboard to {out}: {exc}", file=sys.stderr)
+        return 9
+    if out != "-":
+        _log(args.quiet, f"[4/4] dashboard -> {out}")
+
+    if args.split_outputs or args.transcription_file or args.translation_file:
+        tfile = args.transcription_file or "transcription.txt"
+        xfile = args.translation_file or "translation.txt"
+        try:
+            _write_utf8(transcript_text.rstrip("\n") + "\n", tfile)
+            _write_utf8((translation_text or "").rstrip("\n") + "\n", xfile)
+        except OSError as exc:
+            print(f"error: could not write split outputs: {exc}", file=sys.stderr)
+            return 9
+        _log(args.quiet, f"      transcription -> {tfile}   translation -> {xfile}")
+    return 0
+
+
 def run(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -380,6 +475,7 @@ def run(argv: Optional[List[str]] = None) -> int:
                   + preflight.check_summarizer().remedy, file=sys.stderr)
             return 8
 
+    whisper_english = None  # English translation via Whisper (dashboard only)
     with tempfile.TemporaryDirectory(prefix="plaude-local-") as tmp:
         # 1. Preprocess / denoise / enhance
         _log(args.quiet,
@@ -424,6 +520,22 @@ def run(argv: Optional[List[str]] = None) -> int:
             return 6
         _log(args.quiet, f"      detected language: {meta.get('language')}")
 
+        # For the HTML dashboard's English tab, run Whisper's native translate
+        # task (a second decode pass) unless the source is already English or a
+        # non-English target was requested (that goes through the LLM later).
+        if (args.format == "html" and args.translate_to == "en"
+                and (meta.get("language") or "").lower() != "en"):
+            _log(args.quiet, "      translating to English (Whisper) ...")
+            try:
+                _tr_segs, _ = engine.transcribe(
+                    str(prepared), language=args.language,
+                    vad_filter=not args.no_vad, beam_size=args.beam_size,
+                    task="translate")
+                whisper_english = formats.to_text(_tr_segs)
+            except transcribe.TranscribeError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 6
+
         # Assess quality from the RAW segments (before diarization rebuilds
         # them and drops the per-segment metrics).
         from . import quality
@@ -466,6 +578,11 @@ def run(argv: Optional[List[str]] = None) -> int:
             return 12
         print(f"warning: {quality_report.summary()} (writing anyway; "
               "use --on-bad to change)", file=sys.stderr)
+
+    # 4a. HTML dashboard (default format): summary + Transcribed / Translated /
+    # Side-by-Side tabs, plus optional split text files.
+    if args.format == "html":
+        return _run_dashboard(args, segments, meta, whisper_english)
 
     # 4. Render + write transcript (UTF-8)
     # "timestamps" is an internal rendering hint for the txt writer (show a clock

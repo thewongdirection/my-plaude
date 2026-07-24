@@ -39,7 +39,8 @@ class TestParser(unittest.TestCase):
         self.assertEqual(args.model, "large-v3")
         self.assertEqual(args.device, "auto")
         self.assertEqual(args.denoise, "ffmpeg")
-        self.assertEqual(args.format, "txt")
+        self.assertEqual(args.format, "html")
+        self.assertEqual(args.translate_to, "en")
         self.assertEqual(args.diarize_backend, "pyannote")
         self.assertFalse(args.diarize)
 
@@ -153,7 +154,7 @@ class TestOrchestration(unittest.TestCase):
                  mock.patch.object(
                      transcribe, "Transcriber",
                      lambda **kw: _FakeEngine(segs, **kw)):
-                rc = cli.run([str(f), "-o", str(out), "--denoise", "none",
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-f", "txt",
                               "--enhance", "speech", "--gain", "6", "-q"])
             self.assertEqual(rc, 0)
             self.assertEqual(prep.call_args.kwargs["enhance"], "speech")
@@ -174,7 +175,7 @@ class TestOrchestration(unittest.TestCase):
             with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
                  mock.patch.object(audio, "prepare", return_value=f), \
                  mock.patch.object(transcribe, "Transcriber", _factory):
-                rc = cli.run([str(f), "-o", str(out), "--denoise", "none",
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-f", "txt",
                               "--device", device, "-q"])
         return rc, captured.get("device")
 
@@ -201,7 +202,7 @@ class TestOrchestration(unittest.TestCase):
                  mock.patch.object(
                      transcribe, "Transcriber",
                      lambda **kw: _FakeEngine(segs, **kw)):
-                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-q"])
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-f", "txt", "-q"])
             self.assertEqual(rc, 0)
             self.assertEqual(out.read_text(encoding="utf-8"), "Hello.\nWorld.\n")
 
@@ -217,7 +218,7 @@ class TestOrchestration(unittest.TestCase):
                      mock.patch.object(
                          transcribe, "Transcriber",
                          lambda **kw: _FakeEngine(segs, **kw)):
-                    rc = cli.run([str(f), "--denoise", "none", "-q"])
+                    rc = cli.run([str(f), "--denoise", "none", "-f", "txt", "-q"])
             finally:
                 os.chdir(cwd)
             self.assertEqual(rc, 0)
@@ -255,7 +256,7 @@ class TestOrchestration(unittest.TestCase):
                  mock.patch.object(
                      transcribe, "Transcriber",
                      lambda **kw: _FakeEngine(segs, **kw)):
-                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-q"])
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-f", "txt", "-q"])
             self.assertEqual(rc, 0)
             # Decoding as UTF-8 must succeed and preserve the characters.
             content = out.read_bytes().decode("utf-8")
@@ -280,7 +281,7 @@ class TestOrchestration(unittest.TestCase):
                      transcribe, "Transcriber",
                      lambda **kw: _FakeEngine(segs, **kw)), \
                  mock.patch("sys.stdout", fake):
-                rc = cli.run([str(f), "-o", "-", "--denoise", "none", "-q"])
+                rc = cli.run([str(f), "-o", "-", "--denoise", "none", "-f", "txt", "-q"])
             self.assertEqual(rc, 0)
             emitted = fake.buffer.getvalue()
             self.assertIsInstance(emitted, bytes)
@@ -316,7 +317,7 @@ class TestOrchestration(unittest.TestCase):
                  mock.patch.object(
                      transcribe, "Transcriber",
                      lambda **kw: _FakeEngine(segs, **kw)):
-                rc = cli.run([str(f), "-o", str(out), "--denoise", "none",
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-f", "txt",
                               "--keep-clean", str(clean), "-q"])
             self.assertEqual(rc, 0)
             self.assertTrue(clean.is_file())
@@ -336,7 +337,7 @@ class TestOrchestration(unittest.TestCase):
                  mock.patch.object(summarize, "detect_backend", return_value="ollama"), \
                  mock.patch.object(summarize, "summarize", return_value="* key point"), \
                  contextlib.redirect_stdout(buf):
-                rc = cli.run([str(f), "-o", str(out), "--denoise", "none",
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-f", "txt",
                               "--summarize", "--summary-output", "-", "-q"])
             self.assertEqual(rc, 0)
             self.assertIn("* key point", buf.getvalue())
@@ -354,7 +355,7 @@ class TestOrchestration(unittest.TestCase):
                      transcribe, "Transcriber",
                      lambda **kw: _FakeEngine(segs, **kw)), \
                  contextlib.redirect_stderr(io.StringIO()):
-                rc = cli.run([str(f), "-o", str(bad), "--denoise", "none", "-q"])
+                rc = cli.run([str(f), "-o", str(bad), "--denoise", "none", "-f", "txt", "-q"])
             self.assertEqual(rc, 9)
 
     def test_summarize_writes_summary_file(self):
@@ -370,7 +371,7 @@ class TestOrchestration(unittest.TestCase):
                  mock.patch.object(summarize, "detect_backend", return_value="ollama"), \
                  mock.patch.object(summarize, "summarize",
                                    return_value="* key point") as m:
-                rc = cli.run([str(f), "-o", str(out), "--denoise", "none",
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-f", "txt",
                               "--summarize", "-q"])
             self.assertEqual(rc, 0)
             summary = pathlib.Path(d) / "o.summary.md"
@@ -403,7 +404,7 @@ class TestOrchestration(unittest.TestCase):
                      lambda **kw: _FakeEngine(segs, **kw)), \
                  mock.patch.object(diarize, "diarize_and_merge",
                                    return_value=tagged) as m:
-                rc = cli.run([str(f), "--denoise", "none", "--diarize",
+                rc = cli.run([str(f), "--denoise", "none", "--diarize", "-f", "txt",
                               "--hf-token", "t", "--diarize-model", "pyannote/x",
                               "-o", str(out), "-q"])
             self.assertEqual(rc, 0)
@@ -470,7 +471,7 @@ class TestOverwrite(unittest.TestCase):
             with contextlib.ExitStack() as stack:
                 for p in patches:
                     stack.enter_context(p)
-                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-q"]
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-f", "txt", "-q"]
                              + extra_args)
             return rc, out.read_text(encoding="utf-8")
 
@@ -508,7 +509,7 @@ class TestInputProbing(unittest.TestCase):
                      transcribe, "Transcriber",
                      lambda **kw: _FakeEngine(self._SEGS, **kw)), \
                  contextlib.redirect_stderr(io.StringIO()):
-                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-q"])
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-f", "txt", "-q"])
             return rc, out.is_file()
 
     def test_any_extension_accepted_when_ffprobe_finds_audio(self):
@@ -579,7 +580,7 @@ class TestQualityGate(unittest.TestCase):
                      transcribe, "Transcriber",
                      lambda **kw: _FakeEngine(self._BAD, **kw)), \
                  contextlib.redirect_stderr(err):
-                rc = cli.run([str(f), "-o", str(out), "--denoise", "none"]
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-f", "txt"]
                              + extra + ["-q"])
             return rc, out.exists(), err.getvalue()
 
@@ -617,6 +618,95 @@ class TestQualityGate(unittest.TestCase):
             data = json.loads(out.read_text(encoding="utf-8"))
             self.assertIn("quality", data["meta"])
             self.assertEqual(data["meta"]["quality"]["verdict"], "ok")
+
+
+class _DashEngine:
+    """Fake Transcriber for the dashboard: source language + a translate pass."""
+
+    def __init__(self, src_segs, en_segs, language, **_kw):
+        self._src, self._en, self._lang = src_segs, en_segs, language
+        self.device, self.compute_type = "cpu", "int8"
+        self.passes = 0
+
+    def transcribe(self, path, *, task="transcribe", **_kw):
+        self.passes += 1
+        segs = self._en if task == "translate" else self._src
+        return [dict(s) for s in segs], {"language": self._lang, "duration": 3.0}
+
+
+class TestDashboard(unittest.TestCase):
+    def setUp(self):
+        p = mock.patch.object(audio, "have_ffprobe", return_value=False)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def _input(self, d):
+        f = pathlib.Path(d) / "rec.wav"
+        f.write_bytes(b"x")
+        return f
+
+    def _run(self, engine, extra, mock_summary="Key topics here.", summary_error=False):
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            cwd = os.getcwd()
+            os.chdir(d)
+            try:
+                sm = (mock.patch.object(summarize, "summarize",
+                                        side_effect=summarize.SummarizeError("no server"))
+                      if summary_error else
+                      mock.patch.object(summarize, "summarize", return_value=mock_summary))
+                with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                     mock.patch.object(audio, "prepare", return_value=f), \
+                     mock.patch.object(transcribe, "Transcriber", lambda **kw: engine), \
+                     sm:
+                    rc = cli.run([str(f), "-o", "dash.html", "--denoise", "none"] + extra + ["-q"])
+                html = ""
+                if (pathlib.Path(d) / "dash.html").exists():
+                    html = (pathlib.Path(d) / "dash.html").read_text(encoding="utf-8")
+                files = {p.name: p.read_text(encoding="utf-8")
+                         for p in pathlib.Path(d).glob("*.txt")}
+                return rc, html, files
+            finally:
+                os.chdir(cwd)
+
+    def test_non_english_dashboard_has_transcript_translation_summary(self):
+        eng = _DashEngine(
+            [{"start": 0.0, "end": 3.0, "text": "你好世界", "speaker": None}],
+            [{"start": 0.0, "end": 3.0, "text": "Hello world", "speaker": None}],
+            "zh")
+        rc, html, _ = self._run(eng, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(eng.passes, 2)               # transcribe + Whisper translate
+        self.assertIn("你好世界", html)               # Transcribed tab
+        self.assertIn("Hello world", html)            # Translated (Whisper)
+        self.assertIn("Key topics here.", html)       # summary
+        self.assertIn("Translated-English", html)
+        self.assertIn("Side-by-Side", html)
+
+    def test_english_source_skips_translate_pass(self):
+        eng = _DashEngine(
+            [{"start": 0.0, "end": 2.0, "text": "Hello there", "speaker": None}],
+            [], "en")
+        rc, html, _ = self._run(eng, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(eng.passes, 1)               # no separate translate pass
+        self.assertIn("Hello there", html)
+
+    def test_split_outputs_writes_transcription_and_translation(self):
+        eng = _DashEngine(
+            [{"start": 0.0, "end": 3.0, "text": "你好", "speaker": None}],
+            [{"start": 0.0, "end": 3.0, "text": "Hello", "speaker": None}], "zh")
+        rc, _, files = self._run(eng, ["--split-outputs"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(files["transcription.txt"].strip(), "你好")
+        self.assertEqual(files["translation.txt"].strip(), "Hello")
+
+    def test_summary_degrades_gracefully_without_llm(self):
+        eng = _DashEngine(
+            [{"start": 0.0, "end": 2.0, "text": "Hello", "speaker": None}], [], "en")
+        rc, html, _ = self._run(eng, [], summary_error=True)
+        self.assertEqual(rc, 0)
+        self.assertIn("Summary unavailable", html)
 
 
 if __name__ == "__main__":

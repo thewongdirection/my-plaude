@@ -145,6 +145,34 @@ def build_prompt(text: str, *, combine: bool = False) -> str:
     return f"{head}\n\n{label}:\n{text}\n\nSummary:"
 
 
+def build_topics_prompt(text: str, *, combine: bool = False, max_words: int = 250) -> str:
+    """Prompt for the dashboard's <=250-word 'critical topics' summary."""
+    if combine:
+        head = (
+            "Below are partial notes from a longer transcript. Combine them into a "
+            f"single summary of the most critical topics, in at most {max_words} "
+            "words. No preamble. Preserve the original language of the transcript."
+        )
+        label = "Partial notes"
+    else:
+        head = (
+            "Summarize the most critical topics discussed in the following "
+            f"transcript in at most {max_words} words. Focus on what matters most; "
+            "no preamble or meta commentary. Preserve the original language."
+        )
+        label = "Transcript"
+    return f"{head}\n\n{label}:\n{text}\n\nSummary:"
+
+
+def build_translate_prompt(text: str, target_language: str) -> str:
+    """Prompt to translate text into ``target_language`` (LLM path)."""
+    return (
+        f"Translate the following text into {target_language}. Output ONLY the "
+        "translation, preserving line breaks and meaning, with no preamble, notes, "
+        f"or the original text.\n\nText:\n{text}\n\n{target_language} translation:"
+    )
+
+
 def _chunk(text: str, max_chars: int) -> List[str]:
     """Split text into <= max_chars pieces, preferring paragraph/line breaks.
 
@@ -177,12 +205,15 @@ def summarize_text(
     call: Callable[[str], str],
     *,
     max_chars: int = DEFAULT_MAX_CHARS,
+    prompt_builder: Callable[..., str] = build_prompt,
     _depth: int = 0,
 ) -> str:
     """Summarize ``text`` using ``call`` (prompt -> completion).
 
     Short text is summarized in one shot. Long text is chunked, each chunk
     summarized, and the partial summaries combined (recursively, bounded).
+    ``prompt_builder`` lets callers swap the prompt (e.g. the dashboard's
+    ``build_topics_prompt``); it must accept ``(text, *, combine=bool)``.
     """
     text = text.strip()
     if not text:
@@ -191,37 +222,49 @@ def summarize_text(
     max_chars = max(int(max_chars), 1)
     chunks = _chunk(text, max_chars)
     if len(chunks) == 1:
-        return call(build_prompt(chunks[0], combine=False)).strip()
+        return call(prompt_builder(chunks[0], combine=False)).strip()
 
-    partials = [call(build_prompt(c, combine=False)).strip() for c in chunks]
+    partials = [call(prompt_builder(c, combine=False)).strip() for c in chunks]
     combined = "\n\n".join(partials)
     if len(combined) <= max_chars or _depth >= 3:
-        return call(build_prompt(combined, combine=True)).strip()
+        return call(prompt_builder(combined, combine=True)).strip()
     # Combined summaries are still huge - reduce again.
-    return summarize_text(combined, call, max_chars=max_chars, _depth=_depth + 1)
+    return summarize_text(combined, call, max_chars=max_chars,
+                          prompt_builder=prompt_builder, _depth=_depth + 1)
+
+
+def translate_text(
+    text: str,
+    call: Callable[[str], str],
+    *,
+    target_language: str,
+    max_chars: int = DEFAULT_MAX_CHARS,
+) -> str:
+    """Translate ``text`` into ``target_language`` via ``call`` (chunked)."""
+    text = text.strip()
+    if not text:
+        return ""
+    chunks = _chunk(text, max_chars)
+    return "\n".join(
+        call(build_translate_prompt(c, target_language)).strip() for c in chunks
+    )
 
 
 # --------------------------------------------------------------------------- #
 # Public entry point
 # --------------------------------------------------------------------------- #
 
-def summarize(
-    text: str,
-    *,
-    backend: str = "auto",
-    model: Optional[str] = None,
-    url: Optional[str] = None,
-    timeout: float = 120.0,
-    max_chars: int = DEFAULT_MAX_CHARS,
-) -> str:
-    """Summarize a transcript with a local LLM backend."""
+def _resolve_call(
+    backend: str, model: Optional[str], url: Optional[str], timeout: float
+) -> Callable[[str], str]:
+    """Resolve a local LLM ``call`` (prompt -> completion) for the backend."""
     if backend == "auto":
         detected = detect_backend(
             url or DEFAULT_OLLAMA_URL, url or DEFAULT_LLAMACPP_URL
         )
         if detected is None:
             raise SummarizeError(
-                "no local LLM server detected for summarization. Start one of:\n"
+                "no local LLM server detected. Start one of:\n"
                 "  - Ollama:    install from https://ollama.com/download, then "
                 "`ollama pull llama3.1` and `ollama serve`\n"
                 "  - llama.cpp: https://github.com/ggml-org/llama.cpp, then run "
@@ -232,14 +275,52 @@ def summarize(
     if backend == "ollama":
         base = url or DEFAULT_OLLAMA_URL
         chosen_model = model or DEFAULT_OLLAMA_MODEL
-        call = lambda p: _ollama_call(p, chosen_model, base, timeout)
-    elif backend == "llamacpp":
+        return lambda p: _ollama_call(p, chosen_model, base, timeout)
+    if backend == "llamacpp":
         base = url or DEFAULT_LLAMACPP_URL
-        call = lambda p: _llamacpp_call(p, model, base, timeout)
-    else:
-        raise SummarizeError(
-            f"unknown summarization backend: {backend!r} "
-            f"(choose from {', '.join(BACKENDS)}, or auto)"
-        )
+        return lambda p: _llamacpp_call(p, model, base, timeout)
+    raise SummarizeError(
+        f"unknown backend: {backend!r} (choose from {', '.join(BACKENDS)}, or auto)"
+    )
 
-    return summarize_text(text, call, max_chars=max_chars)
+
+def summarize(
+    text: str,
+    *,
+    backend: str = "auto",
+    model: Optional[str] = None,
+    url: Optional[str] = None,
+    timeout: float = 120.0,
+    max_chars: int = DEFAULT_MAX_CHARS,
+    topics: bool = False,
+    max_words: int = 250,
+) -> str:
+    """Summarize a transcript with a local LLM backend.
+
+    ``topics=True`` uses the dashboard's <=``max_words`` critical-topics prompt.
+    """
+    call = _resolve_call(backend, model, url, timeout)
+    builder = build_prompt
+    if topics:
+        builder = lambda t, *, combine=False: build_topics_prompt(
+            t, combine=combine, max_words=max_words
+        )
+    return summarize_text(text, call, max_chars=max_chars, prompt_builder=builder)
+
+
+def translate(
+    text: str,
+    *,
+    target_language: str = "English",
+    backend: str = "auto",
+    model: Optional[str] = None,
+    url: Optional[str] = None,
+    timeout: float = 120.0,
+    max_chars: int = DEFAULT_MAX_CHARS,
+) -> str:
+    """Translate a transcript into ``target_language`` with a local LLM backend.
+
+    Used for non-English dashboard targets; English uses Whisper's translate task.
+    """
+    call = _resolve_call(backend, model, url, timeout)
+    return translate_text(text, call, target_language=target_language, max_chars=max_chars)

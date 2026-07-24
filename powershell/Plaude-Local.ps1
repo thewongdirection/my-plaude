@@ -39,8 +39,13 @@ param(
     [Alias('o')]
     [string]$Output,
 
-    [ValidateSet('txt', 'srt', 'vtt', 'json')]
-    [string]$Format = 'txt',
+    [ValidateSet('txt', 'srt', 'vtt', 'json', 'html')]
+    [string]$Format = 'html',
+
+    [string]$TranslateTo = 'en',
+    [switch]$SplitOutputs,
+    [string]$TranscriptionFile,
+    [string]$TranslationFile,
 
     [Alias('Doctor')]
     [switch]$Check,
@@ -497,7 +502,8 @@ main()
 }
 
 function Invoke-Transcribe {
-    param([string]$AudioPath, [string]$WorkDir, [string]$Dev, [string]$Compute, [string]$Token)
+    param([string]$AudioPath, [string]$WorkDir, [string]$Dev, [string]$Compute,
+          [string]$Token, [string]$Task = 'transcribe')
 
     # Always request 'all' so we get JSON (per-segment quality metrics) and a
     # plain-text copy (for summarization) alongside the requested format.
@@ -506,6 +512,7 @@ function Invoke-Transcribe {
         '--model', $Model,
         '--device', $Dev,
         '--compute_type', $Compute,
+        '--task', $Task,
         '--output_dir', $WorkDir,
         '--output_format', 'all',
         '--beam_size', "$BeamSize",
@@ -539,7 +546,9 @@ function Invoke-Transcribe {
     if ($LASTEXITCODE -ne 0) { throw "whisper-ctranslate2 failed (exit $LASTEXITCODE)." }
 
     $base = [System.IO.Path]::GetFileNameWithoutExtension($AudioPath)
-    $produced = Join-Path $WorkDir "$base.$Format"
+    # whisper-ctranslate2 does not emit 'html'; the dashboard reads the txt copy.
+    $ext = if ($Format -eq 'html') { 'txt' } else { $Format }
+    $produced = Join-Path $WorkDir "$base.$ext"
     if (-not (Test-Path -LiteralPath $produced)) {
         throw "expected transcript not found at $produced"
     }
@@ -625,27 +634,49 @@ function Invoke-LlmCall {
 function Invoke-Summarize {
     param(
         [string]$Text, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars,
-        [int]$Depth = 0
+        [int]$Depth = 0, [switch]$Topics
     )
     $Text = $Text.Trim()
     if (-not $Text) { throw 'nothing to summarize: the transcript is empty.' }
     $MaxChars = [Math]::Max($MaxChars, 1)
+    # Select the prompt builder: dashboard 'topics' (<=250 words) or bullets.
+    $pf = {
+        param([string]$t, [switch]$c)
+        if ($Topics) { Get-CriticalTopicsPrompt -Text $t -Combine:$c }
+        else { Build-SummaryPrompt -Text $t -Combine:$c }
+    }
 
     $chunks = Split-IntoChunks -Text $Text -MaxChars $MaxChars
     if ($chunks.Count -le 1) {
-        return Invoke-LlmCall -Prompt (Build-SummaryPrompt -Text $chunks[0]) -Backend $Backend -Model $Model -Url $Url
+        return Invoke-LlmCall -Prompt (& $pf $chunks[0]) -Backend $Backend -Model $Model -Url $Url
     }
     $partials = foreach ($c in $chunks) {
-        Invoke-LlmCall -Prompt (Build-SummaryPrompt -Text $c) -Backend $Backend -Model $Model -Url $Url
+        Invoke-LlmCall -Prompt (& $pf $c) -Backend $Backend -Model $Model -Url $Url
     }
     $combined = ($partials -join "`n`n")
     # Map-reduce (parity with Python's summarize_text): if the combined partial
     # summaries still exceed the budget, reduce again - bounded to depth 3 so it
     # always terminates.
     if ($combined.Length -le $MaxChars -or $Depth -ge 3) {
-        return Invoke-LlmCall -Prompt (Build-SummaryPrompt -Text $combined -Combine) -Backend $Backend -Model $Model -Url $Url
+        return Invoke-LlmCall -Prompt (& $pf $combined -c) -Backend $Backend -Model $Model -Url $Url
     }
-    return Invoke-Summarize -Text $combined -Backend $Backend -Model $Model -Url $Url -MaxChars $MaxChars -Depth ($Depth + 1)
+    return Invoke-Summarize -Text $combined -Backend $Backend -Model $Model -Url $Url -MaxChars $MaxChars -Depth ($Depth + 1) -Topics:$Topics
+}
+
+function Build-TranslatePrompt {
+    param([string]$Text, [string]$TargetLanguage)
+    return "Translate the following text into $TargetLanguage. Output ONLY the translation, preserving line breaks and meaning, with no preamble, notes, or the original text.`n`nText:`n$Text`n`n$TargetLanguage translation:"
+}
+
+function Invoke-TranslateText {
+    param([string]$Text, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars)
+    $Text = $Text.Trim()
+    if (-not $Text) { return '' }
+    $chunks = Split-IntoChunks -Text $Text -MaxChars $MaxChars
+    $parts = foreach ($c in $chunks) {
+        Invoke-LlmCall -Prompt (Build-TranslatePrompt -Text $c -TargetLanguage $TargetLanguage) -Backend $Backend -Model $Model -Url $Url
+    }
+    return ($parts -join "`n")
 }
 
 # --------------------------------------------------------------------------- #
@@ -803,6 +834,140 @@ function Invoke-Check {
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# HTML dashboard (parity with plaude_local/dashboard.py)
+# --------------------------------------------------------------------------- #
+$Script:LangNames = @{
+    en = 'English'; zh = 'Chinese'; ms = 'Malay'; es = 'Spanish'; fr = 'French'
+    de = 'German'; ja = 'Japanese'; ko = 'Korean'; id = 'Indonesian'; hi = 'Hindi'
+    ar = 'Arabic'; pt = 'Portuguese'; ru = 'Russian'; it = 'Italian'; vi = 'Vietnamese'
+    th = 'Thai'; nl = 'Dutch'; tr = 'Turkish'; pl = 'Polish'; uk = 'Ukrainian'
+}
+$Script:CjkRegex = ('[{0}-{1}{2}-{3}{4}-{5}{6}-{7}]' -f [char]0x3400,[char]0x9fff,[char]0xf900,[char]0xfaff,[char]0x3040,[char]0x30ff,[char]0xac00,[char]0xd7af)
+
+function Get-LanguageName {
+    param([string]$Code)
+    if (-not $Code) { return 'Unknown' }
+    $c = $Code.ToLower()
+    if ($Script:LangNames.ContainsKey($c)) { return $Script:LangNames[$c] }
+    return $Code
+}
+
+function Get-WordCount {
+    param([string]$Text)
+    if (-not $Text) { return 0 }
+    $cjk = ([regex]::Matches($Text, $Script:CjkRegex)).Count
+    $spaced = @([regex]::Replace($Text, $Script:CjkRegex, ' ') -split '\s+' |
+        Where-Object { $_ -ne '' }).Count
+    return $cjk + $spaced
+}
+
+function Format-SpeechDuration {
+    param($Seconds)
+    if ($null -eq $Seconds) { return [char]0x2014 }  # em dash
+    $s = [int][Math]::Round([double]$Seconds)
+    $h = [int][Math]::Floor($s / 3600); $m = [int][Math]::Floor(($s % 3600) / 60); $sec = [int]($s % 60)
+    if ($h -gt 0) { return ('{0}h {1:d2}m {2:d2}s' -f $h, $m, $sec) }
+    if ($m -gt 0) { return ('{0}m {1:d2}s' -f $m, $sec) }
+    return "${sec}s"
+}
+
+function Get-CriticalTopicsPrompt {
+    param([string]$Text, [switch]$Combine, [int]$MaxWords = 250)
+    if ($Combine) {
+        $head = "Below are partial notes from a longer transcript. Combine them into a single summary of the most critical topics, in at most $MaxWords words. No preamble. Preserve the original language of the transcript."
+        $label = 'Partial notes'
+    } else {
+        $head = "Summarize the most critical topics discussed in the following transcript in at most $MaxWords words. Focus on what matters most; no preamble or meta commentary. Preserve the original language."
+        $label = 'Transcript'
+    }
+    return "$head`n`n${label}:`n$Text`n`nSummary:"
+}
+
+function Get-DashboardHtml {
+    param(
+        [string]$Title, [string]$Language, $SpeechDurationS, [int]$WordCount,
+        [string]$Summary, [string]$SummaryNote, [string]$Transcript,
+        [string]$Translation, [string]$TranslationLabel, [bool]$Cjk
+    )
+    $css = @'
+:root{--bg:#f6f7f9;--surface:#fff;--text:#1a1d23;--muted:#5b6270;--accent:#0e7c86;--accent-ink:#0a5b62;--accent-soft:#e2f1f1;--border:#e4e7eb;--shadow:0 1px 2px rgba(20,25,35,.04),0 8px 24px rgba(20,25,35,.06);--font-sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--font-read:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Songti SC","Noto Serif CJK SC","Microsoft YaHei",serif;--font-mono:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--surface:#171b21;--text:#e8eaed;--muted:#9aa2ad;--accent:#43c9c0;--accent-ink:#7ee0d8;--accent-soft:#12332f;--border:#262b33;--shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);}}
+:root[data-theme="light"]{--bg:#f6f7f9;--surface:#fff;--text:#1a1d23;--muted:#5b6270;--accent:#0e7c86;--accent-ink:#0a5b62;--accent-soft:#e2f1f1;--border:#e4e7eb;}
+:root[data-theme="dark"]{--bg:#0f1216;--surface:#171b21;--text:#e8eaed;--muted:#9aa2ad;--accent:#43c9c0;--accent-ink:#7ee0d8;--accent-soft:#12332f;--border:#262b33;}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-sans);line-height:1.5;-webkit-font-smoothing:antialiased;}
+.wrap{max-width:860px;margin:0 auto;padding:clamp(20px,4vw,56px) clamp(16px,4vw,28px) 72px;}
+.kicker{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 12px;}
+h1{font-family:var(--font-read);font-weight:600;font-size:clamp(1.7rem,4vw,2.4rem);line-height:1.1;margin:0 0 20px;}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin:0 0 26px;}
+.stat{flex:1 1 150px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);}
+.stat .label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 6px;}
+.stat .value{font-size:1.5rem;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;}
+.summary{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:12px;padding:18px 22px;box-shadow:var(--shadow);margin:0 0 8px;}
+.summary h2{font-family:var(--font-read);font-size:1.15rem;margin:0 0 10px;}
+.summary .note{color:var(--muted);font-style:italic;}
+.tabs{display:flex;gap:4px;margin:28px 0 0;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.tab{appearance:none;border:0;background:transparent;cursor:pointer;font-family:var(--font-sans);font-size:.94rem;color:var(--muted);padding:11px 15px;border-bottom:2px solid transparent;margin-bottom:-1px;}
+.tab[aria-selected="true"]{color:var(--text);border-bottom-color:var(--accent);font-weight:600;}
+.panel{margin-top:22px;}
+.panel[hidden]{display:none;}
+.doc{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:clamp(20px,3.5vw,34px);overflow-x:auto;}
+.doc pre{margin:0;font-family:var(--font-read);font-size:1.03rem;line-height:1.72;white-space:pre-wrap;word-break:break-word;}
+.doc.cjk pre{line-height:1.95;font-size:1.08rem;}
+.sbs{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media (max-width:640px){.sbs{grid-template-columns:1fr;}}
+.sbs .col h3{font-family:var(--font-mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin:0 0 8px;}
+footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--border);color:var(--muted);font-size:.8rem;font-family:var(--font-mono);}
+'@
+    $js = @'
+const IDS=["transcribed","translation","sbs"];
+function sel(id){IDS.forEach(x=>{const on=x===id;document.getElementById("tab-"+x).setAttribute("aria-selected",on);document.getElementById("panel-"+x).hidden=!on;});}
+IDS.forEach(x=>document.getElementById("tab-"+x).addEventListener("click",()=>sel(x)));
+'@
+    $enc = { param($t) [System.Net.WebUtility]::HtmlEncode([string]$t) }
+    $langDisp = Get-LanguageName $Language
+    $langCode = if ($Language) { " ($Language)" } else { '' }
+    $cjkCls = if ($Cjk) { ' cjk' } else { '' }
+    $tEsc = & $enc $Transcript
+    $xEsc = & $enc $Translation
+    $trTab = & $enc $TranslationLabel
+    if ($Summary) {
+        $sumInner = '<div class="body">' + ((& $enc $Summary) -replace "`n", '<br>') + '</div>'
+    } else {
+        $note = if ($SummaryNote) { $SummaryNote } else { 'Summary unavailable (no local LLM server reachable).' }
+        $sumInner = '<div class="note">' + (& $enc $note) + '</div>'
+    }
+    $wc = '{0:N0}' -f $WordCount
+    $dur = & $enc (Format-SpeechDuration $SpeechDurationS)
+    $tt = & $enc $Title
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append("<title>$tt</title>`n<style>$css</style>`n")
+    [void]$sb.Append('<div class="wrap">' + "`n")
+    [void]$sb.Append('<p class="kicker">plaude-local &middot; speech-to-text</p>' + "`n")
+    [void]$sb.Append("<h1>$tt</h1>`n")
+    [void]$sb.Append('<div class="stats">')
+    [void]$sb.Append("<div class=`"stat`"><p class=`"label`">Language detected</p><div class=`"value`">$(& $enc $langDisp)$(& $enc $langCode)</div></div>")
+    [void]$sb.Append("<div class=`"stat`"><p class=`"label`">Speech duration</p><div class=`"value`">$dur</div></div>")
+    [void]$sb.Append("<div class=`"stat`"><p class=`"label`">Words</p><div class=`"value`">$wc</div></div>")
+    [void]$sb.Append("</div>`n")
+    [void]$sb.Append("<section class=`"summary`"><h2>Critical topics</h2>$sumInner</section>`n")
+    [void]$sb.Append('<div class="tabs" role="tablist" aria-label="Views">')
+    [void]$sb.Append('<button class="tab" role="tab" id="tab-transcribed" aria-controls="panel-transcribed" aria-selected="true">Transcribed</button>')
+    [void]$sb.Append("<button class=`"tab`" role=`"tab`" id=`"tab-translation`" aria-controls=`"panel-translation`" aria-selected=`"false`">$trTab</button>")
+    [void]$sb.Append('<button class="tab" role="tab" id="tab-sbs" aria-controls="panel-sbs" aria-selected="false">Side-by-Side</button>')
+    [void]$sb.Append("</div>`n")
+    [void]$sb.Append("<section class=`"panel`" id=`"panel-transcribed`" role=`"tabpanel`"><div class=`"doc$cjkCls`"><pre>$tEsc</pre></div></section>`n")
+    [void]$sb.Append("<section class=`"panel`" id=`"panel-translation`" role=`"tabpanel`" hidden><div class=`"doc`"><pre>$xEsc</pre></div></section>`n")
+    [void]$sb.Append("<section class=`"panel`" id=`"panel-sbs`" role=`"tabpanel`" hidden><div class=`"sbs`">")
+    [void]$sb.Append("<div class=`"col`"><h3>Transcribed &middot; $(& $enc $langDisp)</h3><div class=`"doc$cjkCls`"><pre>$tEsc</pre></div></div>")
+    [void]$sb.Append("<div class=`"col`"><h3>$trTab</h3><div class=`"doc`"><pre>$xEsc</pre></div></div>")
+    [void]$sb.Append("</div></section>`n")
+    [void]$sb.Append("<footer>plaude-local &middot; $wc words &middot; $dur</footer>`n")
+    [void]$sb.Append("</div>`n<script>$js</script>`n")
+    return $sb.ToString()
+}
+
 function Invoke-Main {
     if ($Version) { Write-Host "plaude-local (PowerShell) $($Script:ToolVersion)"; return 0 }
     if ($Check) { return (Invoke-Check) }
@@ -898,6 +1063,8 @@ function Invoke-Main {
         # Assess recording quality from the JSON metrics whisper-ctranslate2 wrote.
         $jsonPath = Join-Path $work ([System.IO.Path]::GetFileNameWithoutExtension($prepared) + '.json')
         $report = $null
+        $jsonObj = $null
+        $segs = @()
         if (Test-Path -LiteralPath $jsonPath) {
             $jsonObj = (Get-Content -LiteralPath $jsonPath -Raw -Encoding UTF8) | ConvertFrom-Json
             $segs = if ($jsonObj.PSObject.Properties['segments']) { $jsonObj.segments } else { @() }
@@ -910,6 +1077,89 @@ function Invoke-Main {
             if ($OnBad -eq 'skip') { Write-ErrLine ('skipped: bad recording - ' + (Format-QualitySummary $report)); return 0 }
             if ($OnBad -eq 'fail') { Write-ErrLine ('error: bad recording - ' + (Format-QualitySummary $report)); return 12 }
             Write-ErrLine ('warning: ' + (Format-QualitySummary $report) + ' (writing anyway; use -OnBad to change)')
+        }
+
+        # 4a. HTML dashboard (default): summary + Transcribed / Translated /
+        # Side-by-Side tabs, plus optional split text files.
+        if ($Format -eq 'html') {
+            $srcLang = if ($jsonObj -and $jsonObj.PSObject.Properties['language']) { [string]$jsonObj.language } else { '' }
+            $speechS = $null
+            if ($segs -and @($segs).Count -gt 0) {
+                $speechS = ($segs | ForEach-Object { [double]$_.end - [double]$_.start } | Measure-Object -Sum).Sum
+            }
+            if (-not $speechS) { $speechS = Get-MediaDuration $InputFile }
+
+            $target = $TranslateTo.ToLower()
+            $translationText = ''
+            if ($target -eq 'en') {
+                $translationLabel = 'English'
+                if ($srcLang.ToLower() -eq 'en') {
+                    $translationText = $transcriptText
+                } else {
+                    Write-Log '      translating to English (Whisper) ...'
+                    $trWork = Join-Path $work 'translate'
+                    New-Item -ItemType Directory -Force -Path $trWork | Out-Null
+                    try {
+                        $trPath = Invoke-Transcribe -AudioPath $prepared -WorkDir $trWork -Dev $dev -Compute $compute -Token $token -Task translate
+                        $translationText = [System.IO.File]::ReadAllText($trPath, [System.Text.Encoding]::UTF8)
+                    } catch { Write-ErrLine "error: $($_.Exception.Message)"; return 6 }
+                }
+            } else {
+                $translationLabel = Get-LanguageName $target
+            }
+
+            # Resolve the LLM backend for the summary (and any non-English translation).
+            $sBackend = $SummarizeBackend
+            $oUrl = if ($SummarizeUrl) { $SummarizeUrl } else { $Script:DefaultOllamaUrl }
+            $lUrl = if ($SummarizeUrl) { $SummarizeUrl } else { $Script:DefaultLlamacppUrl }
+            if ($sBackend -eq 'auto') { $sBackend = Get-SummBackend -OllamaUrl $oUrl -LlamacppUrl $lUrl }
+            $sModel = if ($SummarizeModel) { $SummarizeModel } else { $Script:DefaultOllamaModel }
+            $sUrl = if ($sBackend -eq 'llamacpp') { $lUrl } else { $oUrl }
+
+            if ($target -ne 'en') {
+                if ($sBackend) {
+                    Write-Log "      translating to $translationLabel (LLM) ..."
+                    try { $translationText = Invoke-TranslateText -Text $transcriptText -TargetLanguage $translationLabel -Backend $sBackend -Model $sModel -Url $sUrl -MaxChars $SummarizeMaxChars }
+                    catch { $translationText = ''; Write-Log "      translation unavailable: $($_.Exception.Message)" }
+                }
+            }
+
+            $summaryText = $null; $summaryNote = $null
+            Write-Log '      summarizing critical topics ...'
+            if ($sBackend) {
+                try { $summaryText = Invoke-Summarize -Text $transcriptText -Backend $sBackend -Model $sModel -Url $sUrl -MaxChars $SummarizeMaxChars -Topics }
+                catch { $summaryNote = "Summary unavailable ($($_.Exception.Message))." }
+            } else {
+                $summaryNote = 'Summary unavailable (no local LLM server reachable).'
+            }
+
+            $cjk = $srcLang.ToLower() -in @('zh', 'ja', 'ko')
+            $title = [System.IO.Path]::GetFileNameWithoutExtension($InputFile) + ' - transcript dashboard'
+            $htmlDoc = Get-DashboardHtml -Title $title -Language $srcLang -SpeechDurationS $speechS `
+                -WordCount (Get-WordCount $transcriptText) -Summary $summaryText -SummaryNote $summaryNote `
+                -Transcript $transcriptText -Translation $translationText `
+                -TranslationLabel "Translated-$translationLabel" -Cjk $cjk
+
+            $dashOut = if ($Output) { $Output } else { Get-DefaultOutput -Fmt 'html' }
+            if ($dashOut -eq '-') {
+                [Console]::Out.Write($htmlDoc)
+            } else {
+                if (-not (Confirm-Overwrite -Path $dashOut)) { Write-ErrLine "aborted: $dashOut was not overwritten."; return 11 }
+                try { Write-Utf8File -Path $dashOut -Text $htmlDoc }
+                catch { Write-ErrLine "error: could not write dashboard to ${dashOut}: $($_.Exception.Message)"; return 9 }
+                Write-Log "[4/4] dashboard -> $dashOut"
+            }
+
+            if ($SplitOutputs -or $TranscriptionFile -or $TranslationFile) {
+                $tFile = if ($TranscriptionFile) { $TranscriptionFile } else { 'transcription.txt' }
+                $xFile = if ($TranslationFile) { $TranslationFile } else { 'translation.txt' }
+                try {
+                    Write-Utf8File -Path $tFile -Text ($transcriptText.TrimEnd("`n") + "`n")
+                    Write-Utf8File -Path $xFile -Text (([string]$translationText).TrimEnd("`n") + "`n")
+                } catch { Write-ErrLine "error: could not write split outputs: $($_.Exception.Message)"; return 9 }
+                Write-Log "      transcription -> $tFile   translation -> $xFile"
+            }
+            return 0
         }
 
         # For JSON output, surface the quality report (top-level field; the

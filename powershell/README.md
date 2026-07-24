@@ -126,7 +126,11 @@ download or `-NoProvision` to just error out.
 | Feature | Python (`plaude-local`) | PowerShell (`Plaude-Local.ps1`) |
 |---------|-------------------------|---------------------------------|
 | Input formats | anything FFmpeg decodes (ffprobe-gated) | same |
-| Default output | `output.<format>` | same |
+| Default output | **HTML dashboard** (`output.html`) | same |
+| Output format | `--format html`(default)`/txt/srt/vtt/json` | `-Format html/txt/srt/vtt/json` |
+| Dashboard | summary + Transcribed / Translated-*lang* / Side-by-Side tabs | same |
+| Translation target | `--translate-to LANG` (default en) | `-TranslateTo LANG` |
+| Split text outputs | `--split-outputs` / `--transcription-file` / `--translation-file` | `-SplitOutputs` / `-TranscriptionFile` / `-TranslationFile` |
 | Overwrite prompt | prompt, auto-overwrite after 10 s; `--yes` skips | same (`-Yes`) |
 | UTF-8 output (file + stdout) | yes | yes |
 | Denoise | `--denoise ffmpeg/deepfilter/none` | `-Denoise ffmpeg/deepfilter/none` |
@@ -164,6 +168,11 @@ download or `-NoProvision` to just error out.
     by installed pyannote version (4.x → gated `speaker-diarization-community-1`,
     3.x → `speaker-diarization-3.1`) and honors `--diarize-model`. Whichever pyannote
     `whisper-ctranslate2` pulls in decides which gated model terms you must accept.
+  - **Diarization runtime on Windows**: pyannote can be hard to *run* on Windows
+    (`k2` has no Windows wheels for 4.x; 3.x needs an older `torchaudio`). This
+    affects the PowerShell port too, since `whisper-ctranslate2` uses pyannote. See
+    the main [README Troubleshooting](../README.md#troubleshooting) for the
+    recommended Python 3.10/3.11 + pyannote 3.x setup, or use WSL2 / Linux.
 - **`-ModelDir`**: redirects the Hugging Face cache (via `$env:HF_HOME`) rather
   than mapping to faster-whisper's `download_root`; effect is equivalent
   (controls where model weights are stored/downloaded).

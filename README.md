@@ -300,10 +300,34 @@ plaude-local clip.mp3 --on-bad fail
 plaude-local --check
 ```
 
+### The HTML dashboard (default output)
+
+By default (`--format html`) every run produces a self-contained, theme-aware
+**HTML dashboard** — `output.html` — with:
+
+- a header showing the **detected language**, rough **speech duration**, and
+  **word count**;
+- a **≤250-word summary of critical topics** (local LLM; degrades gracefully to
+  a note if no Ollama/llama.cpp server is running); and
+- three tabs: **Transcribed** (original), **Translated-*Language*** (English by
+  default, via Whisper's native translation; other targets via the local LLM,
+  set with `--translate-to`), and **Side-by-Side**.
+
+`--split-outputs` (or `--transcription-file` / `--translation-file`) also writes
+the transcription and translation as plain text files (defaults
+`transcription.txt` / `translation.txt`).
+
+```bash
+plaude-local interview.m4a                       # -> output.html dashboard
+plaude-local rede.mp3 --translate-to en --split-outputs
+plaude-local notes.wav --format txt              # plain transcript instead
+```
+
 ### Output formats
 
-`--format` accepts `txt` (default), `srt`, `vtt`, `json`. With `--diarize`,
-speaker labels (`Speaker 1`, `Speaker 2`, …) and timestamps are added:
+`--format` accepts `html` (default, the dashboard above), `txt`, `srt`, `vtt`,
+`json`. With `--diarize`, speaker labels (`Speaker 1`, `Speaker 2`, …) and
+timestamps are added:
 
 ```
 [00:03] Speaker 1: So how did the demo go yesterday?
@@ -366,7 +390,11 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
 | `--device` | `auto` | `auto` picks CUDA if present, else CPU |
 | `--compute-type` | `auto` | `float16` on GPU, `int8` on CPU |
 | `--language` | auto | language code, or auto-detect |
-| `--format` | `txt` | `txt`, `srt`, `vtt`, `json` |
+| `--format` | `html` | `html` dashboard (default), or `txt`/`srt`/`vtt`/`json` |
+| `--translate-to` | `en` | translation-tab language (English via Whisper; others via LLM) |
+| `--split-outputs` | off | also write transcription + translation as text files |
+| `--transcription-file` | `transcription.txt` | path for the split transcription |
+| `--translation-file` | `translation.txt` | path for the split translation |
 | `--denoise` | `ffmpeg` | `ffmpeg`, `deepfilter`, or `none` |
 | `--enhance` | `none` | voice enhancement: `speech`, `strong`, `resemble` |
 | `--gain DB` | `0` | manual volume adjustment in dB (e.g. `6`, `-3`) |
@@ -462,6 +490,32 @@ UTF-8 output, and orchestration).
   NVIDIA driver + CUDA/cuDNN runtime. `--device cpu` always works as a fallback.
 - **Diarization can't load** → you need a Hugging Face token *and* must accept
   the pyannote model terms once (see Prerequisites).
+- **Diarization on Windows (`k2` / `torchaudio.AudioMetaData` errors)** → this is
+  a pyannote/PyTorch packaging problem on Windows, not a plaude-local bug.
+  Transcription, GPU, and summarization are unaffected; only pyannote's runtime
+  is. The two failure modes:
+  - `Lazy import of speechbrain.integrations.k2_fsa failed` — pyannote **4.x**
+    (the gated `speaker-diarization-community-1` model) needs `k2`, which has **no
+    Windows wheels**.
+  - `module 'torchaudio' has no attribute 'AudioMetaData'` — pyannote **3.x** needs
+    an older torchaudio; the newer one installed alongside recent Python dropped it.
+
+  **Recommended fix (native Windows, no k2):** use **Python 3.10 or 3.11** with an
+  older, matched torch/torchaudio and pyannote **3.x** — the 3.1 pipeline never
+  touches k2, and torch/torchaudio 2.1–2.2 still expose `AudioMetaData` and have
+  wheels for those Python versions:
+
+  ```bash
+  py -3.11 -m venv .venv-diar
+  .venv-diar\Scripts\pip install torch==2.2.2 torchaudio==2.2.2 \
+      "pyannote.audio<4" faster-whisper
+  set HF_TOKEN=hf_xxx
+  .venv-diar\Scripts\python -m plaude_local meeting.m4a --diarize
+  ```
+
+  Recent CPython (3.13) has **no** compatible older-torch wheels, so a 3.13-only
+  box can't run pyannote 3.x. **Alternative:** run under **WSL2 / Linux**, where
+  both `k2` and pyannote (3.x or 4.x) install cleanly with pip.
 - **`--summarize` says no server** → start Ollama (`ollama serve`) or a
   llama.cpp `llama-server`; check the URL with `--summarize-url` if non-default.
 

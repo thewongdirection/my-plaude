@@ -140,17 +140,19 @@ class Transcriber:
         word_timestamps: bool = False,
         vad_filter: bool = True,
         beam_size: int = 5,
+        task: str = "transcribe",
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        """Transcribe ``audio_path``.
+        """Transcribe (or translate) ``audio_path``.
 
         ``language=None`` triggers Whisper's automatic language detection.
+        ``task="translate"`` uses Whisper's speech-to-**English** translation.
         Returns ``(segments, info)`` where segments are plain dicts and info
         carries detected language / duration metadata.
         """
         segments_iter, info = self._model.transcribe(
             audio_path,
             language=language,
-            task="transcribe",
+            task=task,
             beam_size=beam_size,
             vad_filter=vad_filter,
             word_timestamps=word_timestamps,
