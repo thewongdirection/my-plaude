@@ -332,7 +332,9 @@ function Split-IntoChunks {
     while ($remaining.Length -gt $MaxChars) {
         $window = $remaining.Substring(0, $MaxChars)
         $cut = $window.LastIndexOf("`n")
-        if ($cut -lt [int]($MaxChars / 2)) { $cut = $MaxChars }
+        # Floor division to match Python's `max_chars // 2` exactly. [int] would
+        # apply banker's rounding (e.g. [int](7/2)=4), diverging on odd sizes.
+        if ($cut -lt [Math]::Floor($MaxChars / 2)) { $cut = $MaxChars }
         if ($cut -lt 1) { $cut = 1 }
         $piece = $remaining.Substring(0, $cut).Trim()
         if ($piece) { [void]$chunks.Add($piece) }
@@ -364,7 +366,10 @@ function Invoke-LlmCall {
 }
 
 function Invoke-Summarize {
-    param([string]$Text, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars)
+    param(
+        [string]$Text, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars,
+        [int]$Depth = 0
+    )
     $Text = $Text.Trim()
     if (-not $Text) { throw 'nothing to summarize: the transcript is empty.' }
     $MaxChars = [Math]::Max($MaxChars, 1)
@@ -377,7 +382,13 @@ function Invoke-Summarize {
         Invoke-LlmCall -Prompt (Build-SummaryPrompt -Text $c) -Backend $Backend -Model $Model -Url $Url
     }
     $combined = ($partials -join "`n`n")
-    return Invoke-LlmCall -Prompt (Build-SummaryPrompt -Text $combined -Combine) -Backend $Backend -Model $Model -Url $Url
+    # Map-reduce (parity with Python's summarize_text): if the combined partial
+    # summaries still exceed the budget, reduce again - bounded to depth 3 so it
+    # always terminates.
+    if ($combined.Length -le $MaxChars -or $Depth -ge 3) {
+        return Invoke-LlmCall -Prompt (Build-SummaryPrompt -Text $combined -Combine) -Backend $Backend -Model $Model -Url $Url
+    }
+    return Invoke-Summarize -Text $combined -Backend $Backend -Model $Model -Url $Url -MaxChars $MaxChars -Depth ($Depth + 1)
 }
 
 # --------------------------------------------------------------------------- #

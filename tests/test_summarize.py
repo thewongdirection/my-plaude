@@ -121,6 +121,16 @@ class TestPostJson(unittest.TestCase):
             self.assertEqual(
                 summarize._post_json("http://x", {}, 5), {"response": "ok"})
 
+    def test_unreachable_server_wrapped_as_summarize_error(self):
+        # A connection failure (URLError) must surface as SummarizeError with a
+        # helpful message, not an uncaught urllib exception.
+        import urllib.error
+        with mock.patch("urllib.request.urlopen",
+                        side_effect=urllib.error.URLError("connection refused")):
+            with self.assertRaises(SummarizeError) as ctx:
+                summarize._post_json("http://localhost:11434", {"a": 1}, 5)
+        self.assertIn("could not reach", str(ctx.exception).lower())
+
     def test_non_object_json_wrapped_as_summarize_error(self):
         # Regression: valid JSON that is not an object (array/string/number/null)
         # must raise SummarizeError, not an AttributeError in the callers.

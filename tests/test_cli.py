@@ -208,6 +208,63 @@ class TestOrchestration(unittest.TestCase):
             self.assertIsInstance(emitted, bytes)
             self.assertIn("你好世界", emitted.decode("utf-8"))
 
+    def test_json_output_has_no_internal_timestamps_key(self):
+        # Regression: the internal "timestamps" rendering hint must not leak into
+        # the user-facing JSON meta block.
+        import json
+        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            out = pathlib.Path(d) / "o.json"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)):
+                rc = cli.run([str(f), "-o", str(out), "-f", "json",
+                              "--denoise", "none", "-q"])
+            self.assertEqual(rc, 0)
+            data = json.loads(out.read_text(encoding="utf-8"))
+            self.assertNotIn("timestamps", data.get("meta", {}))
+
+    def test_keep_clean_copies_prepared_audio(self):
+        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            out = pathlib.Path(d) / "o.txt"
+            clean = pathlib.Path(d) / "cleaned.wav"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)):
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none",
+                              "--keep-clean", str(clean), "-q"])
+            self.assertEqual(rc, 0)
+            self.assertTrue(clean.is_file())
+
+    def test_summary_to_stdout(self):
+        # --summary-output - streams the summary to stdout instead of a file.
+        segs = [{"start": 0.0, "end": 1.0, "text": "some talk", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            out = pathlib.Path(d) / "o.txt"
+            buf = io.StringIO()
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)), \
+                 mock.patch.object(summarize, "detect_backend", return_value="ollama"), \
+                 mock.patch.object(summarize, "summarize", return_value="* key point"), \
+                 contextlib.redirect_stdout(buf):
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none",
+                              "--summarize", "--summary-output", "-", "-q"])
+            self.assertEqual(rc, 0)
+            self.assertIn("* key point", buf.getvalue())
+            # No summary file should be written when streaming to stdout.
+            self.assertFalse((pathlib.Path(d) / "o.summary.md").exists())
+
     def test_bad_output_dir_fails_cleanly(self):
         segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
         with tempfile.TemporaryDirectory() as d:

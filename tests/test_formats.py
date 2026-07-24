@@ -34,6 +34,11 @@ class TestTimestamps(unittest.TestCase):
         self.assertEqual(_clock(3725), "1:02:05")
         self.assertEqual(_clock(0), "00:00")
 
+    def test_clock_negative_clamps_to_zero(self):
+        # Parity with _fmt_timestamp: a negative time must never render as a
+        # nonsense clock like "-1:59:55".
+        self.assertEqual(_clock(-5.0), "00:00")
+
 
 class TestText(unittest.TestCase):
     def test_plain(self):
@@ -114,6 +119,13 @@ class TestRender(unittest.TestCase):
     def test_txt_timestamps_via_meta(self):
         out = formats.render(_segs(), "txt", meta={"timestamps": True})
         self.assertIn("[00:00]", out)
+
+    def test_json_meta_passthrough_verbatim(self):
+        # render(...json...) serializes exactly the meta it is handed; the caller
+        # (cli) is responsible for not injecting internal presentation flags.
+        out = formats.render(_segs(), "json", meta={"model": "large-v3"})
+        data = json.loads(out)
+        self.assertEqual(data["meta"], {"model": "large-v3"})
 
 
 if __name__ == "__main__":

@@ -31,6 +31,8 @@ def _fmt_timestamp(seconds: float, *, comma: bool = False) -> str:
 
 def _clock(seconds: float) -> str:
     """Short [MM:SS] / [HH:MM:SS] clock for plain-text output."""
+    if seconds < 0:
+        seconds = 0.0
     total = int(round(seconds))
     hours, rem = divmod(total, 3600)
     minutes, secs = divmod(rem, 60)

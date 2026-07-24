@@ -44,6 +44,15 @@ Describe 'Resolve-ComputeType' {
     }
 }
 
+Describe 'Resolve-Device' {
+    It 'passes an explicit device through without probing (parity with Python)' {
+        $Device = 'cpu'
+        Resolve-Device | Should -Be 'cpu'
+        $Device = 'cuda'
+        Resolve-Device | Should -Be 'cuda'
+    }
+}
+
 Describe 'Split-IntoChunks' {
     It 'returns a single chunk for short text' {
         (Split-IntoChunks -Text 'hello world' -MaxChars 100).Count | Should -Be 1
@@ -63,6 +72,14 @@ Describe 'Split-IntoChunks' {
             $c.Trim() | Should -Not -BeNullOrEmpty
         }
     }
+    It 'uses floor(MaxChars/2) as the break threshold (parity with Python //)' {
+        # With MaxChars=7 the break threshold is floor(7/2)=3. A newline at
+        # index 3 sits exactly AT the threshold, so it IS accepted as a break
+        # point and the first chunk is "abc". The old [int](7/2)=4 (banker's
+        # rounding) would reject it and hard-split, yielding "abc`ndef".
+        $chunks = Split-IntoChunks -Text "abc`ndefghij" -MaxChars 7
+        $chunks[0] | Should -Be 'abc'
+    }
 }
 
 Describe 'Build-SummaryPrompt' {
@@ -71,6 +88,37 @@ Describe 'Build-SummaryPrompt' {
     }
     It 'has a distinct combine variant' {
         Build-SummaryPrompt -Text 'x' -Combine | Should -Match 'partial summaries'
+    }
+}
+
+Describe 'Invoke-Summarize (map-reduce)' {
+    It 'chunks long text, summarizes each chunk, then combines (parity with Python)' {
+        # Mock the transport; record how many calls happen and whether a combine
+        # prompt was used. A hashtable (reference type) survives the mock scope.
+        $rec = @{ count = 0; combined = $false }
+        Mock Invoke-LlmCall {
+            $rec.count++
+            if ($Prompt -match 'partial summaries') { $rec.combined = $true }
+            return 'a partial summary sentence'
+        }
+        $long = (1..200 | ForEach-Object { "sentence number $_ here" }) -join "`n"
+        $out = Invoke-Summarize -Text $long -Backend 'ollama' -Model 'm' -Url 'http://x' -MaxChars 100
+        $out | Should -Not -BeNullOrEmpty
+        $rec.count | Should -BeGreaterThan 1          # fanned out over chunks
+        $rec.combined | Should -BeTrue                # a combine pass ran
+    }
+
+    It 'summarizes short text in a single call' {
+        $rec = @{ count = 0 }
+        Mock Invoke-LlmCall { $rec.count++; return 'summary' }
+        $out = Invoke-Summarize -Text 'a short transcript' -Backend 'ollama' -Model 'm' -Url 'http://x' -MaxChars 1000
+        $out | Should -Be 'summary'
+        $rec.count | Should -Be 1
+    }
+
+    It 'throws on empty transcript (parity with Python)' {
+        { Invoke-Summarize -Text '   ' -Backend 'ollama' -Model 'm' -Url 'http://x' -MaxChars 100 } |
+            Should -Throw
     }
 }
 

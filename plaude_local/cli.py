@@ -347,7 +347,11 @@ def run(argv: Optional[List[str]] = None) -> int:
             _log(args.quiet, "[3/4] diarization skipped")
 
     # 4. Render + write transcript (UTF-8)
-    meta["timestamps"] = args.diarize  # show clock in txt when we have speakers
+    # "timestamps" is an internal rendering hint for the txt writer (show a clock
+    # when speakers are present). Only inject it for txt so it never leaks into
+    # the user-facing JSON meta block.
+    if args.format == "txt":
+        meta["timestamps"] = args.diarize
     text = formats.render(segments, args.format, meta=meta)
     transcript_out = args.output if args.output else _default_output(args.format)
     if transcript_out != "-" and not _confirm_overwrite(

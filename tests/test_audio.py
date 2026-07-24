@@ -78,6 +78,31 @@ class TestPrepareDispatch(unittest.TestCase):
             audio.prepare(self.src, self.workdir, denoise="magic")
 
 
+class TestToWav(unittest.TestCase):
+    """The core decode contract: everything is normalized to 16 kHz mono PCM."""
+
+    def test_builds_16k_mono_pcm_args(self):
+        import pathlib
+        with mock.patch.object(audio, "_run_ffmpeg") as run:
+            audio._to_wav(pathlib.Path("in.mp3"), pathlib.Path("out.wav"))
+        args = run.call_args.args[0]
+        self.assertIn("-ac", args)
+        self.assertEqual(args[args.index("-ac") + 1], "1")        # mono
+        self.assertIn("-ar", args)
+        self.assertEqual(args[args.index("-ar") + 1], str(audio.TARGET_SR))
+        self.assertIn("pcm_s16le", args)
+        self.assertNotIn("-af", args)  # no filter chain unless requested
+
+    def test_filters_are_passed_through(self):
+        import pathlib
+        with mock.patch.object(audio, "_run_ffmpeg") as run:
+            audio._to_wav(pathlib.Path("in.mp3"), pathlib.Path("out.wav"),
+                          filters="highpass=f=90")
+        args = run.call_args.args[0]
+        self.assertIn("-af", args)
+        self.assertEqual(args[args.index("-af") + 1], "highpass=f=90")
+
+
 class TestFfmpegErrors(unittest.TestCase):
     def test_missing_binary_message(self):
         with mock.patch("subprocess.run", side_effect=FileNotFoundError()):
