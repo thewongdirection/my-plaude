@@ -404,12 +404,14 @@ class TestOrchestration(unittest.TestCase):
                  mock.patch.object(diarize, "diarize_and_merge",
                                    return_value=tagged) as m:
                 rc = cli.run([str(f), "--denoise", "none", "--diarize",
-                              "--hf-token", "t", "-o", str(out), "-q"])
+                              "--hf-token", "t", "--diarize-model", "pyannote/x",
+                              "-o", str(out), "-q"])
             self.assertEqual(rc, 0)
             self.assertIn("Speaker 1:", out.read_text(encoding="utf-8"))
-            # backend + device were forwarded
+            # backend + device + model were forwarded
             self.assertEqual(m.call_args.kwargs["backend"], "pyannote")
             self.assertEqual(m.call_args.kwargs["device"], "cpu")
+            self.assertEqual(m.call_args.kwargs["diarize_model"], "pyannote/x")
 
 
 class TestPromptTimeout(unittest.TestCase):

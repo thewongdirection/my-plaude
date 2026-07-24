@@ -41,7 +41,7 @@ $Script:IncludeWheels = @{
     deepfilter = @('deepfilternet')
     resemble   = @('resemble-enhance')
 }
-$Script:DiarizeRepos = @('pyannote/speaker-diarization-3.1', 'pyannote/segmentation-3.0')
+$Script:DiarizeRepos = @('pyannote/speaker-diarization-community-1', 'pyannote/speaker-diarization-3.1', 'pyannote/segmentation-3.0')
 
 function Get-BundleManifest {
     # Pure enumeration (parity with Python build_manifest): returns an ordered

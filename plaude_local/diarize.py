@@ -162,7 +162,43 @@ def _speaker_kwargs(num, mn, mx) -> Dict[str, Any]:
 # Backend: pyannote.audio
 # --------------------------------------------------------------------------- #
 
-def _pyannote_turns(audio_path, hf_token, device, num, mn, mx) -> List[Turn]:
+def _pyannote_from_pretrained(Pipeline, repo, token):
+    """Load a pyannote pipeline across library versions.
+
+    pyannote.audio >= 4 renamed the ``use_auth_token`` argument of
+    ``Pipeline.from_pretrained`` to ``token``; older releases only accept the old
+    name. Try the new name first and fall back so both work.
+    """
+    try:
+        return Pipeline.from_pretrained(repo, token=token)
+    except TypeError:
+        return Pipeline.from_pretrained(repo, use_auth_token=token)
+
+
+# The default diarization pipeline differs by pyannote.audio major version:
+# 4.x replaced the 3.1 pipeline with the gated `speaker-diarization-community-1`
+# model; 3.x uses `speaker-diarization-3.1`. `--diarize-model` overrides this.
+PYANNOTE_MODEL_V4 = "pyannote/speaker-diarization-community-1"
+PYANNOTE_MODEL_V3 = "pyannote/speaker-diarization-3.1"
+
+
+def _model_for_pyannote_version(version: str) -> str:
+    try:
+        major = int(str(version).split(".")[0])
+    except (ValueError, TypeError, AttributeError):
+        major = 3
+    return PYANNOTE_MODEL_V4 if major >= 4 else PYANNOTE_MODEL_V3
+
+
+def _default_diarization_model() -> str:
+    try:
+        from pyannote.audio import __version__ as ver
+    except Exception:  # pragma: no cover - environment dependent
+        ver = "3"
+    return _model_for_pyannote_version(ver)
+
+
+def _pyannote_turns(audio_path, hf_token, device, num, mn, mx, model=None) -> List[Turn]:
     try:
         from pyannote.audio import Pipeline
     except ImportError as exc:
@@ -171,15 +207,16 @@ def _pyannote_turns(audio_path, hf_token, device, num, mn, mx) -> List[Turn]:
             "`pip install pyannote.audio` (also pulls in torch)."
         ) from exc
 
+    repo = model or _default_diarization_model()
     try:
-        pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-3.1", use_auth_token=hf_token,
-        )
+        pipeline = _pyannote_from_pretrained(Pipeline, repo, hf_token)
     except Exception as exc:
         raise DiarizeError(
-            "could not load the pyannote diarization pipeline. On first use you "
-            "must accept the model terms on Hugging Face and provide an access "
-            "token via --hf-token or the HF_TOKEN environment variable. "
+            f"could not load the pyannote pipeline {repo!r}. On first use you must "
+            "accept the model terms on Hugging Face and provide an access token via "
+            "--hf-token or the HF_TOKEN environment variable. Note: pyannote.audio "
+            "4.x uses the gated 'pyannote/speaker-diarization-community-1' model, "
+            "which needs its own one-time terms acceptance. "
             f"Underlying error: {exc}"
         ) from exc
 
@@ -222,7 +259,11 @@ def _load_whisperx_pipeline(hf_token, device):
         ) from exc
 
     try:
-        return DiarizationPipeline(use_auth_token=hf_token, device=device)
+        try:
+            return DiarizationPipeline(token=hf_token, device=device)
+        except TypeError:
+            # whisperx pinned to older pyannote uses the old kwarg name.
+            return DiarizationPipeline(use_auth_token=hf_token, device=device)
     except Exception as exc:
         raise DiarizeError(
             "could not create the WhisperX diarization pipeline. On first use "
@@ -255,11 +296,17 @@ def diarize_and_merge(
     num_speakers: Optional[int] = None,
     min_speakers: Optional[int] = None,
     max_speakers: Optional[int] = None,
+    diarize_model: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """Diarize ``audio_path`` and return speaker-tagged ``segments``."""
+    """Diarize ``audio_path`` and return speaker-tagged ``segments``.
+
+    ``diarize_model`` overrides the pipeline repo (default: auto by pyannote
+    version — ``speaker-diarization-community-1`` on 4.x, ``…-3.1`` on 3.x).
+    """
     if backend == "pyannote":
         turns = _pyannote_turns(audio_path, hf_token, device,
-                                num_speakers, min_speakers, max_speakers)
+                                num_speakers, min_speakers, max_speakers,
+                                model=diarize_model)
     elif backend == "whisperx":
         turns = _whisperx_turns(audio_path, hf_token, device,
                                 num_speakers, min_speakers, max_speakers)

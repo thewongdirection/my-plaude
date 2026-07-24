@@ -138,6 +138,7 @@ download or `-NoProvision` to just error out.
 | Models / device / compute | `--model/--device/--compute-type` | `-Model/-Device/-ComputeType` |
 | Offline (cache-only models) | `--offline` | `-Offline` |
 | Diarization | `--diarize [--diarize-backend]` | `-Diarize [-DiarizeBackend]` |
+| Diarization model | `--diarize-model REPO` | `-DiarizeModel REPO` (see Known differences) |
 | Summarization | `--summarize` (Ollama/llama.cpp) | `-Summarize` (Ollama/llama.cpp) |
 | Prereq check + provision | (built-in) | (built-in) |
 | Provide ffmpeg | `--ffmpeg-location` | `-FfmpegLocation` |
@@ -158,6 +159,11 @@ download or `-NoProvision` to just error out.
     uses pyannote).
   - `-NumSpeakers` / `-MinSpeakers` / `-MaxSpeakers` are **not supported** by the
     engine and are ignored (with a note). The Python version honors them.
+  - `-DiarizeModel` is accepted for CLI parity but has no effect: `whisper-ctranslate2`
+    loads its own bundled pyannote pipeline. The Python version selects the pipeline
+    by installed pyannote version (4.x → gated `speaker-diarization-community-1`,
+    3.x → `speaker-diarization-3.1`) and honors `--diarize-model`. Whichever pyannote
+    `whisper-ctranslate2` pulls in decides which gated model terms you must accept.
 - **`-ModelDir`**: redirects the Hugging Face cache (via `$env:HF_HOME`) rather
   than mapping to faster-whisper's `download_root`; effect is equivalent
   (controls where model weights are stored/downloaded).

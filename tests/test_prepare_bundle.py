@@ -38,8 +38,9 @@ class TestManifest(unittest.TestCase):
         self.assertIn("nvidia-cudnn-cu12", pip["source"])
         self.assertIn("pyannote.audio", pip["source"])
         gated = [i for i in m if i["kind"] == "hf-gated"]
-        self.assertEqual(len(gated), 2)
+        self.assertEqual(len(gated), 3)
         self.assertTrue(all("pyannote/" in i["source"] for i in gated))
+        self.assertTrue(any("community-1" in i["source"] for i in gated))
 
     def test_macos_ffmpeg_is_manual(self):
         m = bundle.build_manifest(["tiny"], "macos", [], False)

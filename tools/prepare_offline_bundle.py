@@ -43,7 +43,12 @@ FFMPEG_URLS = {
 
 # faster-whisper hosts its CTranslate2 conversions under the Systran org.
 WHISPER_REPO = "Systran/faster-whisper-{model}"
-DIARIZE_REPOS = ("pyannote/speaker-diarization-3.1", "pyannote/segmentation-3.0")
+# Cover both pyannote lineups: 4.x uses community-1, 3.x uses 3.1 + segmentation.
+DIARIZE_REPOS = (
+    "pyannote/speaker-diarization-community-1",
+    "pyannote/speaker-diarization-3.1",
+    "pyannote/segmentation-3.0",
+)
 
 INCLUDE_WHEELS = {
     "cuda": ["nvidia-cublas-cu12", "nvidia-cudnn-cu12"],

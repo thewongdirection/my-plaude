@@ -181,5 +181,70 @@ class TestDispatch(unittest.TestCase):
                 diarize._load_whisperx_pipeline("token", "cpu")
 
 
+class TestDiarizeModelSelection(unittest.TestCase):
+    """The pipeline model auto-selects by pyannote version; --diarize-model wins."""
+
+    def test_v4_uses_community_model(self):
+        self.assertEqual(
+            diarize._model_for_pyannote_version("4.0.7"),
+            "pyannote/speaker-diarization-community-1",
+        )
+
+    def test_v3_uses_3_1_model(self):
+        self.assertEqual(
+            diarize._model_for_pyannote_version("3.4.0"),
+            "pyannote/speaker-diarization-3.1",
+        )
+
+    def test_unparseable_version_falls_back_to_3_1(self):
+        self.assertEqual(
+            diarize._model_for_pyannote_version("weird"),
+            "pyannote/speaker-diarization-3.1",
+        )
+
+    def test_diarize_and_merge_forwards_explicit_model(self):
+        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+        with mock.patch.object(diarize, "_pyannote_turns", return_value=TURNS) as m:
+            diarize.diarize_and_merge(
+                "x.wav", segs, backend="pyannote", hf_token="t",
+                diarize_model="pyannote/speaker-diarization-community-1",
+            )
+        self.assertEqual(
+            m.call_args.kwargs["model"], "pyannote/speaker-diarization-community-1"
+        )
+
+
+class TestPyannoteTokenCompat(unittest.TestCase):
+    """pyannote.audio 4.x renamed use_auth_token -> token; support both."""
+
+    def test_prefers_token_kwarg(self):
+        seen = []
+
+        class FakePipeline:
+            @staticmethod
+            def from_pretrained(repo, **kw):
+                seen.append(kw)
+                return "PIPE"
+
+        out = diarize._pyannote_from_pretrained(FakePipeline, "repo", "tok")
+        self.assertEqual(out, "PIPE")
+        self.assertEqual(seen, [{"token": "tok"}])
+
+    def test_falls_back_to_use_auth_token_on_typeerror(self):
+        seen = []
+
+        class FakePipeline:
+            @staticmethod
+            def from_pretrained(repo, **kw):
+                if "token" in kw:  # emulate the old (pyannote < 4) signature
+                    raise TypeError("unexpected keyword argument 'token'")
+                seen.append(kw)
+                return "PIPE"
+
+        out = diarize._pyannote_from_pretrained(FakePipeline, "repo", "tok")
+        self.assertEqual(out, "PIPE")
+        self.assertEqual(seen, [{"use_auth_token": "tok"}])
+
+
 if __name__ == "__main__":
     unittest.main()

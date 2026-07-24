@@ -26,7 +26,8 @@ Describe 'Get-BundleManifest' {
         $pip | Should -Match 'nvidia-cublas-cu12'
         $pip | Should -Match 'nvidia-cudnn-cu12'
         $pip | Should -Match 'pyannote.audio'
-        ($m | Where-Object kind -eq 'hf-gated').Count | Should -Be 2
+        @($m | Where-Object kind -eq 'hf-gated').Count | Should -Be 3
+        @($m | Where-Object source -match 'community-1').Count | Should -BeGreaterThan 0
     }
     It 'marks macOS FFmpeg as manual (Homebrew)' {
         $m = Get-BundleManifest -Models @('tiny') -Platform 'macos' -Include @() -WithDiarizeModels $false

@@ -113,6 +113,10 @@ def build_parser() -> argparse.ArgumentParser:
                              "whisperx")
     g_diar.add_argument("--hf-token", default=None,
                         help="Hugging Face token (or set HF_TOKEN)")
+    g_diar.add_argument("--diarize-model", default=None, metavar="REPO",
+                        help="pyannote pipeline repo to use (default: auto by "
+                             "installed version — speaker-diarization-community-1 "
+                             "on pyannote 4.x, speaker-diarization-3.1 on 3.x)")
     g_diar.add_argument("--num-speakers", type=int, default=None,
                         help="exact number of speakers, if known")
     g_diar.add_argument("--min-speakers", type=int, default=None)
@@ -442,6 +446,7 @@ def run(argv: Optional[List[str]] = None) -> int:
                     num_speakers=args.num_speakers,
                     min_speakers=args.min_speakers,
                     max_speakers=args.max_speakers,
+                    diarize_model=args.diarize_model,
                 )
             except diarize.DiarizeError as exc:
                 print(f"error: {exc}", file=sys.stderr)

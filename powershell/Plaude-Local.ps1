@@ -69,6 +69,7 @@ param(
     [ValidateSet('pyannote', 'whisperx')]
     [string]$DiarizeBackend = 'pyannote',
     [string]$HfToken,
+    [string]$DiarizeModel,
     [int]$NumSpeakers,
     [int]$MinSpeakers,
     [int]$MaxSpeakers,

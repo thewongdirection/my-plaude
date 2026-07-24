@@ -132,9 +132,11 @@ pip install ".[all]"              # everything
 For **diarization** you also need a free Hugging Face token:
 
 ```bash
-# 1. create a token: https://hf.co/settings/tokens
-# 2. accept model terms: https://hf.co/pyannote/speaker-diarization-3.1
-#    (this also gates https://hf.co/pyannote/segmentation-3.0 — accept it too)
+# 1. create a token: https://hf.co/settings/tokens  (Read scope; one token is enough)
+# 2. accept the model terms for the pyannote version you have:
+#      pyannote.audio 4.x -> https://hf.co/pyannote/speaker-diarization-community-1
+#      pyannote.audio 3.x -> https://hf.co/pyannote/speaker-diarization-3.1
+#                            and https://hf.co/pyannote/segmentation-3.0
 # 3. expose it:
 export HF_TOKEN=hf_xxx            # Windows: set HF_TOKEN=hf_xxx
 ```
@@ -370,6 +372,7 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
 | `--gain DB` | `0` | manual volume adjustment in dB (e.g. `6`, `-3`) |
 | `--diarize` | off | speaker tagging (optional extra) |
 | `--diarize-backend` | `pyannote` | `pyannote` or `whisperx` |
+| `--diarize-model` | auto | pyannote pipeline repo (auto-selected by version) |
 | `--offline` | off | use only cached models; never touch the network |
 | `--assess-only` | off | fast audio triage (loudness/silence), then exit |
 | `--on-bad` | `warn` | on a bad recording: `warn`, `skip`, or `fail` (exit 12) |
