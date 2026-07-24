@@ -8,11 +8,58 @@ quantization, so ``large-v3`` fits comfortably on an 8 GB GPU and still runs
 
 from __future__ import annotations
 
+import os
+import sys
 from typing import List, Dict, Any, Optional, Tuple
 
 
 class TranscribeError(RuntimeError):
     """Raised when the ASR backend is unavailable or fails."""
+
+
+def nvidia_dll_dirs() -> List[str]:
+    """Return existing ``site-packages/nvidia/*/bin`` directories (de-duplicated).
+
+    These hold the CUDA runtime DLLs shipped by the ``nvidia-*-cu12`` wheels
+    (``cublas64_12.dll``, ``cudnn64_9.dll`` ...). Empty when the wheels are not
+    installed (e.g. a system-wide CUDA toolkit is used instead).
+    """
+    import glob
+    import importlib.util
+
+    dirs: List[str] = []
+    seen = set()
+    try:
+        spec = importlib.util.find_spec("nvidia")
+        roots = list(spec.submodule_search_locations) if spec and spec.submodule_search_locations else []
+    except (ImportError, AttributeError, ValueError):
+        roots = []
+    for root in roots:
+        for bindir in glob.glob(os.path.join(root, "*", "bin")):
+            key = os.path.normcase(os.path.abspath(bindir))
+            if os.path.isdir(bindir) and key not in seen:
+                seen.add(key)
+                dirs.append(bindir)
+    return dirs
+
+
+def add_cuda_dll_directories() -> None:
+    """Make pip-installed CUDA runtime wheels loadable on Windows.
+
+    CTranslate2 loads ``cublas64_12.dll`` / ``cudnn64_9.dll`` at run time. Since
+    Python 3.8, Windows no longer searches ``PATH`` for a native extension's DLL
+    dependencies, so CUDA libraries provided by the ``nvidia-*-cu12`` wheels are
+    not found and GPU inference fails with "Library cublas64_12.dll is not
+    found". Registering those directories with ``os.add_dll_directory`` fixes it.
+    No-op off Windows or when the wheels are absent.
+    """
+    if sys.platform != "win32" or not hasattr(os, "add_dll_directory"):
+        return
+    for bindir in nvidia_dll_dirs():
+        try:
+            os.add_dll_directory(bindir)
+        except OSError:  # pragma: no cover - defensive
+            pass
 
 
 def _maybe_float(value: Any) -> Optional[float]:
@@ -70,6 +117,8 @@ class Transcriber:
         self.device = resolve_device(device)
         self.compute_type = resolve_compute_type(compute_type, self.device)
         self.model_name = model
+        if self.device == "cuda":
+            add_cuda_dll_directories()
         try:
             self._model = WhisperModel(
                 model,

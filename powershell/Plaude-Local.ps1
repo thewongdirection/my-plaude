@@ -359,6 +359,38 @@ function Resolve-ComputeType {
     if ($Dev -eq 'cuda') { return 'float16' } else { return 'int8' }
 }
 
+function Resolve-PythonExe {
+    foreach ($name in @('python', 'py')) {
+        if (Test-Command $name) { return $name }
+    }
+    return $null
+}
+
+function Get-CudaBootstrap {
+    # A Python one-shot that registers the pip 'nvidia-*-cu12' wheel bin dirs
+    # (cublas64_12.dll / cudnn64_9.dll ...) with os.add_dll_directory, then runs
+    # the whisper-ctranslate2 entry point. Needed because a child process cannot
+    # see those DLLs via PATH under Python 3.8+'s restricted DLL search. Parity
+    # with the Python package's transcribe.add_cuda_dll_directories().
+    return @'
+import os, sys, glob, importlib.util
+try:
+    s = importlib.util.find_spec("nvidia")
+    roots = list(s.submodule_search_locations) if s and s.submodule_search_locations else []
+    for root in roots:
+        for b in glob.glob(os.path.join(root, "*", "bin")):
+            if os.path.isdir(b):
+                try:
+                    os.add_dll_directory(b)
+                except OSError:
+                    pass
+except Exception:
+    pass
+from whisper_ctranslate2.whisper_ctranslate2 import main
+main()
+'@
+}
+
 function Invoke-Transcribe {
     param([string]$AudioPath, [string]$WorkDir, [string]$Dev, [string]$Compute, [string]$Token)
 
@@ -382,7 +414,23 @@ function Invoke-Transcribe {
 
     # Route the tool's own stdout/stderr to our log so it does NOT become part
     # of this function's return value (PowerShell captures success-stream output).
-    & whisper-ctranslate2 @a 2>&1 | ForEach-Object { Write-Log ([string]$_) }
+    if ($Dev -eq 'cuda') {
+        # A child process can't see the nvidia-*-cu12 wheel CUDA DLLs via PATH
+        # (Python 3.8+ restricts the DLL search), so run whisper-ctranslate2
+        # through a bootstrap that registers those dirs first (parity with the
+        # Python entry point). Requires 'python' on PATH. The bootstrap is
+        # written to a file (not `python -c`) to avoid PowerShell mangling the
+        # embedded quotes/newlines when it builds the native command line.
+        $py = Resolve-PythonExe
+        if (-not $py) {
+            throw "python (or py) must be on PATH to run whisper-ctranslate2 on the GPU."
+        }
+        $bootstrap = Join-Path $WorkDir '_cuda_bootstrap.py'
+        Write-Utf8File -Path $bootstrap -Text (Get-CudaBootstrap)
+        & $py $bootstrap @a 2>&1 | ForEach-Object { Write-Log ([string]$_) }
+    } else {
+        & whisper-ctranslate2 @a 2>&1 | ForEach-Object { Write-Log ([string]$_) }
+    }
     if ($LASTEXITCODE -ne 0) { throw "whisper-ctranslate2 failed (exit $LASTEXITCODE)." }
 
     $base = [System.IO.Path]::GetFileNameWithoutExtension($AudioPath)

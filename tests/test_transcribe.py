@@ -1,6 +1,8 @@
 """Regression tests for device/compute resolution and backend guards."""
 
+import os
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -41,6 +43,47 @@ class TestResolveComputeType(unittest.TestCase):
         self.assertEqual(
             transcribe.resolve_compute_type("int8_float16", "cuda"), "int8_float16"
         )
+
+
+class TestCudaDllDirs(unittest.TestCase):
+    """Windows CUDA-wheel DLL discovery for out-of-the-box GPU inference."""
+
+    def test_nvidia_dll_dirs_finds_bin_dirs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = os.path.join(tmp, "nvidia")
+            for pkg in ("cublas", "cudnn"):
+                os.makedirs(os.path.join(root, pkg, "bin"))
+            os.makedirs(os.path.join(root, "metadata_only"))  # no bin -> ignored
+            fake_spec = types.SimpleNamespace(submodule_search_locations=[root])
+            with mock.patch("importlib.util.find_spec", return_value=fake_spec):
+                dirs = transcribe.nvidia_dll_dirs()
+            self.assertEqual(
+                sorted(os.path.basename(os.path.dirname(d)) for d in dirs),
+                ["cublas", "cudnn"],
+            )
+            self.assertTrue(all(d.endswith("bin") for d in dirs))
+
+    def test_nvidia_dll_dirs_empty_without_nvidia(self):
+        with mock.patch("importlib.util.find_spec", return_value=None):
+            self.assertEqual(transcribe.nvidia_dll_dirs(), [])
+
+    def test_add_cuda_dll_directories_noop_off_windows(self):
+        calls = []
+        with mock.patch.object(transcribe.sys, "platform", "linux"), mock.patch.object(
+            transcribe.os, "add_dll_directory", calls.append, create=True
+        ), mock.patch.object(transcribe, "nvidia_dll_dirs", return_value=["/x/bin"]):
+            transcribe.add_cuda_dll_directories()
+        self.assertEqual(calls, [])
+
+    def test_add_cuda_dll_directories_registers_each_on_windows(self):
+        calls = []
+        with mock.patch.object(transcribe.sys, "platform", "win32"), mock.patch.object(
+            transcribe.os, "add_dll_directory", calls.append, create=True
+        ), mock.patch.object(
+            transcribe, "nvidia_dll_dirs", return_value=["/a/bin", "/b/bin"]
+        ):
+            transcribe.add_cuda_dll_directories()
+        self.assertEqual(calls, ["/a/bin", "/b/bin"])
 
 
 class TestTranscriberGuard(unittest.TestCase):

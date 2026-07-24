@@ -288,6 +288,25 @@ Describe 'Get-QualityReport' {
     }
 }
 
+Describe 'Get-CudaBootstrap' {
+    # Parity with the Python entry point: the PowerShell GPU path runs
+    # whisper-ctranslate2 through a bootstrap that registers the nvidia-*-cu12
+    # wheel DLL dirs before CUDA loads. Guard the constant against edits.
+    It 'registers the wheel DLL dirs and runs the whisper-ctranslate2 entry point' {
+        $code = Get-CudaBootstrap
+        $code | Should -Match 'add_dll_directory'
+        $code | Should -Match 'nvidia'
+        $code | Should -Match 'from whisper_ctranslate2\.whisper_ctranslate2 import main'
+    }
+}
+
+Describe 'Resolve-PythonExe' {
+    It 'returns python, py, or $null (never throws)' {
+        $r = Resolve-PythonExe
+        ($null -eq $r -or $r -in @('python', 'py')) | Should -BeTrue
+    }
+}
+
 Describe 'Script invocation (CLI param binding)' {
     # Regression: a [switch]$Version parameter once collided with a
     # $Script:Version = '0.1.0' constant. At script scope they are the same

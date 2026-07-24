@@ -112,6 +112,13 @@ and the CUDA/cuDNN runtime that CTranslate2 uses. See the
 [faster-whisper GPU notes](https://github.com/SYSTRAN/faster-whisper#gpu). The
 tool auto-detects the GPU; without one it runs on CPU automatically.
 
+The CUDA runtime can come from the pip wheels
+(`pip install nvidia-cublas-cu12 nvidia-cudnn-cu12`) instead of a system-wide
+CUDA install. On Windows, plaude-local registers those wheels' DLL directories
+automatically before loading CUDA, so GPU inference works out of the box —
+Python 3.8+ otherwise excludes `PATH` from a native extension's DLL search and
+CTranslate2 would fail with `Library cublas64_12.dll is not found`.
+
 ### 5. (Optional) Install the extras you want
 
 ```bash

@@ -154,6 +154,14 @@ $env:HF_TOKEN = "hf_xxx"
   **CLI** (which processes a directory), whereas the Python version calls the
   Resemble-Enhance Python API directly. Same model, equivalent result. The
   `speech`/`strong` FFmpeg enhancement modes and `-Gain` are identical to Python.
+- **Windows CUDA from pip wheels**: when the CUDA runtime comes from the
+  `nvidia-*-cu12` wheels, both ports register those wheels' DLL directories
+  (`cublas64_12.dll` / `cudnn64_9.dll` ...) before loading CUDA, so `-Device
+  cuda` works out of the box (Python 3.8+ otherwise ignores `PATH` for a native
+  extension's DLLs). The Python entry point does this in-process; the PowerShell
+  port runs `whisper-ctranslate2` through a tiny Python bootstrap to do the same,
+  so **`python` (or `py`) must be on PATH for GPU runs** — it already is wherever
+  `whisper-ctranslate2` is installed. A system-wide CUDA toolkit still works too.
 
 ## Tests
 
