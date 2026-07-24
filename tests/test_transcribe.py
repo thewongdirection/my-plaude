@@ -31,6 +31,31 @@ class TestResolveDevice(unittest.TestCase):
         with mock.patch.dict(sys.modules, {"ctranslate2": fake}):
             self.assertEqual(transcribe.resolve_device("auto"), "cpu")
 
+    def test_cpu_only_mode_stays_cpu_without_probing(self):
+        # Explicit --device cpu is a hard CPU-only mode: it must never probe for
+        # a GPU nor upgrade to one even when a CUDA device is present.
+        fake = types.ModuleType("ctranslate2")
+
+        def _no_probe():
+            raise AssertionError("explicit device must not probe for CUDA")
+
+        fake.get_cuda_device_count = _no_probe
+        with mock.patch.dict(sys.modules, {"ctranslate2": fake}):
+            self.assertEqual(transcribe.resolve_device("cpu"), "cpu")
+
+    def test_gpu_only_mode_stays_cuda_without_fallback(self):
+        # Explicit --device cuda is a hard GPU-only mode: honored as-is, with no
+        # probing and no silent fallback to CPU (a missing GPU should fail loudly
+        # at load time, not be masked here).
+        fake = types.ModuleType("ctranslate2")
+
+        def _no_probe():
+            raise AssertionError("explicit device must not probe for CUDA")
+
+        fake.get_cuda_device_count = _no_probe
+        with mock.patch.dict(sys.modules, {"ctranslate2": fake}):
+            self.assertEqual(transcribe.resolve_device("cuda"), "cuda")
+
 
 class TestResolveComputeType(unittest.TestCase):
     def test_auto_gpu_is_float16(self):

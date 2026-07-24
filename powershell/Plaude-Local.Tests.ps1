@@ -51,6 +51,19 @@ Describe 'Resolve-Device' {
         $Device = 'cuda'
         Resolve-Device | Should -Be 'cuda'
     }
+    It 'cpu-only mode stays cpu and never probes for a GPU' {
+        # nvidia-smi must not even be looked up when the device is explicit.
+        Mock Test-Command { throw 'explicit device must not probe for a GPU' }
+        $Device = 'cpu'
+        Resolve-Device | Should -Be 'cpu'
+        Should -Invoke Test-Command -Times 0 -Exactly
+    }
+    It 'gpu-only mode stays cuda without probing or fallback' {
+        Mock Test-Command { throw 'explicit device must not probe for a GPU' }
+        $Device = 'cuda'
+        Resolve-Device | Should -Be 'cuda'
+        Should -Invoke Test-Command -Times 0 -Exactly
+    }
 }
 
 Describe 'Split-IntoChunks' {

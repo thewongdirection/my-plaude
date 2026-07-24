@@ -159,6 +159,35 @@ class TestOrchestration(unittest.TestCase):
             self.assertEqual(prep.call_args.kwargs["enhance"], "speech")
             self.assertEqual(prep.call_args.kwargs["gain_db"], 6.0)
 
+    def _capture_device(self, device):
+        """Run the CLI in a given device mode and return (rc, device kwarg)."""
+        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+        captured = {}
+
+        def _factory(**kw):
+            captured.update(kw)
+            return _FakeEngine(segs, **kw)
+
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            out = pathlib.Path(d) / "o.txt"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f), \
+                 mock.patch.object(transcribe, "Transcriber", _factory):
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none",
+                              "--device", device, "-q"])
+        return rc, captured.get("device")
+
+    def test_cpu_only_mode_forwards_device(self):
+        rc, device = self._capture_device("cpu")
+        self.assertEqual(rc, 0)
+        self.assertEqual(device, "cpu")
+
+    def test_gpu_only_mode_forwards_device(self):
+        rc, device = self._capture_device("cuda")
+        self.assertEqual(rc, 0)
+        self.assertEqual(device, "cuda")
+
     def test_happy_path_writes_transcript(self):
         segs = [
             {"start": 0.0, "end": 1.0, "text": " Hello.", "speaker": None},
