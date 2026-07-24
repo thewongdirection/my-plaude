@@ -98,4 +98,37 @@ Describe 'Get-DashboardHtml' {
         $script:Doc | Should -Not -Match 'src='
         $script:Doc | Should -Match '<style>'
     }
+    It 'renders aligned Side-by-Side rows from pairs' {
+        $pairs = @([pscustomobject]@{ O = 'hola'; X = 'hello' },
+                   [pscustomobject]@{ O = 'mundo'; X = 'world' })
+        $doc = Get-DashboardHtml -Title 'T' -Language 'es' -SpeechDurationS 5 -WordCount 1 `
+            -Summary 's' -SummaryNote '' -Transcript 'x' -Translation 'y' `
+            -TranslationLabel 'Translated-English' -Cjk $false -Pairs $pairs
+        $doc | Should -Match 'class="sbs-o'
+        $doc | Should -Match 'class="sbs-x'
+        ([regex]::Matches($doc, 'class="sbs-o')).Count | Should -Be 2
+        $doc | Should -Match 'hello'
+        $doc | Should -Match 'world'
+    }
+}
+
+Describe 'Get-AlignedPairs' {
+    It 'pairs original + translation segments by time overlap' {
+        $orig = @([pscustomobject]@{ start = 0.0; end = 2.0; text = 'a' },
+                  [pscustomobject]@{ start = 2.0; end = 4.0; text = 'b' })
+        $trans = @([pscustomobject]@{ start = 0.1; end = 1.9; text = 'A' },
+                   [pscustomobject]@{ start = 2.1; end = 3.9; text = 'B' })
+        $rows = @(Get-AlignedPairs -OrigSegments $orig -TransSegments $trans)
+        $rows.Count | Should -Be 2
+        $rows[0].O | Should -Be 'a'
+        $rows[0].X | Should -Be 'A'
+        $rows[1].X | Should -Be 'B'
+    }
+    It 'leaves an empty translation cell when unmatched' {
+        $orig = @([pscustomobject]@{ start = 0.0; end = 1.0; text = 'a' },
+                  [pscustomobject]@{ start = 5.0; end = 6.0; text = 'b' })
+        $trans = @([pscustomobject]@{ start = 0.2; end = 0.8; text = 'A' })
+        $rows = @(Get-AlignedPairs -OrigSegments $orig -TransSegments $trans)
+        $rows[1].X | Should -Be ''
+    }
 }

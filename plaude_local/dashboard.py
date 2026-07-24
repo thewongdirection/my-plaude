@@ -109,9 +109,13 @@ h1{font-family:var(--font-read);font-weight:600;letter-spacing:-.01em;font-size:
 .doc{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:clamp(20px,3.5vw,34px);overflow-x:auto;}
 .doc pre{margin:0;font-family:var(--font-read);font-size:1.03rem;line-height:1.72;white-space:pre-wrap;word-break:break-word;}
 .doc.cjk pre{line-height:1.95;font-size:1.08rem;}
-.sbs{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-@media (max-width:640px){.sbs{grid-template-columns:1fr;}}
-.sbs .col h3{font-family:var(--font-mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin:0 0 8px;}
+.sbs{display:grid;grid-template-columns:1fr 1fr;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;}
+.sbs-h{position:sticky;top:0;background:var(--surface);font-family:var(--font-mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);padding:12px 18px;border-bottom:1px solid var(--border);z-index:1;}
+.sbs-o,.sbs-x{padding:11px 18px;border-bottom:1px solid var(--border);font-family:var(--font-read);font-size:1.01rem;line-height:1.6;white-space:pre-wrap;word-break:break-word;}
+.sbs-o{border-right:1px solid var(--border);}
+.sbs-o.cjk{line-height:1.9;font-size:1.06rem;}
+.sbs-x.empty{color:var(--muted);font-style:italic;}
+.sbs-o:nth-last-child(2),.sbs-x:last-child{border-bottom:0;}
 footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--border);color:var(--muted);font-size:.8rem;font-family:var(--font-mono);}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
 """
@@ -133,6 +137,42 @@ def _summary_html(summary: Optional[str], note: Optional[str]) -> str:
     return f'<div class="note">{_html.escape(msg)}</div>'
 
 
+def align_segments(orig_segments, trans_segments):
+    """Pair original segments with time-overlapping translation text.
+
+    Whisper's transcribe and translate passes are time-aligned, so each original
+    segment is matched with the translation segments whose midpoint falls inside
+    it. Returns a list of ``(original_text, translation_text)`` rows for the
+    Side-by-Side view.
+    """
+    trans = [
+        (float(t.get("start", 0.0)), float(t.get("end", 0.0)), (t.get("text") or "").strip())
+        for t in (trans_segments or [])
+    ]
+    rows = []
+    for o in (orig_segments or []):
+        os_ = float(o.get("start", 0.0))
+        oe = float(o.get("end", 0.0))
+        matched = [txt for (ts, te, txt) in trans if txt and os_ <= (ts + te) / 2.0 < oe]
+        rows.append(((o.get("text") or "").strip(), " ".join(matched)))
+    return rows
+
+
+def _sbs_html(pairs, cjk_cls: str, lang_disp: str, tr_tab: str) -> str:
+    cells = [
+        f'<div class="sbs-h">Transcribed · {_html.escape(lang_disp)}</div>',
+        f'<div class="sbs-h">{tr_tab}</div>',
+    ]
+    for orig, trans in pairs:
+        o_cell = _html.escape(orig) if orig.strip() else "&nbsp;"
+        if trans.strip():
+            x_cell = f'<div class="sbs-x">{_html.escape(trans)}</div>'
+        else:
+            x_cell = '<div class="sbs-x empty">—</div>'
+        cells.append(f'<div class="sbs-o{cjk_cls}">{o_cell}</div>{x_cell}')
+    return '<div class="sbs">' + "".join(cells) + "</div>"
+
+
 def build_dashboard_html(
     *,
     title: str,
@@ -145,6 +185,7 @@ def build_dashboard_html(
     translation_label: str = "English",
     summary_note: Optional[str] = None,
     cjk: bool = False,
+    pairs=None,
 ) -> str:
     lang_disp = language_name(language)
     lang_code = f" ({language})" if language else ""
@@ -152,6 +193,10 @@ def build_dashboard_html(
     t_esc = _html.escape(transcript)
     x_esc = _html.escape(translation)
     tr_tab = _html.escape(translation_label)
+    # Side-by-Side: aligned segment rows; fall back to one row of the full texts.
+    if not pairs:
+        pairs = [(transcript, translation)]
+    sbs = _sbs_html(pairs, cjk_cls, lang_disp, tr_tab)
     return (
         f"<title>{_html.escape(title)}</title>\n<style>{_CSS}</style>\n"
         '<div class="wrap">\n'
@@ -171,10 +216,7 @@ def build_dashboard_html(
         "  </div>\n"
         f'  <section class="panel" id="panel-transcribed" role="tabpanel" aria-labelledby="tab-transcribed"><div class="doc{cjk_cls}"><pre>{t_esc}</pre></div></section>\n'
         f'  <section class="panel" id="panel-translation" role="tabpanel" aria-labelledby="tab-translation" hidden><div class="doc"><pre>{x_esc}</pre></div></section>\n'
-        '  <section class="panel" id="panel-sbs" role="tabpanel" aria-labelledby="tab-sbs" hidden><div class="sbs">'
-        f'<div class="col"><h3>Transcribed · {_html.escape(lang_disp)}</h3><div class="doc{cjk_cls}"><pre>{t_esc}</pre></div></div>'
-        f'<div class="col"><h3>{tr_tab}</h3><div class="doc"><pre>{x_esc}</pre></div></div>'
-        "</div></section>\n"
+        f'  <section class="panel" id="panel-sbs" role="tabpanel" aria-labelledby="tab-sbs" hidden>{sbs}</section>\n'
         f"  <footer>plaude-local · {word_count:,} words · {_html.escape(format_duration(speech_duration_s))}</footer>\n"
         f"</div>\n<script>{_JS}</script>\n"
     )

@@ -330,7 +330,7 @@ def apply_offline(enabled: bool) -> None:
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 
-def _run_dashboard(args, segments, meta, whisper_english) -> int:
+def _run_dashboard(args, segments, meta, whisper_translate_segs) -> int:
     """Build + write the HTML dashboard (default output): summary + tabs."""
     from . import dashboard
     from . import summarize as summ
@@ -339,10 +339,18 @@ def _run_dashboard(args, segments, meta, whisper_english) -> int:
     source_lang = (meta.get("language") or "").lower()
     target = (args.translate_to or "en").lower()
 
-    # Translation for the "Translated-<lang>" tab.
+    # Translation for the "Translated-<lang>" tab, plus time-aligned Side-by-Side
+    # rows (pairs). English uses Whisper's segments so rows line up; a non-English
+    # LLM translation is prose, so the Side-by-Side falls back to a single block.
+    pairs = None
     if target == "en":
         translation_label = "English"
-        translation_text = transcript_text if source_lang == "en" else (whisper_english or "")
+        if source_lang == "en":
+            translation_text = transcript_text
+            pairs = dashboard.align_segments(segments, segments)
+        else:
+            translation_text = formats.to_text(whisper_translate_segs or [])
+            pairs = dashboard.align_segments(segments, whisper_translate_segs or [])
     else:
         translation_label = dashboard.language_name(target)
         _log(args.quiet, f"      translating to {translation_label} (LLM) ...")
@@ -375,7 +383,7 @@ def _run_dashboard(args, segments, meta, whisper_english) -> int:
         summary=summary_text, summary_note=summary_note,
         transcript=transcript_text, translation=translation_text,
         translation_label=f"Translated-{translation_label}",
-        cjk=source_lang in ("zh", "ja", "ko"))
+        cjk=source_lang in ("zh", "ja", "ko"), pairs=pairs)
 
     out = args.output if args.output else _default_output("html")
     if out != "-" and not _confirm_overwrite(out, assume_yes=args.yes, quiet=args.quiet):
@@ -475,7 +483,7 @@ def run(argv: Optional[List[str]] = None) -> int:
                   + preflight.check_summarizer().remedy, file=sys.stderr)
             return 8
 
-    whisper_english = None  # English translation via Whisper (dashboard only)
+    whisper_translate_segs = None  # English translation segments (dashboard only)
     with tempfile.TemporaryDirectory(prefix="plaude-local-") as tmp:
         # 1. Preprocess / denoise / enhance
         _log(args.quiet,
@@ -531,7 +539,7 @@ def run(argv: Optional[List[str]] = None) -> int:
                     str(prepared), language=args.language,
                     vad_filter=not args.no_vad, beam_size=args.beam_size,
                     task="translate")
-                whisper_english = formats.to_text(_tr_segs)
+                whisper_translate_segs = _tr_segs
             except transcribe.TranscribeError as exc:
                 print(f"error: {exc}", file=sys.stderr)
                 return 6
@@ -582,7 +590,7 @@ def run(argv: Optional[List[str]] = None) -> int:
     # 4a. HTML dashboard (default format): summary + Transcribed / Translated /
     # Side-by-Side tabs, plus optional split text files.
     if args.format == "html":
-        return _run_dashboard(args, segments, meta, whisper_english)
+        return _run_dashboard(args, segments, meta, whisper_translate_segs)
 
     # 4. Render + write transcript (UTF-8)
     # "timestamps" is an internal rendering hint for the txt writer (show a clock

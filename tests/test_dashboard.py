@@ -73,6 +73,42 @@ class TestRender(unittest.TestCase):
         self.assertNotIn("src=", html)
         self.assertIn("<style>", html)
 
+    def test_side_by_side_renders_aligned_rows(self):
+        html = self._doc(pairs=[("你好", "Hello"), ("世界", "World")])
+        self.assertIn('class="sbs-o', html)   # left (original) cells
+        self.assertIn('class="sbs-x', html)   # right (translation) cells
+        self.assertIn("你好", html)
+        self.assertIn("World", html)
+        # Two aligned rows -> two original cells.
+        self.assertEqual(html.count('class="sbs-o'), 2)
+
+    def test_side_by_side_marks_empty_translation(self):
+        html = self._doc(pairs=[("solo", "")])
+        self.assertIn("sbs-x empty", html)
+
+
+class TestAlign(unittest.TestCase):
+    def test_align_by_time_overlap(self):
+        orig = [{"start": 0.0, "end": 2.0, "text": "你好"},
+                {"start": 2.0, "end": 4.0, "text": "世界"}]
+        trans = [{"start": 0.1, "end": 1.9, "text": "Hello"},
+                 {"start": 2.1, "end": 3.9, "text": "World"}]
+        self.assertEqual(dashboard.align_segments(orig, trans),
+                         [("你好", "Hello"), ("世界", "World")])
+
+    def test_align_unmatched_translation_leaves_empty(self):
+        orig = [{"start": 0.0, "end": 1.0, "text": "a"},
+                {"start": 5.0, "end": 6.0, "text": "b"}]
+        trans = [{"start": 0.2, "end": 0.8, "text": "A"}]
+        self.assertEqual(dashboard.align_segments(orig, trans),
+                         [("a", "A"), ("b", "")])
+
+    def test_align_multiple_translation_segments_join(self):
+        orig = [{"start": 0.0, "end": 4.0, "text": "long"}]
+        trans = [{"start": 0.5, "end": 1.5, "text": "one"},
+                 {"start": 2.0, "end": 3.0, "text": "two"}]
+        self.assertEqual(dashboard.align_segments(orig, trans), [("long", "one two")])
+
 
 if __name__ == "__main__":
     unittest.main()

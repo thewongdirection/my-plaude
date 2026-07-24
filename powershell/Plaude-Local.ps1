@@ -884,11 +884,31 @@ function Get-CriticalTopicsPrompt {
     return "$head`n`n${label}:`n$Text`n`nSummary:"
 }
 
+function Get-AlignedPairs {
+    # Pair original segments with time-overlapping translation text (parity with
+    # dashboard.align_segments). Returns [pscustomobject]@{ O=orig; X=trans } rows.
+    param($OrigSegments, $TransSegments)
+    $trans = @()
+    foreach ($t in @($TransSegments)) {
+        if ($null -ne $t) { $trans += , @([double]$t.start, [double]$t.end, ([string]$t.text).Trim()) }
+    }
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($o in @($OrigSegments)) {
+        if ($null -eq $o) { continue }
+        $os = [double]$o.start; $oe = [double]$o.end
+        $matched = foreach ($tr in $trans) {
+            if ($tr[2] -and ($os -le (($tr[0] + $tr[1]) / 2.0)) -and ((($tr[0] + $tr[1]) / 2.0) -lt $oe)) { $tr[2] }
+        }
+        $rows.Add([pscustomobject]@{ O = ([string]$o.text).Trim(); X = (($matched) -join ' ') })
+    }
+    return $rows.ToArray()
+}
+
 function Get-DashboardHtml {
     param(
         [string]$Title, [string]$Language, $SpeechDurationS, [int]$WordCount,
         [string]$Summary, [string]$SummaryNote, [string]$Transcript,
-        [string]$Translation, [string]$TranslationLabel, [bool]$Cjk
+        [string]$Translation, [string]$TranslationLabel, [bool]$Cjk, $Pairs
     )
     $css = @'
 :root{--bg:#f6f7f9;--surface:#fff;--text:#1a1d23;--muted:#5b6270;--accent:#0e7c86;--accent-ink:#0a5b62;--accent-soft:#e2f1f1;--border:#e4e7eb;--shadow:0 1px 2px rgba(20,25,35,.04),0 8px 24px rgba(20,25,35,.06);--font-sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--font-read:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Songti SC","Noto Serif CJK SC","Microsoft YaHei",serif;--font-mono:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;}
@@ -915,9 +935,12 @@ h1{font-family:var(--font-read);font-weight:600;font-size:clamp(1.7rem,4vw,2.4re
 .doc{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:clamp(20px,3.5vw,34px);overflow-x:auto;}
 .doc pre{margin:0;font-family:var(--font-read);font-size:1.03rem;line-height:1.72;white-space:pre-wrap;word-break:break-word;}
 .doc.cjk pre{line-height:1.95;font-size:1.08rem;}
-.sbs{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-@media (max-width:640px){.sbs{grid-template-columns:1fr;}}
-.sbs .col h3{font-family:var(--font-mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin:0 0 8px;}
+.sbs{display:grid;grid-template-columns:1fr 1fr;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;}
+.sbs-h{position:sticky;top:0;background:var(--surface);font-family:var(--font-mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);padding:12px 18px;border-bottom:1px solid var(--border);z-index:1;}
+.sbs-o,.sbs-x{padding:11px 18px;border-bottom:1px solid var(--border);font-family:var(--font-read);font-size:1.01rem;line-height:1.6;white-space:pre-wrap;word-break:break-word;}
+.sbs-o{border-right:1px solid var(--border);}
+.sbs-o.cjk{line-height:1.9;font-size:1.06rem;}
+.sbs-x.empty{color:var(--muted);font-style:italic;}
 footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--border);color:var(--muted);font-size:.8rem;font-family:var(--font-mono);}
 '@
     $js = @'
@@ -959,9 +982,19 @@ IDS.forEach(x=>document.getElementById("tab-"+x).addEventListener("click",()=>se
     [void]$sb.Append("</div>`n")
     [void]$sb.Append("<section class=`"panel`" id=`"panel-transcribed`" role=`"tabpanel`"><div class=`"doc$cjkCls`"><pre>$tEsc</pre></div></section>`n")
     [void]$sb.Append("<section class=`"panel`" id=`"panel-translation`" role=`"tabpanel`" hidden><div class=`"doc`"><pre>$xEsc</pre></div></section>`n")
+    # Side-by-Side: time-aligned segment rows (original left, translation right).
+    $rows = if ($Pairs) { @($Pairs) } else { @([pscustomobject]@{ O = $Transcript; X = $Translation }) }
     [void]$sb.Append("<section class=`"panel`" id=`"panel-sbs`" role=`"tabpanel`" hidden><div class=`"sbs`">")
-    [void]$sb.Append("<div class=`"col`"><h3>Transcribed &middot; $(& $enc $langDisp)</h3><div class=`"doc$cjkCls`"><pre>$tEsc</pre></div></div>")
-    [void]$sb.Append("<div class=`"col`"><h3>$trTab</h3><div class=`"doc`"><pre>$xEsc</pre></div></div>")
+    [void]$sb.Append("<div class=`"sbs-h`">Transcribed &middot; $(& $enc $langDisp)</div><div class=`"sbs-h`">$trTab</div>")
+    foreach ($row in $rows) {
+        $oCell = if (([string]$row.O).Trim()) { & $enc $row.O } else { '&nbsp;' }
+        if (([string]$row.X).Trim()) {
+            $xCell = "<div class=`"sbs-x`">$(& $enc $row.X)</div>"
+        } else {
+            $xCell = '<div class="sbs-x empty">&#8212;</div>'
+        }
+        [void]$sb.Append("<div class=`"sbs-o$cjkCls`">$oCell</div>$xCell")
+    }
     [void]$sb.Append("</div></section>`n")
     [void]$sb.Append("<footer>plaude-local &middot; $wc words &middot; $dur</footer>`n")
     [void]$sb.Append("</div>`n<script>$js</script>`n")
@@ -1091,10 +1124,12 @@ function Invoke-Main {
 
             $target = $TranslateTo.ToLower()
             $translationText = ''
+            $pairs = $null   # time-aligned Side-by-Side rows (English/Whisper only)
             if ($target -eq 'en') {
                 $translationLabel = 'English'
                 if ($srcLang.ToLower() -eq 'en') {
                     $translationText = $transcriptText
+                    $pairs = Get-AlignedPairs -OrigSegments $segs -TransSegments $segs
                 } else {
                     Write-Log '      translating to English (Whisper) ...'
                     $trWork = Join-Path $work 'translate'
@@ -1102,6 +1137,12 @@ function Invoke-Main {
                     try {
                         $trPath = Invoke-Transcribe -AudioPath $prepared -WorkDir $trWork -Dev $dev -Compute $compute -Token $token -Task translate
                         $translationText = [System.IO.File]::ReadAllText($trPath, [System.Text.Encoding]::UTF8)
+                        $trJson = [System.IO.Path]::ChangeExtension($trPath, '.json')
+                        if (Test-Path -LiteralPath $trJson) {
+                            $trObj = (Get-Content -LiteralPath $trJson -Raw -Encoding UTF8) | ConvertFrom-Json
+                            $trSegs = if ($trObj.PSObject.Properties['segments']) { $trObj.segments } else { @() }
+                            $pairs = Get-AlignedPairs -OrigSegments $segs -TransSegments $trSegs
+                        }
                     } catch { Write-ErrLine "error: $($_.Exception.Message)"; return 6 }
                 }
             } else {
@@ -1138,7 +1179,7 @@ function Invoke-Main {
             $htmlDoc = Get-DashboardHtml -Title $title -Language $srcLang -SpeechDurationS $speechS `
                 -WordCount (Get-WordCount $transcriptText) -Summary $summaryText -SummaryNote $summaryNote `
                 -Transcript $transcriptText -Translation $translationText `
-                -TranslationLabel "Translated-$translationLabel" -Cjk $cjk
+                -TranslationLabel "Translated-$translationLabel" -Cjk $cjk -Pairs $pairs
 
             $dashOut = if ($Output) { $Output } else { Get-DefaultOutput -Fmt 'html' }
             if ($dashOut -eq '-') {
