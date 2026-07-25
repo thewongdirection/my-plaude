@@ -626,7 +626,11 @@ function Invoke-LlmCall {
     # Encode the JSON body as UTF-8 bytes so non-Latin (CJK) transcript text is
     # sent correctly regardless of the default request encoding.
     if ($Backend -eq 'ollama') {
-        $json = @{ model = $Model; prompt = $Prompt; stream = $false } | ConvertTo-Json
+        # Size the context to the prompt: Ollama otherwise defaults to a small
+        # window (~4k tokens) and silently truncates longer prompts (parity with
+        # _ollama_ctx), which mangled large translation batches / long summaries.
+        $numCtx = [Math]::Min(32768, [Math]::Max(4096, $Prompt.Length + 4096))
+        $json = @{ model = $Model; prompt = $Prompt; stream = $false; options = @{ num_ctx = $numCtx } } | ConvertTo-Json -Depth 4
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
         $resp = Invoke-RestMethod -Uri "$($Url.TrimEnd('/'))/api/generate" -Method Post `
             -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec $TimeoutSec
@@ -705,32 +709,55 @@ function Build-AlignedTranslatePrompt {
     return "Translate each numbered line below into $TargetLanguage. Output EXACTLY the same number of lines, each starting with its number and a period, then the $TargetLanguage translation of that line only. Consider the whole passage for context, but do not merge, split, reorder, add, or drop lines, and output nothing but the numbered $TargetLanguage lines.`n`n$Numbered`n`n$TargetLanguage (numbered):"
 }
 
+# Cap lines per translation request (parity with DEFAULT_MAX_TRANSLATE_LINES):
+# very large batches overflow the LLM context and the numbered reply parses to
+# nothing. Small batches translate reliably and align cleanly.
+$Script:MaxTranslateLines = 40
+
+function Invoke-TranslateGroup {
+    # Translate one group of line indices into $Out (a string[] mutated in place).
+    # If the reply maps back to fewer than half the lines (context overflow ->
+    # truncated/misformatted), split the group and retry each half, down to
+    # single lines, so a batch never silently comes back all-empty.
+    param([int[]]$Group, [string[]]$Lines, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$TimeoutSec, [string[]]$Out)
+    $numberedLines = for ($k = 0; $k -lt $Group.Count; $k++) { "$($k + 1). $($Lines[$Group[$k]])" }
+    $numbered = $numberedLines -join "`n"
+    $resp = Invoke-LlmCall -Prompt (Build-AlignedTranslatePrompt -Numbered $numbered -TargetLanguage $TargetLanguage) -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec
+    $resp = [regex]::Replace($resp, '(?is)<think>.*?</think>', '')
+    $got = @{}
+    foreach ($m in [regex]::Matches($resp, '(?m)^\s*(\d+)[.\):]\s*(.*)$')) { $got[[int]$m.Groups[1].Value] = $m.Groups[2].Value.Trim() }
+    $matched = 0
+    for ($n = 0; $n -lt $Group.Count; $n++) { if ($got.ContainsKey($n + 1) -and $got[$n + 1]) { $matched++ } }
+    if ($Group.Count -eq 1 -or ($matched * 2) -ge $Group.Count) {
+        for ($n = 0; $n -lt $Group.Count; $n++) {
+            $Out[$Group[$n]] = if ($got.ContainsKey($n + 1)) { $got[$n + 1] } else { '' }
+        }
+        return
+    }
+    $mid = [int][Math]::Floor($Group.Count / 2)
+    Invoke-TranslateGroup -Group $Group[0..($mid - 1)] -Lines $Lines -TargetLanguage $TargetLanguage -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec -Out $Out
+    Invoke-TranslateGroup -Group $Group[$mid..($Group.Count - 1)] -Lines $Lines -TargetLanguage $TargetLanguage -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec -Out $Out
+}
+
 function Invoke-TranslateLines {
     # Accuracy-first, alignment-preserving LLM translation: one output line per
     # input segment line. Parity with summarize.translate_lines.
-    param([string[]]$Lines, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars, [int]$TimeoutSec = 120)
+    param([string[]]$Lines, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars, [int]$TimeoutSec = 120, [int]$MaxLines = 0)
+    if ($MaxLines -le 0) { $MaxLines = $Script:MaxTranslateLines }
     $out = New-Object 'string[]' $Lines.Count
     for ($i = 0; $i -lt $out.Count; $i++) { $out[$i] = '' }
     $batches = New-Object System.Collections.Generic.List[object]
     $cur = New-Object System.Collections.Generic.List[int]; $clen = 0
     for ($i = 0; $i -lt $Lines.Count; $i++) {
         $add = $Lines[$i].Length + 6
-        if ($cur.Count -gt 0 -and ($clen + $add) -gt $MaxChars) {
+        if ($cur.Count -gt 0 -and (($clen + $add) -gt $MaxChars -or $cur.Count -ge $MaxLines)) {
             $batches.Add($cur.ToArray()); $cur = New-Object System.Collections.Generic.List[int]; $clen = 0
         }
         $cur.Add($i); $clen += $add
     }
     if ($cur.Count -gt 0) { $batches.Add($cur.ToArray()) }
     foreach ($group in $batches) {
-        $lines = for ($k = 0; $k -lt $group.Count; $k++) { "$($k + 1). $($Lines[$group[$k]])" }
-        $numbered = $lines -join "`n"
-        $resp = Invoke-LlmCall -Prompt (Build-AlignedTranslatePrompt -Numbered $numbered -TargetLanguage $TargetLanguage) -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec
-        $resp = [regex]::Replace($resp, '(?is)<think>.*?</think>', '')
-        $got = @{}
-        foreach ($m in [regex]::Matches($resp, '(?m)^\s*(\d+)[.\):]\s*(.*)$')) { $got[[int]$m.Groups[1].Value] = $m.Groups[2].Value.Trim() }
-        for ($n = 0; $n -lt $group.Count; $n++) {
-            $out[$group[$n]] = if ($got.ContainsKey($n + 1)) { $got[$n + 1] } else { '' }
-        }
+        Invoke-TranslateGroup -Group $group -Lines $Lines -TargetLanguage $TargetLanguage -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec -Out $out
     }
     return , $out
 }

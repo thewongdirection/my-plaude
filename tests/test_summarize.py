@@ -198,6 +198,55 @@ class TestTranslateLines(unittest.TestCase):
                                   target_language="English", max_chars=8)
         self.assertGreater(len(calls), 1)
 
+    def test_batches_by_max_lines(self):
+        # Regression: oversized batches overflow the LLM context and come back
+        # empty. Lines-per-request must be capped even when max_chars is huge.
+        calls = []
+
+        def fake(p):
+            calls.append(p)
+            # echo back a numbered line for each input line in the prompt
+            n = len([ln for ln in p.splitlines() if ln[:1].isdigit()])
+            return "\n".join(f"{i + 1}. t{i}" for i in range(n))
+
+        lines = [f"L{i}" for i in range(100)]
+        out = summarize.translate_lines(lines, fake, target_language="English",
+                                        max_chars=10_000, max_lines=40)
+        self.assertGreaterEqual(len(calls), 3)          # 100 / 40 -> 3 batches
+        self.assertEqual(len(out), 100)
+        self.assertTrue(all(out))                       # nothing dropped
+
+    def test_recovers_when_large_batch_underparses(self):
+        # A batch that returns nothing until it is small enough must be split and
+        # retried, never silently yielding all-empty output.
+        def fake(p):
+            numbered = [ln for ln in p.splitlines() if ln[:1].isdigit()]
+            if len(numbered) > 3:
+                return "sorry, I cannot"      # truncated/misformatted -> no match
+            return "\n".join(f"{i + 1}. ok{i}" for i in range(len(numbered)))
+
+        lines = [f"L{i}" for i in range(8)]
+        out = summarize.translate_lines(lines, fake, target_language="English",
+                                        max_chars=10_000, max_lines=8)
+        self.assertEqual(len(out), 8)
+        self.assertTrue(all(out))              # split-on-underparse filled them all
+
+
+class TestOllamaCtx(unittest.TestCase):
+    def test_sets_num_ctx_sized_to_prompt(self):
+        seen = {}
+
+        def fake_post(url, payload, timeout):
+            seen.update(payload)
+            return {"response": "ok"}
+
+        with mock.patch.object(summarize, "_post_json", side_effect=fake_post):
+            summarize._ollama_call("x" * 20_000, "m", "http://h", 10)
+        self.assertIn("num_ctx", seen["options"])
+        # big prompt -> context larger than the truncating ~4k default
+        self.assertGreater(seen["options"]["num_ctx"], 8000)
+        self.assertLessEqual(seen["options"]["num_ctx"], summarize._MAX_NUM_CTX)
+
 
 class TestDefaultOllamaModel(unittest.TestCase):
     def test_returns_first_installed_model(self):

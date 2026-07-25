@@ -152,6 +152,38 @@ Describe 'Invoke-TranslateLines' {
         Invoke-TranslateLines -Lines @('a') -TargetLanguage 'English' -Backend 'ollama' -Model 'm' -Url 'http://x' -MaxChars 8000 -TimeoutSec 600 | Out-Null
         Should -Invoke Invoke-LlmCall -Times 1 -ParameterFilter { $TimeoutSec -eq 600 }
     }
+    It 'caps lines per request (large batches would overflow the context)' {
+        Mock Invoke-LlmCall {
+            $n = ([regex]::Matches($Prompt, '(?m)^\d+\. ')).Count
+            (1..$n | ForEach-Object { "$_. t$_" }) -join "`n"
+        }
+        $lines = 0..99 | ForEach-Object { "L$_" }
+        $out = Invoke-TranslateLines -Lines $lines -TargetLanguage 'English' -Backend 'ollama' -Model 'm' -Url 'http://x' -MaxChars 100000 -MaxLines 40
+        $out.Count | Should -Be 100
+        ($out | Where-Object { $_ }).Count | Should -Be 100      # nothing dropped
+        Should -Invoke Invoke-LlmCall -Times 3                    # 100 / 40 -> 3 batches
+    }
+    It 'splits and retries when a batch under-parses (never all-empty)' {
+        Mock Invoke-LlmCall {
+            $n = ([regex]::Matches($Prompt, '(?m)^\d+\. ')).Count
+            if ($n -gt 3) { 'sorry, cannot' } else { (1..$n | ForEach-Object { "$_. ok$_" }) -join "`n" }
+        }
+        $lines = 0..7 | ForEach-Object { "L$_" }
+        $out = Invoke-TranslateLines -Lines $lines -TargetLanguage 'English' -Backend 'ollama' -Model 'm' -Url 'http://x' -MaxChars 100000 -MaxLines 8
+        $out.Count | Should -Be 8
+        ($out | Where-Object { $_ }).Count | Should -Be 8
+    }
+}
+
+Describe 'Invoke-LlmCall num_ctx' {
+    It 'sizes the ollama context window to the prompt' {
+        Mock Invoke-RestMethod { [pscustomobject]@{ response = 'ok' } }
+        Invoke-LlmCall -Prompt ('x' * 20000) -Backend 'ollama' -Model 'm' -Url 'http://x' | Out-Null
+        Should -Invoke Invoke-RestMethod -Times 1 -ParameterFilter {
+            $obj = [System.Text.Encoding]::UTF8.GetString($Body) | ConvertFrom-Json
+            $obj.options.num_ctx -gt 8000
+        }
+    }
 }
 
 Describe 'Resolve-TranslateEngine' {

@@ -32,6 +32,11 @@ BACKENDS = ("ollama", "llamacpp")
 # Keep each model call within a modest context budget. Transcripts longer than
 # this are summarized in chunks and then combined (map-reduce).
 DEFAULT_MAX_CHARS = 8000
+# Cap lines per translation request. Very large batches overflow the LLM context
+# window, so the numbered reply comes back truncated/misformatted and parses to
+# nothing. Small batches translate reliably and align cleanly.
+DEFAULT_MAX_TRANSLATE_LINES = 40
+_MAX_NUM_CTX = 32768
 
 
 class SummarizeError(RuntimeError):
@@ -122,8 +127,19 @@ def detect_backend(
 # Backend calls
 # --------------------------------------------------------------------------- #
 
+def _ollama_ctx(prompt: str) -> int:
+    """Pick a context window big enough for the whole prompt (plus room to
+    answer). Ollama otherwise defaults to a small context (~4k tokens) and
+    *silently truncates* longer prompts, which mangled large translation batches
+    and long summary chunks. Sized generously (CJK is ~1 token/char) and capped."""
+    return min(_MAX_NUM_CTX, max(4096, len(prompt) + 4096))
+
+
 def _ollama_call(prompt: str, model: str, url: str, timeout: float) -> str:
-    payload = {"model": model, "prompt": prompt, "stream": False}
+    payload = {
+        "model": model, "prompt": prompt, "stream": False,
+        "options": {"num_ctx": _ollama_ctx(prompt)},
+    }
     resp = _post_json(url.rstrip("/") + "/api/generate", payload, timeout)
     text = resp.get("response")
     if not text:
@@ -283,19 +299,48 @@ _NUM_LINE = re.compile(r"(?m)^\s*(\d+)[.\):]\s*(.*)$")
 _THINK = re.compile(r"(?is)<think>.*?</think>")
 
 
+def _translate_group(
+    group: List[int],
+    lines: List[str],
+    call: Callable[[str], str],
+    target_language: str,
+    out: List[str],
+) -> None:
+    """Translate one group of line indices into ``out``.
+
+    If the numbered reply maps back to fewer than half the lines (a sign the
+    batch overflowed the context and was truncated/misformatted), split the group
+    and retry each half — down to single lines — so a batch never silently comes
+    back all-empty.
+    """
+    numbered = "\n".join(f"{n + 1}. {lines[idx]}" for n, idx in enumerate(group))
+    resp = _THINK.sub("", call(build_aligned_translate_prompt(numbered, target_language)))
+    got = {int(m.group(1)): m.group(2).strip() for m in _NUM_LINE.finditer(resp)}
+    matched = sum(1 for n in range(len(group)) if got.get(n + 1))
+    if len(group) == 1 or matched * 2 >= len(group):
+        for n, idx in enumerate(group):
+            out[idx] = got.get(n + 1, "")
+        return
+    mid = len(group) // 2
+    _translate_group(group[:mid], lines, call, target_language, out)
+    _translate_group(group[mid:], lines, call, target_language, out)
+
+
 def translate_lines(
     lines: List[str],
     call: Callable[[str], str],
     *,
     target_language: str,
     max_chars: int = DEFAULT_MAX_CHARS,
+    max_lines: int = DEFAULT_MAX_TRANSLATE_LINES,
 ) -> List[str]:
     """Translate segment lines, keeping one output line per input line.
 
-    Batches lines (with full-batch context) into <= ``max_chars`` requests and
-    parses the numbered replies back per line, so the Side-by-Side stays aligned
-    while the LLM does the (more accurate) translation. Lines that cannot be
-    matched come back empty. Returns a list the same length as ``lines``.
+    Batches lines (with full-batch context) into requests bounded by both
+    ``max_chars`` and ``max_lines`` and parses the numbered replies back per
+    line, so the Side-by-Side stays aligned while the LLM does the (more
+    accurate) translation. A reply that doesn't map back cleanly is retried on
+    smaller sub-batches. Returns a list the same length as ``lines``.
     """
     out = [""] * len(lines)
     batch: List[int] = []
@@ -303,7 +348,7 @@ def translate_lines(
     batches: List[List[int]] = []
     for i, ln in enumerate(lines):
         add = len(ln) + 6
-        if batch and blen + add > max_chars:
+        if batch and (blen + add > max_chars or len(batch) >= max_lines):
             batches.append(batch)
             batch, blen = [], 0
         batch.append(i)
@@ -312,11 +357,7 @@ def translate_lines(
         batches.append(batch)
 
     for group in batches:
-        numbered = "\n".join(f"{n + 1}. {lines[idx]}" for n, idx in enumerate(group))
-        resp = _THINK.sub("", call(build_aligned_translate_prompt(numbered, target_language)))
-        got = {int(m.group(1)): m.group(2).strip() for m in _NUM_LINE.finditer(resp)}
-        for n, idx in enumerate(group):
-            out[idx] = got.get(n + 1, "")
+        _translate_group(group, lines, call, target_language, out)
     return out
 
 
@@ -412,10 +453,12 @@ def translate_segments(
     url: Optional[str] = None,
     timeout: float = 120.0,
     max_chars: int = DEFAULT_MAX_CHARS,
+    max_lines: int = DEFAULT_MAX_TRANSLATE_LINES,
 ) -> List[str]:
     """Translate per-segment lines with a local LLM (accuracy-first, aligned).
 
     Returns one translated line per input line so the Side-by-Side stays aligned.
     """
     call = _resolve_call(backend, model, url, timeout)
-    return translate_lines(lines, call, target_language=target_language, max_chars=max_chars)
+    return translate_lines(lines, call, target_language=target_language,
+                           max_chars=max_chars, max_lines=max_lines)
