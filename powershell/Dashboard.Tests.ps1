@@ -217,6 +217,17 @@ Describe 'Get-DefaultOllamaModel' {
     }
 }
 
+Describe 'Default local LLM URLs' {
+    It 'use 127.0.0.1, not localhost (avoids the IPv6 ::1 detection stall)' {
+        # Regression: Invoke-RestMethod stalls on localhost->::1 and times out the
+        # 2s backend detection, silently disabling translation/summary. Parity
+        # with plaude_local.summarize DEFAULT_*_URL.
+        $Script:DefaultOllamaUrl | Should -Be 'http://127.0.0.1:11434'
+        $Script:DefaultLlamacppUrl | Should -Be 'http://127.0.0.1:8080'
+        $Script:DefaultOllamaUrl | Should -Not -Match 'localhost'
+    }
+}
+
 Describe 'Get-OllamaModels' {
     It 'lists all installed model names' {
         Mock Invoke-RestMethod { [pscustomobject]@{ models = @([pscustomobject]@{ name = 'qwen2.5:7b' }, [pscustomobject]@{ name = 'gemma4:latest' }) } }

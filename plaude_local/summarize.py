@@ -6,10 +6,10 @@ summarization, like the rest of the tool, needs no cloud. Transport is plain
 
 Two backends:
 
-* ``ollama``   - talks to the Ollama HTTP API (default http://localhost:11434).
+* ``ollama``   - talks to the Ollama HTTP API (default http://127.0.0.1:11434).
                  Requires Ollama running and a pulled model (e.g. ``llama3.1``).
 * ``llamacpp`` - talks to a llama.cpp ``llama-server`` (default
-                 http://localhost:8080), using its native ``/completion`` API.
+                 http://127.0.0.1:8080), using its native ``/completion`` API.
 
 The summarization *logic* (chunking a long transcript, map-reduce combine) is
 separated from the *transport* (the HTTP call), so it is unit-tested without a
@@ -24,8 +24,12 @@ import urllib.error
 import urllib.request
 from typing import Callable, List, Optional
 
-DEFAULT_OLLAMA_URL = "http://localhost:11434"
-DEFAULT_LLAMACPP_URL = "http://localhost:8080"
+# Use 127.0.0.1, not "localhost": on Windows the PowerShell port's HTTP client
+# resolves "localhost" to IPv6 ::1 first and stalls for seconds before falling
+# back to IPv4, which blew past the short backend-detection timeout and made the
+# local LLM look unreachable. 127.0.0.1 connects immediately on both platforms.
+DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
+DEFAULT_LLAMACPP_URL = "http://127.0.0.1:8080"
 BACKENDS = ("ollama", "llamacpp")
 
 # Keep each model call within a modest context budget. Transcripts longer than

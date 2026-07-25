@@ -178,7 +178,7 @@ ollama serve            # usually already running as a service
 
 # --- or llama.cpp ---
 #   build/download from https://github.com/ggml-org/llama.cpp
-llama-server -m your-model.gguf     # serves on http://localhost:8080
+llama-server -m your-model.gguf     # serves on http://127.0.0.1:8080
 ```
 
 ### 6. Verify everything
@@ -333,7 +333,7 @@ default, run `--list-models`:
 
 ```bash
 plaude-local --list-models
-# Local LLM models on Ollama (http://localhost:11434):
+# Local LLM models on Ollama (http://127.0.0.1:11434):
 #   * qwen2.5:7b   <- default for translation
 #     gemma4:latest
 # Choose a model with --translate-model NAME (translation) or --summarize-model NAME (summary).

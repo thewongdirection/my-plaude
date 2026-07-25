@@ -126,8 +126,12 @@ $Script:EnhanceChains = @{
              'equalizer=f=3000:width_type=q:w=1.5:g=4,speechnorm=e=12.5:r=0.0005:l=1,' +
              'loudnorm=I=-16:TP=-1.5:LRA=11'
 }
-$Script:DefaultOllamaUrl = 'http://localhost:11434'
-$Script:DefaultLlamacppUrl = 'http://localhost:8080'
+# Use 127.0.0.1, not 'localhost': Invoke-RestMethod resolves 'localhost' to IPv6
+# ::1 first and stalls for seconds before falling back to IPv4, which blew past
+# the 2s backend-detection timeout and made a running Ollama look unreachable
+# (translation/summary silently degraded to "unavailable"). 127.0.0.1 is instant.
+$Script:DefaultOllamaUrl = 'http://127.0.0.1:11434'
+$Script:DefaultLlamacppUrl = 'http://127.0.0.1:8080'
 $Script:OverwriteTimeoutSeconds = 10
 $Script:ToolVersion = '0.1.0'
 $Script:QualityFixed = @{ NearSilentDb = -50.0; MostlySilence = 0.85 }

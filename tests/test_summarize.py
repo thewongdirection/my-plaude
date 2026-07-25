@@ -271,6 +271,16 @@ class TestDefaultOllamaModel(unittest.TestCase):
             self.assertIsNone(summarize.default_ollama_model())
 
 
+class TestDefaultUrls(unittest.TestCase):
+    def test_defaults_use_ipv4_not_localhost(self):
+        # Regression: "localhost" makes the PowerShell port's HTTP client stall on
+        # IPv6 ::1 and time out backend detection. Keep both defaults on 127.0.0.1
+        # so the local LLM is detected reliably (parity with the PS defaults).
+        self.assertEqual(summarize.DEFAULT_OLLAMA_URL, "http://127.0.0.1:11434")
+        self.assertEqual(summarize.DEFAULT_LLAMACPP_URL, "http://127.0.0.1:8080")
+        self.assertNotIn("localhost", summarize.DEFAULT_OLLAMA_URL)
+
+
 class TestListOllamaModels(unittest.TestCase):
     def test_lists_all_installed_names(self):
         payload = {"models": [{"name": "qwen2.5:7b"}, {"name": "gemma4:latest"}]}
