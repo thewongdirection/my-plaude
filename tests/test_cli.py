@@ -41,8 +41,14 @@ class TestParser(unittest.TestCase):
         self.assertEqual(args.denoise, "ffmpeg")
         self.assertEqual(args.format, "html")
         self.assertEqual(args.translate_to, "en")
+        self.assertEqual(args.translate_engine, "auto")
+        self.assertEqual(args.summarize_timeout, 120.0)
         self.assertEqual(args.diarize_backend, "pyannote")
         self.assertFalse(args.diarize)
+
+    def test_summarize_timeout_override(self):
+        args = cli.build_parser().parse_args(["in.wav", "--summarize-timeout", "600"])
+        self.assertEqual(args.summarize_timeout, 600.0)
 
     def test_backend_choice(self):
         args = cli.build_parser().parse_args(

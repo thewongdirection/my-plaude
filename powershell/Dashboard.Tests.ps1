@@ -147,6 +147,11 @@ Describe 'Invoke-TranslateLines' {
         $out = Invoke-TranslateLines -Lines @('a', 'b') -TargetLanguage 'English' -Backend 'ollama' -Model 'm' -Url 'http://x' -MaxChars 8000
         $out[1] | Should -Be ''
     }
+    It 'forwards the request timeout to the LLM call' {
+        Mock Invoke-LlmCall { '1. Hi' }
+        Invoke-TranslateLines -Lines @('a') -TargetLanguage 'English' -Backend 'ollama' -Model 'm' -Url 'http://x' -MaxChars 8000 -TimeoutSec 600 | Out-Null
+        Should -Invoke Invoke-LlmCall -Times 1 -ParameterFilter { $TimeoutSec -eq 600 }
+    }
 }
 
 Describe 'Resolve-TranslateEngine' {

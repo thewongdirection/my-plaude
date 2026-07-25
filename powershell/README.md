@@ -146,6 +146,7 @@ download or `-NoProvision` to just error out.
 | Diarization | `--diarize [--diarize-backend]` | `-Diarize [-DiarizeBackend]` |
 | Diarization model | `--diarize-model REPO` | `-DiarizeModel REPO` (see Known differences) |
 | Summarization | `--summarize` (Ollama/llama.cpp) | `-Summarize` (Ollama/llama.cpp) |
+| LLM request timeout | `--summarize-timeout SECONDS` (default 120) | `-SummarizeTimeout SECONDS` |
 | Prereq check + provision | (built-in) | (built-in) |
 | Provide ffmpeg | `--ffmpeg-location` | `-FfmpegLocation` |
 | Auto-install ffmpeg | `--install-missing` | `-InstallMissing` |

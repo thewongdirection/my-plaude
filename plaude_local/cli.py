@@ -175,6 +175,11 @@ def build_parser() -> argparse.ArgumentParser:
                             "transcript as .summary.md). Use '-' for stdout.")
     g_sum.add_argument("--summarize-max-chars", type=int, default=8000,
                        help="chunk size for long transcripts")
+    g_sum.add_argument("--summarize-timeout", type=float, default=120.0,
+                       metavar="SECONDS",
+                       help="per-request timeout for the local LLM (summary and "
+                            "LLM translation). Raise it for large reasoning "
+                            "models such as deepseek-r1 (default: 120)")
 
     # Quality assessment
     g_qual = p.add_argument_group("recording quality")
@@ -402,7 +407,8 @@ def _run_dashboard(args, segments, meta, whisper_translate_segs, translate_engin
             translated = summ.translate_segments(
                 seg_texts, target_language=translation_label,
                 backend=args.summarize_backend, model=args.translate_model,
-                url=args.summarize_url, max_chars=args.summarize_max_chars)
+                url=args.summarize_url, max_chars=args.summarize_max_chars,
+                timeout=args.summarize_timeout)
             translation_text = "\n".join(t for t in translated if t).strip()
             pairs = list(zip(seg_texts, translated))
             shown = (args.translate_model
@@ -421,7 +427,8 @@ def _run_dashboard(args, segments, meta, whisper_translate_segs, translate_engin
         summary_text = summ.summarize(
             transcript_text, topics=True, max_words=250,
             backend=args.summarize_backend, model=args.summarize_model,
-            url=args.summarize_url, max_chars=args.summarize_max_chars)
+            url=args.summarize_url, max_chars=args.summarize_max_chars,
+            timeout=args.summarize_timeout)
     except summ.SummarizeError as exc:
         summary_note = f"Summary unavailable ({exc})."
 
@@ -683,6 +690,7 @@ def run(argv: Optional[List[str]] = None) -> int:
                 model=args.summarize_model,
                 url=args.summarize_url,
                 max_chars=args.summarize_max_chars,
+                timeout=args.summarize_timeout,
             )
         except summ.SummarizeError as exc:
             print(f"error: {exc}", file=sys.stderr)

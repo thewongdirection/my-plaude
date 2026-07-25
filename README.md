@@ -425,6 +425,7 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
 | `--summarize` | off | summarize via local LLM |
 | `--summarize-backend` | `auto` | `auto`, `ollama`, or `llamacpp` |
 | `--summarize-model` | — | e.g. `llama3.1` (Ollama) |
+| `--summarize-timeout` | `120` | per-request LLM timeout (s); raise for big reasoning models (deepseek-r1) |
 | `--keep-clean PATH` | — | also save the denoised 16 kHz wav |
 | `--no-vad` | off | disable silence trimming |
 

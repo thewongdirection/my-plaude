@@ -90,6 +90,7 @@ param(
     [string]$SummarizeUrl,
     [string]$SummaryOutput,
     [int]$SummarizeMaxChars = 8000,
+    [int]$SummarizeTimeout = 120,
 
     # recording quality
     [switch]$AssessOnly,
@@ -621,21 +622,21 @@ function Split-IntoChunks {
 }
 
 function Invoke-LlmCall {
-    param([string]$Prompt, [string]$Backend, [string]$Model, [string]$Url)
+    param([string]$Prompt, [string]$Backend, [string]$Model, [string]$Url, [int]$TimeoutSec = 120)
     # Encode the JSON body as UTF-8 bytes so non-Latin (CJK) transcript text is
     # sent correctly regardless of the default request encoding.
     if ($Backend -eq 'ollama') {
         $json = @{ model = $Model; prompt = $Prompt; stream = $false } | ConvertTo-Json
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
         $resp = Invoke-RestMethod -Uri "$($Url.TrimEnd('/'))/api/generate" -Method Post `
-            -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 120
+            -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec $TimeoutSec
         if (-not $resp.response) { throw 'ollama returned no text.' }
         return ([string]$resp.response).Trim()
     } else {
         $json = @{ prompt = $Prompt; n_predict = 512; temperature = 0.2; stream = $false } | ConvertTo-Json
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
         $resp = Invoke-RestMethod -Uri "$($Url.TrimEnd('/'))/completion" -Method Post `
-            -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 120
+            -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec $TimeoutSec
         if (-not $resp.content) { throw 'llama.cpp returned no text.' }
         return ([string]$resp.content).Trim()
     }
@@ -644,7 +645,7 @@ function Invoke-LlmCall {
 function Invoke-Summarize {
     param(
         [string]$Text, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars,
-        [int]$Depth = 0, [switch]$Topics
+        [int]$Depth = 0, [switch]$Topics, [int]$TimeoutSec = 120
     )
     $Text = $Text.Trim()
     if (-not $Text) { throw 'nothing to summarize: the transcript is empty.' }
@@ -658,19 +659,19 @@ function Invoke-Summarize {
 
     $chunks = Split-IntoChunks -Text $Text -MaxChars $MaxChars
     if ($chunks.Count -le 1) {
-        return Invoke-LlmCall -Prompt (& $pf $chunks[0]) -Backend $Backend -Model $Model -Url $Url
+        return Invoke-LlmCall -Prompt (& $pf $chunks[0]) -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec
     }
     $partials = foreach ($c in $chunks) {
-        Invoke-LlmCall -Prompt (& $pf $c) -Backend $Backend -Model $Model -Url $Url
+        Invoke-LlmCall -Prompt (& $pf $c) -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec
     }
     $combined = ($partials -join "`n`n")
     # Map-reduce (parity with Python's summarize_text): if the combined partial
     # summaries still exceed the budget, reduce again - bounded to depth 3 so it
     # always terminates.
     if ($combined.Length -le $MaxChars -or $Depth -ge 3) {
-        return Invoke-LlmCall -Prompt (& $pf $combined -c) -Backend $Backend -Model $Model -Url $Url
+        return Invoke-LlmCall -Prompt (& $pf $combined -c) -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec
     }
-    return Invoke-Summarize -Text $combined -Backend $Backend -Model $Model -Url $Url -MaxChars $MaxChars -Depth ($Depth + 1) -Topics:$Topics
+    return Invoke-Summarize -Text $combined -Backend $Backend -Model $Model -Url $Url -MaxChars $MaxChars -Depth ($Depth + 1) -Topics:$Topics -TimeoutSec $TimeoutSec
 }
 
 function Build-TranslatePrompt {
@@ -679,12 +680,12 @@ function Build-TranslatePrompt {
 }
 
 function Invoke-TranslateText {
-    param([string]$Text, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars)
+    param([string]$Text, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars, [int]$TimeoutSec = 120)
     $Text = $Text.Trim()
     if (-not $Text) { return '' }
     $chunks = Split-IntoChunks -Text $Text -MaxChars $MaxChars
     $parts = foreach ($c in $chunks) {
-        Invoke-LlmCall -Prompt (Build-TranslatePrompt -Text $c -TargetLanguage $TargetLanguage) -Backend $Backend -Model $Model -Url $Url
+        Invoke-LlmCall -Prompt (Build-TranslatePrompt -Text $c -TargetLanguage $TargetLanguage) -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec
     }
     return ($parts -join "`n")
 }
@@ -707,7 +708,7 @@ function Build-AlignedTranslatePrompt {
 function Invoke-TranslateLines {
     # Accuracy-first, alignment-preserving LLM translation: one output line per
     # input segment line. Parity with summarize.translate_lines.
-    param([string[]]$Lines, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars)
+    param([string[]]$Lines, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars, [int]$TimeoutSec = 120)
     $out = New-Object 'string[]' $Lines.Count
     for ($i = 0; $i -lt $out.Count; $i++) { $out[$i] = '' }
     $batches = New-Object System.Collections.Generic.List[object]
@@ -723,7 +724,7 @@ function Invoke-TranslateLines {
     foreach ($group in $batches) {
         $lines = for ($k = 0; $k -lt $group.Count; $k++) { "$($k + 1). $($Lines[$group[$k]])" }
         $numbered = $lines -join "`n"
-        $resp = Invoke-LlmCall -Prompt (Build-AlignedTranslatePrompt -Numbered $numbered -TargetLanguage $TargetLanguage) -Backend $Backend -Model $Model -Url $Url
+        $resp = Invoke-LlmCall -Prompt (Build-AlignedTranslatePrompt -Numbered $numbered -TargetLanguage $TargetLanguage) -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec
         $resp = [regex]::Replace($resp, '(?is)<think>.*?</think>', '')
         $got = @{}
         foreach ($m in [regex]::Matches($resp, '(?m)^\s*(\d+)[.\):]\s*(.*)$')) { $got[[int]$m.Groups[1].Value] = $m.Groups[2].Value.Trim() }
@@ -1238,7 +1239,7 @@ function Invoke-Main {
                 if ($sBackend) {
                     Write-Log "      translating to $translationLabel (LLM) ..."
                     try {
-                        $translated = Invoke-TranslateLines -Lines $segTexts -TargetLanguage $translationLabel -Backend $sBackend -Model $tModel -Url $sUrl -MaxChars $SummarizeMaxChars
+                        $translated = Invoke-TranslateLines -Lines $segTexts -TargetLanguage $translationLabel -Backend $sBackend -Model $tModel -Url $sUrl -MaxChars $SummarizeMaxChars -TimeoutSec $SummarizeTimeout
                         $translationText = (($translated | Where-Object { $_ }) -join "`n").Trim()
                         $rowList = New-Object System.Collections.Generic.List[object]
                         for ($i = 0; $i -lt $segTexts.Count; $i++) { $rowList.Add([pscustomobject]@{ O = $segTexts[$i]; X = $translated[$i] }) }
@@ -1253,7 +1254,7 @@ function Invoke-Main {
             $summaryText = $null; $summaryNote = $null
             Write-Log '      summarizing critical topics ...'
             if ($sBackend) {
-                try { $summaryText = Invoke-Summarize -Text $transcriptText -Backend $sBackend -Model $sModel -Url $sUrl -MaxChars $SummarizeMaxChars -Topics }
+                try { $summaryText = Invoke-Summarize -Text $transcriptText -Backend $sBackend -Model $sModel -Url $sUrl -MaxChars $SummarizeMaxChars -Topics -TimeoutSec $SummarizeTimeout }
                 catch { $summaryNote = "Summary unavailable ($($_.Exception.Message))." }
             } else {
                 $summaryNote = 'Summary unavailable (no local LLM server reachable).'
@@ -1334,7 +1335,7 @@ function Invoke-Main {
             $model = if ($SummarizeModel) { $SummarizeModel } else { $Script:DefaultOllamaModel }
 
             try {
-                $summary = Invoke-Summarize -Text $plainText -Backend $backend -Model $model -Url $url -MaxChars $SummarizeMaxChars
+                $summary = Invoke-Summarize -Text $plainText -Backend $backend -Model $model -Url $url -MaxChars $SummarizeMaxChars -TimeoutSec $SummarizeTimeout
             } catch { Write-ErrLine "error: $($_.Exception.Message)"; return 8 }
             $body = "# Summary`n`n" + $summary.Trim() + "`n"
 
