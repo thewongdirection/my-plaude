@@ -172,11 +172,19 @@ download or `-NoProvision` to just error out.
     by installed pyannote version (4.x → gated `speaker-diarization-community-1`,
     3.x → `speaker-diarization-3.1`) and honors `--diarize-model`. Whichever pyannote
     `whisper-ctranslate2` pulls in decides which gated model terms you must accept.
-  - **Diarization runtime on Windows**: pyannote can be hard to *run* on Windows
-    (`k2` has no Windows wheels for 4.x; 3.x needs an older `torchaudio`). This
-    affects the PowerShell port too, since `whisper-ctranslate2` uses pyannote. See
-    the main [README Troubleshooting](../README.md#troubleshooting) for the
-    recommended Python 3.10/3.11 + pyannote 3.x setup, or use WSL2 / Linux.
+  - **Diarization runtime on Windows (known blocker)**: pyannote is hard to *run*
+    on Windows, and the PowerShell port hits it harder than Python. `whisper-ctranslate2`
+    (≥0.5) calls pyannote's **4.x** API — `Pipeline.from_pretrained(..., token=...)` —
+    and pyannote 4.x needs `k2`, which has **no Windows wheels**. The Windows-viable
+    pyannote **3.1.x** only accepts the older `use_auth_token=` argument, so
+    `whisper-ctranslate2`'s diarization fails there with
+    `Pipeline.from_pretrained() got an unexpected keyword argument 'token'`.
+    The **Python** version avoids this because `plaude_local` calls pyannote
+    directly through a version-compat shim (`token=` → falls back to
+    `use_auth_token=`), so it diarizes fine on Windows with pyannote 3.1.x. Net:
+    on native Windows, Python `--diarize` works but PowerShell `-Diarize` is
+    effectively blocked — use **WSL2 / Linux** (where pyannote 4.x + k2 install)
+    for PowerShell diarization. Transcription/translation/summary are unaffected.
 - **`-ModelDir`**: redirects the Hugging Face cache (via `$env:HF_HOME`) rather
   than mapping to faster-whisper's `download_root`; effect is equivalent
   (controls where model weights are stored/downloaded).
