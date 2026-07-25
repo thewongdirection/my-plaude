@@ -26,7 +26,6 @@ from typing import Callable, List, Optional
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 DEFAULT_LLAMACPP_URL = "http://localhost:8080"
-DEFAULT_OLLAMA_MODEL = "llama3.1"
 BACKENDS = ("ollama", "llamacpp")
 
 # Keep each model call within a modest context budget. Transcripts longer than

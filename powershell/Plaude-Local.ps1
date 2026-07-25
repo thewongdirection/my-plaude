@@ -91,7 +91,7 @@ param(
     [string]$SummarizeUrl,
     [string]$SummaryOutput,
     [int]$SummarizeMaxChars = 8000,
-    [int]$SummarizeTimeout = 120,
+    [double]$SummarizeTimeout = 120,
 
     # recording quality
     [switch]$AssessOnly,
@@ -128,7 +128,6 @@ $Script:EnhanceChains = @{
 }
 $Script:DefaultOllamaUrl = 'http://localhost:11434'
 $Script:DefaultLlamacppUrl = 'http://localhost:8080'
-$Script:DefaultOllamaModel = 'llama3.1'
 $Script:OverwriteTimeoutSeconds = 10
 $Script:ToolVersion = '0.1.0'
 $Script:QualityFixed = @{ NearSilentDb = -50.0; MostlySilence = 0.85 }
@@ -180,7 +179,7 @@ function Get-DefaultOutput {
 # Overwrite confirmation with a 10-second timeout (parity with Python)
 # --------------------------------------------------------------------------- #
 function Read-LineWithTimeout {
-    param([int]$TimeoutSeconds)
+    param([double]$TimeoutSeconds)
     # Run Console.ReadLine on a runspace in THIS process so it shares the
     # console; wait up to the timeout, else return $null.
     $ps = [PowerShell]::Create()
@@ -623,7 +622,7 @@ function Split-IntoChunks {
 }
 
 function Invoke-LlmCall {
-    param([string]$Prompt, [string]$Backend, [string]$Model, [string]$Url, [int]$TimeoutSec = 120)
+    param([string]$Prompt, [string]$Backend, [string]$Model, [string]$Url, [double]$TimeoutSec = 120)
     # Encode the JSON body as UTF-8 bytes so non-Latin (CJK) transcript text is
     # sent correctly regardless of the default request encoding.
     if ($Backend -eq 'ollama') {
@@ -650,7 +649,7 @@ function Invoke-LlmCall {
 function Invoke-Summarize {
     param(
         [string]$Text, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars,
-        [int]$Depth = 0, [switch]$Topics, [int]$TimeoutSec = 120
+        [int]$Depth = 0, [switch]$Topics, [double]$TimeoutSec = 120
     )
     $Text = $Text.Trim()
     if (-not $Text) { throw 'nothing to summarize: the transcript is empty.' }
@@ -685,7 +684,7 @@ function Build-TranslatePrompt {
 }
 
 function Invoke-TranslateText {
-    param([string]$Text, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars, [int]$TimeoutSec = 120)
+    param([string]$Text, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars, [double]$TimeoutSec = 120)
     $Text = $Text.Trim()
     if (-not $Text) { return '' }
     $chunks = Split-IntoChunks -Text $Text -MaxChars $MaxChars
@@ -731,7 +730,7 @@ function Invoke-TranslateGroup {
     # If the reply maps back to fewer than half the lines (context overflow ->
     # truncated/misformatted), split the group and retry each half, down to
     # single lines, so a batch never silently comes back all-empty.
-    param([int[]]$Group, [string[]]$Lines, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$TimeoutSec, [string[]]$Out)
+    param([int[]]$Group, [string[]]$Lines, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [double]$TimeoutSec, [string[]]$Out)
     $numberedLines = for ($k = 0; $k -lt $Group.Count; $k++) { "$($k + 1). $($Lines[$Group[$k]])" }
     $numbered = $numberedLines -join "`n"
     $resp = Invoke-LlmCall -Prompt (Build-AlignedTranslatePrompt -Numbered $numbered -TargetLanguage $TargetLanguage) -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec
@@ -754,7 +753,7 @@ function Invoke-TranslateGroup {
 function Invoke-TranslateLines {
     # Accuracy-first, alignment-preserving LLM translation: one output line per
     # input segment line. Parity with summarize.translate_lines.
-    param([string[]]$Lines, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars, [int]$TimeoutSec = 120, [int]$MaxLines = 0)
+    param([string[]]$Lines, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [int]$MaxChars, [double]$TimeoutSec = 120, [int]$MaxLines = 0)
     if ($MaxLines -le 0) { $MaxLines = $Script:MaxTranslateLines }
     $out = New-Object 'string[]' $Lines.Count
     for ($i = 0; $i -lt $out.Count; $i++) { $out[$i] = '' }
@@ -1397,7 +1396,12 @@ function Invoke-Main {
             $url = if ($SummarizeUrl) { $SummarizeUrl }
                    elseif ($backend -eq 'ollama') { $Script:DefaultOllamaUrl }
                    else { $Script:DefaultLlamacppUrl }
-            $model = if ($SummarizeModel) { $SummarizeModel } else { $Script:DefaultOllamaModel }
+            # Resolve the model like the HTML path / Python _resolve_call: an
+            # explicit -SummarizeModel wins, else the first installed Ollama model
+            # (llama.cpp binds its own model at launch, so leave it null there).
+            $model = if ($SummarizeModel) { $SummarizeModel }
+                     elseif ($backend -eq 'ollama') { Get-DefaultOllamaModel -Url $url }
+                     else { $null }
 
             try {
                 $summary = Invoke-Summarize -Text $plainText -Backend $backend -Model $model -Url $url -MaxChars $SummarizeMaxChars -TimeoutSec $SummarizeTimeout
