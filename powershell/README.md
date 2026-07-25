@@ -132,6 +132,7 @@ download or `-NoProvision` to just error out.
 | Translation target | `--translate-to LANG` (default en) | `-TranslateTo LANG` |
 | Translation engine | `--translate-engine auto/whisper/llm` (accuracy-first: LLM if a server is up) | `-TranslateEngine auto/whisper/llm` |
 | Translation model | `--translate-model NAME` (defaults to server's first model) | `-TranslateModel NAME` |
+| List local LLMs | `--list-models` (marks the translation default) | `-ListModels` |
 | Split text outputs | `--split-outputs` / `--transcription-file` / `--translation-file` | `-SplitOutputs` / `-TranscriptionFile` / `-TranslationFile` |
 | Overwrite prompt | prompt, auto-overwrite after 10 s; `--yes` skips | same (`-Yes`) |
 | UTF-8 output (file + stdout) | yes | yes |

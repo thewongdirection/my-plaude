@@ -101,6 +101,21 @@ def llamacpp_available(url: str = DEFAULT_LLAMACPP_URL) -> bool:
     return _get_ok(url.rstrip("/") + "/health")
 
 
+def list_ollama_models(url: str = DEFAULT_OLLAMA_URL, timeout: float = 3.0) -> List[str]:
+    """Return the names of every model installed on the Ollama server.
+
+    Reads ``/api/tags``; returns an empty list if the server is unreachable or
+    has no models pulled.
+    """
+    try:
+        with urllib.request.urlopen(url.rstrip("/") + "/api/tags", timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        models = data.get("models") or []
+        return [m.get("name") for m in models if m.get("name")]
+    except Exception:
+        return []
+
+
 def default_ollama_model(url: str = DEFAULT_OLLAMA_URL, timeout: float = 3.0) -> Optional[str]:
     """The model to use when none is specified: the first one Ollama has installed.
 
@@ -108,13 +123,8 @@ def default_ollama_model(url: str = DEFAULT_OLLAMA_URL, timeout: float = 3.0) ->
     ``/api/tags`` (the installed models). Returns ``None`` if the server is
     unreachable or has no models pulled.
     """
-    try:
-        with urllib.request.urlopen(url.rstrip("/") + "/api/tags", timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        models = data.get("models") or []
-        return models[0].get("name") if models else None
-    except Exception:
-        return None
+    models = list_ollama_models(url, timeout)
+    return models[0] if models else None
 
 
 def detect_backend(

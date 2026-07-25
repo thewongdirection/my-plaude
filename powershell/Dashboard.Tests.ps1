@@ -217,6 +217,40 @@ Describe 'Get-DefaultOllamaModel' {
     }
 }
 
+Describe 'Get-OllamaModels' {
+    It 'lists all installed model names' {
+        Mock Invoke-RestMethod { [pscustomobject]@{ models = @([pscustomobject]@{ name = 'qwen2.5:7b' }, [pscustomobject]@{ name = 'gemma4:latest' }) } }
+        $m = @(Get-OllamaModels)
+        $m.Count | Should -Be 2
+        $m[0] | Should -Be 'qwen2.5:7b'
+    }
+    It 'returns an empty list when the server is unreachable' {
+        Mock Invoke-RestMethod { throw 'down' }
+        @(Get-OllamaModels).Count | Should -Be 0
+    }
+}
+
+Describe 'Invoke-ListModels' {
+    It 'lists models and marks the first as the translation default' {
+        Mock Get-OllamaModels { @('qwen2.5:7b', 'gemma4:latest') }
+        $out = (Invoke-ListModels 6>&1) -join "`n"
+        $out | Should -Match 'qwen2.5:7b'
+        $out | Should -Match 'gemma4:latest'
+        ($out -split "`n" | Where-Object { $_ -match 'default for translation' }) | Should -Match 'qwen2.5:7b'
+    }
+    It 'marks an explicit -TranslateModel as the default' {
+        Mock Get-OllamaModels { @('qwen2.5:7b', 'gemma4:latest') }
+        $TranslateModel = 'gemma4:latest'
+        $out = (Invoke-ListModels 6>&1) -join "`n"
+        ($out -split "`n" | Where-Object { $_ -match 'default for translation' }) | Should -Match 'gemma4:latest'
+    }
+    It 'returns 1 with a remedy when no models are installed' {
+        Mock Get-OllamaModels { @() }
+        $rc = Invoke-ListModels 6>$null
+        $rc | Should -Be 1
+    }
+}
+
 Describe 'Get-DashboardHtml provenance' {
     It 'renders the transcription and translation engines' {
         $doc = Get-DashboardHtml -Title 'T' -Language 'en' -SpeechDurationS 5 -WordCount 1 `

@@ -52,6 +52,7 @@ param(
 
     [Alias('Doctor')]
     [switch]$Check,
+    [switch]$ListModels,
 
     # model / hardware
     [string]$Model = 'large-v3',
@@ -694,13 +695,21 @@ function Invoke-TranslateText {
     return ($parts -join "`n")
 }
 
-function Get-DefaultOllamaModel {
-    # The model to use when none is specified: the first Ollama has installed.
+function Get-OllamaModels {
+    # Names of every model installed on the Ollama server (empty if unreachable).
     param([string]$Url = $Script:DefaultOllamaUrl)
     try {
         $resp = Invoke-RestMethod -Uri "$($Url.TrimEnd('/'))/api/tags" -TimeoutSec 3
-        if ($resp.models -and @($resp.models).Count -gt 0) { return [string]$resp.models[0].name }
+        if ($resp.models) { return @($resp.models | ForEach-Object { [string]$_.name } | Where-Object { $_ }) }
     } catch { }
+    return @()
+}
+
+function Get-DefaultOllamaModel {
+    # The model to use when none is specified: the first Ollama has installed.
+    param([string]$Url = $Script:DefaultOllamaUrl)
+    $models = @(Get-OllamaModels -Url $Url)
+    if ($models.Count -gt 0) { return $models[0] }
     return $null
 }
 
@@ -924,6 +933,31 @@ function Invoke-Check {
     return 0
 }
 
+function Invoke-ListModels {
+    # List installed Ollama models, marking the translation default; exit.
+    # Parity with plaude_local.cli._run_list_models.
+    $url = if ($SummarizeUrl) { $SummarizeUrl } else { $Script:DefaultOllamaUrl }
+    $models = @(Get-OllamaModels -Url $url)
+    if ($models.Count -eq 0) {
+        Write-Host "No local LLM models found (is Ollama running at ${url}?)."
+        Write-Host 'Install Ollama (https://ollama.com) and pull one, e.g.:'
+        Write-Host '  ollama pull qwen2.5:7b'
+        return 1
+    }
+    $default = if ($TranslateModel) { $TranslateModel } else { $models[0] }
+    Write-Host "Local LLM models on Ollama ($url):"
+    foreach ($m in $models) {
+        if ($m -eq $default) { Write-Host "  * $m   <- default for translation" }
+        else { Write-Host "    $m" }
+    }
+    Write-Host ''
+    if ($TranslateModel -and ($models -notcontains $TranslateModel)) {
+        Write-Host "note: -TranslateModel '$TranslateModel' is not installed; pull it with ``ollama pull $TranslateModel``."
+    }
+    Write-Host 'Choose a model with -TranslateModel NAME (translation) or -SummarizeModel NAME (summary).'
+    return 0
+}
+
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
@@ -1104,6 +1138,7 @@ IDS.forEach(x=>document.getElementById("tab-"+x).addEventListener("click",()=>se
 function Invoke-Main {
     if ($Version) { Write-Host "plaude-local (PowerShell) $($Script:ToolVersion)"; return 0 }
     if ($Check) { return (Invoke-Check) }
+    if ($ListModels) { return (Invoke-ListModels) }
 
     Disable-HfTelemetry
     Set-HfOffline -Enabled $Offline

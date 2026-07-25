@@ -50,6 +50,45 @@ class TestParser(unittest.TestCase):
         args = cli.build_parser().parse_args(["in.wav", "--summarize-timeout", "600"])
         self.assertEqual(args.summarize_timeout, 600.0)
 
+    def test_list_models_default_false(self):
+        self.assertFalse(cli.build_parser().parse_args(["in.wav"]).list_models)
+
+
+class TestListModels(unittest.TestCase):
+    def _run(self, argv, models):
+        with mock.patch.object(summarize, "list_ollama_models", return_value=models):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = cli.run(argv)
+        return rc, buf.getvalue()
+
+    def test_lists_and_marks_first_as_default(self):
+        rc, out = self._run(["--list-models"], ["qwen2.5:7b", "gemma4:latest"])
+        self.assertEqual(rc, 0)
+        self.assertIn("qwen2.5:7b", out)
+        self.assertIn("gemma4:latest", out)
+        # the first installed model is marked the translation default
+        default_line = next(l for l in out.splitlines() if "default for translation" in l)
+        self.assertIn("qwen2.5:7b", default_line)
+
+    def test_explicit_translate_model_is_marked_default(self):
+        rc, out = self._run(
+            ["--list-models", "--translate-model", "gemma4:latest"],
+            ["qwen2.5:7b", "gemma4:latest"])
+        self.assertEqual(rc, 0)
+        default_line = next(l for l in out.splitlines() if "default for translation" in l)
+        self.assertIn("gemma4:latest", default_line)
+
+    def test_no_models_returns_error_with_remedy(self):
+        rc, out = self._run(["--list-models"], [])
+        self.assertEqual(rc, 1)
+        self.assertIn("ollama pull", out.lower())
+
+    def test_does_not_require_input_file(self):
+        # --list-models must work without an audio file (like --check).
+        rc, _ = self._run(["--list-models"], ["m1"])
+        self.assertEqual(rc, 0)
+
     def test_backend_choice(self):
         args = cli.build_parser().parse_args(
             ["in.wav", "--diarize", "--diarize-backend", "whisperx"]

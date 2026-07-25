@@ -96,6 +96,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--check", "--doctor", action="store_true", dest="check",
                    help="check prerequisites (ffmpeg, models, optional extras) "
                         "and exit")
+    p.add_argument("--list-models", action="store_true", dest="list_models",
+                   help="list the local LLM models installed on the Ollama "
+                        "server, mark the one used for translation by default, "
+                        "and exit (pick one with --translate-model)")
 
     # Model / hardware
     g_model = p.add_argument_group("model / hardware")
@@ -308,6 +312,31 @@ def _run_check() -> int:
     return 1 if preflight.missing_required(checks) else 0
 
 
+def _run_list_models(args) -> int:
+    """List installed Ollama models, marking the translation default; exit."""
+    from . import summarize as summ
+    url = args.summarize_url or summ.DEFAULT_OLLAMA_URL
+    models = summ.list_ollama_models(url)
+    if not models:
+        print(f"No local LLM models found (is Ollama running at {url}?).")
+        print("Install Ollama (https://ollama.com) and pull one, e.g.:")
+        print("  ollama pull qwen2.5:7b")
+        return 1
+    # The model translation will actually use: an explicit --translate-model if
+    # given, otherwise the first installed model (default_ollama_model).
+    default = args.translate_model or models[0]
+    print(f"Local LLM models on Ollama ({url}):")
+    for m in models:
+        print(f"  * {m}   <- default for translation" if m == default else f"    {m}")
+    print()
+    if args.translate_model and args.translate_model not in models:
+        print(f"note: --translate-model {args.translate_model!r} is not installed; "
+              f"pull it with `ollama pull {args.translate_model}`.")
+    print("Choose a model with --translate-model NAME (translation) or "
+          "--summarize-model NAME (summary).")
+    return 0
+
+
 def _thresholds(args) -> "object":
     from .quality import Thresholds
     return Thresholds(
@@ -476,6 +505,9 @@ def run(argv: Optional[List[str]] = None) -> int:
 
     if args.check:
         return _run_check()
+
+    if args.list_models:
+        return _run_list_models(args)
 
     apply_offline(args.offline)
 

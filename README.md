@@ -328,6 +328,17 @@ Whisper's native (English-only) translate task. Force a specific engine with
 `--translate-model` (independent of `--summarize-model`; both default to the
 first model your local server reports when unset).
 
+To see which local LLMs are installed and which one translation will use by
+default, run `--list-models`:
+
+```bash
+plaude-local --list-models
+# Local LLM models on Ollama (http://localhost:11434):
+#   * qwen2.5:7b   <- default for translation
+#     gemma4:latest
+# Choose a model with --translate-model NAME (translation) or --summarize-model NAME (summary).
+```
+
 `--split-outputs` (or `--transcription-file` / `--translation-file`) also writes
 the transcription and translation as plain text files (defaults
 `transcription.txt` / `translation.txt`).
@@ -399,6 +410,7 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
 | `-o` / `--output` | `output.<format>` | output file path; `-` for stdout |
 | `-y` / `--yes` / `--overwrite` | off | overwrite output without the 10 s prompt |
 | `--check` / `--doctor` | — | verify prerequisites and exit |
+| `--list-models` | — | list installed Ollama LLMs, mark the translation default, and exit |
 | `--ffmpeg-location PATH` | — | folder/binary to use if ffmpeg isn't on PATH |
 | `--install-missing` | off | auto-download+install missing FFmpeg (no prompt) |
 | `--no-provision` | off | don't offer to install/locate; just error out |

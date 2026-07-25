@@ -271,5 +271,20 @@ class TestDefaultOllamaModel(unittest.TestCase):
             self.assertIsNone(summarize.default_ollama_model())
 
 
+class TestListOllamaModels(unittest.TestCase):
+    def test_lists_all_installed_names(self):
+        payload = {"models": [{"name": "qwen2.5:7b"}, {"name": "gemma4:latest"}]}
+        with mock.patch.object(summarize.urllib.request, "urlopen") as uo:
+            uo.return_value.__enter__.return_value.read.return_value = \
+                __import__("json").dumps(payload).encode()
+            self.assertEqual(summarize.list_ollama_models(),
+                             ["qwen2.5:7b", "gemma4:latest"])
+
+    def test_empty_when_unreachable(self):
+        with mock.patch.object(summarize.urllib.request, "urlopen",
+                               side_effect=OSError("down")):
+            self.assertEqual(summarize.list_ollama_models(), [])
+
+
 if __name__ == "__main__":
     unittest.main()
