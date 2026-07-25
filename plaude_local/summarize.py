@@ -36,7 +36,10 @@ DEFAULT_MAX_CHARS = 8000
 # window, so the numbered reply comes back truncated/misformatted and parses to
 # nothing. Small batches translate reliably and align cleanly.
 DEFAULT_MAX_TRANSLATE_LINES = 40
-_MAX_NUM_CTX = 32768
+# Fixed Ollama context window for all calls. Constant (not per-prompt) so the
+# model stays warm; 2x the ~4k default so small translation batches and normal
+# summary chunks aren't truncated.
+_OLLAMA_NUM_CTX = 8192
 
 
 class SummarizeError(RuntimeError):
@@ -55,7 +58,10 @@ def _post_json(url: str, payload: dict, timeout: float) -> dict:
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read()
-    except urllib.error.URLError as exc:
+    except OSError as exc:
+        # OSError covers URLError/HTTPError, socket TimeoutError, and connection
+        # errors. A raw TimeoutError must NOT escape uncaught: it would crash the
+        # whole run instead of degrading to a summary note / "unavailable".
         raise SummarizeError(
             f"could not reach the summarization server at {url} ({exc}). "
             "Is the local model server running?"
@@ -127,18 +133,15 @@ def detect_backend(
 # Backend calls
 # --------------------------------------------------------------------------- #
 
-def _ollama_ctx(prompt: str) -> int:
-    """Pick a context window big enough for the whole prompt (plus room to
-    answer). Ollama otherwise defaults to a small context (~4k tokens) and
-    *silently truncates* longer prompts, which mangled large translation batches
-    and long summary chunks. Sized generously (CJK is ~1 token/char) and capped."""
-    return min(_MAX_NUM_CTX, max(4096, len(prompt) + 4096))
-
-
 def _ollama_call(prompt: str, model: str, url: str, timeout: float) -> str:
+    # Use a FIXED context window (not sized per prompt): num_ctx is a load-time
+    # parameter, so a value that changes call-to-call forces Ollama to reload the
+    # model every request, which thrashes it into timeouts/500s. One constant
+    # keeps the model warm while still being well above the truncating ~4k
+    # default (with translation batches capped small, this holds the full prompt).
     payload = {
         "model": model, "prompt": prompt, "stream": False,
-        "options": {"num_ctx": _ollama_ctx(prompt)},
+        "options": {"num_ctx": _OLLAMA_NUM_CTX},
     }
     resp = _post_json(url.rstrip("/") + "/api/generate", payload, timeout)
     text = resp.get("response")

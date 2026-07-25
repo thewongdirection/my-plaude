@@ -176,12 +176,15 @@ Describe 'Invoke-TranslateLines' {
 }
 
 Describe 'Invoke-LlmCall num_ctx' {
-    It 'sizes the ollama context window to the prompt' {
+    It 'sends a fixed ollama context window above the truncating default' {
         Mock Invoke-RestMethod { [pscustomobject]@{ response = 'ok' } }
+        # Same fixed value regardless of prompt length (a varying num_ctx would
+        # force Ollama to reload the model every call).
         Invoke-LlmCall -Prompt ('x' * 20000) -Backend 'ollama' -Model 'm' -Url 'http://x' | Out-Null
-        Should -Invoke Invoke-RestMethod -Times 1 -ParameterFilter {
+        Invoke-LlmCall -Prompt 'short' -Backend 'ollama' -Model 'm' -Url 'http://x' | Out-Null
+        Should -Invoke Invoke-RestMethod -Times 2 -ParameterFilter {
             $obj = [System.Text.Encoding]::UTF8.GetString($Body) | ConvertFrom-Json
-            $obj.options.num_ctx -gt 8000
+            $obj.options.num_ctx -eq 8192
         }
     }
 }

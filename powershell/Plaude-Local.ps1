@@ -626,11 +626,11 @@ function Invoke-LlmCall {
     # Encode the JSON body as UTF-8 bytes so non-Latin (CJK) transcript text is
     # sent correctly regardless of the default request encoding.
     if ($Backend -eq 'ollama') {
-        # Size the context to the prompt: Ollama otherwise defaults to a small
-        # window (~4k tokens) and silently truncates longer prompts (parity with
-        # _ollama_ctx), which mangled large translation batches / long summaries.
-        $numCtx = [Math]::Min(32768, [Math]::Max(4096, $Prompt.Length + 4096))
-        $json = @{ model = $Model; prompt = $Prompt; stream = $false; options = @{ num_ctx = $numCtx } } | ConvertTo-Json -Depth 4
+        # Fixed context window (parity with _OLLAMA_NUM_CTX). num_ctx is a
+        # load-time parameter, so a value that varies per call forces Ollama to
+        # reload the model every request (timeouts/500s). One constant keeps it
+        # warm while still beating the truncating ~4k default.
+        $json = @{ model = $Model; prompt = $Prompt; stream = $false; options = @{ num_ctx = $Script:OllamaNumCtx } } | ConvertTo-Json -Depth 4
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
         $resp = Invoke-RestMethod -Uri "$($Url.TrimEnd('/'))/api/generate" -Method Post `
             -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec $TimeoutSec
@@ -713,6 +713,9 @@ function Build-AlignedTranslatePrompt {
 # very large batches overflow the LLM context and the numbered reply parses to
 # nothing. Small batches translate reliably and align cleanly.
 $Script:MaxTranslateLines = 40
+# Fixed Ollama context window (parity with _OLLAMA_NUM_CTX): constant so the
+# model stays warm, 2x the ~4k default so batches/chunks aren't truncated.
+$Script:OllamaNumCtx = 8192
 
 function Invoke-TranslateGroup {
     # Translate one group of line indices into $Out (a string[] mutated in place).

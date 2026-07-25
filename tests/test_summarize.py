@@ -233,19 +233,28 @@ class TestTranslateLines(unittest.TestCase):
 
 
 class TestOllamaCtx(unittest.TestCase):
-    def test_sets_num_ctx_sized_to_prompt(self):
-        seen = {}
+    def test_sets_fixed_num_ctx_above_default(self):
+        # A FIXED num_ctx (not sized per prompt) — a varying value would force
+        # Ollama to reload the model every call. Must beat the truncating ~4k
+        # default and be identical regardless of prompt length.
+        seen = []
 
         def fake_post(url, payload, timeout):
-            seen.update(payload)
+            seen.append(payload["options"]["num_ctx"])
             return {"response": "ok"}
 
         with mock.patch.object(summarize, "_post_json", side_effect=fake_post):
             summarize._ollama_call("x" * 20_000, "m", "http://h", 10)
-        self.assertIn("num_ctx", seen["options"])
-        # big prompt -> context larger than the truncating ~4k default
-        self.assertGreater(seen["options"]["num_ctx"], 8000)
-        self.assertLessEqual(seen["options"]["num_ctx"], summarize._MAX_NUM_CTX)
+            summarize._ollama_call("short", "m", "http://h", 10)
+        self.assertEqual(seen[0], seen[1])            # same for any prompt length
+        self.assertGreater(seen[0], 4096)
+
+    def test_timeout_wrapped_as_summarize_error(self):
+        # Regression: a socket TimeoutError must surface as SummarizeError (so the
+        # run degrades gracefully), not crash the whole dashboard.
+        with mock.patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+            with self.assertRaises(summarize.SummarizeError):
+                summarize._post_json("http://x", {"a": 1}, 5)
 
 
 class TestDefaultOllamaModel(unittest.TestCase):
