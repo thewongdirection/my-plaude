@@ -535,9 +535,11 @@ function Invoke-Transcribe {
         '--vad_filter', $(if ($NoVad) { 'False' } else { 'True' })
     )
     if ($Language) { $a += @('--language', $Language) }
-    # whisper-ctranslate2 enables speaker diarization by the mere presence of an
-    # HF token (there is no --speaker_diarization / --*_speakers flag).
-    if ($Diarize -and $Token) { $a += @('--hf_token', $Token) }
+    # NOTE: diarization is NOT delegated to whisper-ctranslate2 (--hf_token). Its
+    # built-in diarization calls pyannote's 4.x `token=` API, which can't run on
+    # Windows (pyannote 4.x needs k2, no Windows wheels). We diarize separately via
+    # Invoke-PyannoteDiarize + Merge-Turns (pyannote 3.x/4.x compatible), matching
+    # the Python implementation and honoring -Num/-Min/-MaxSpeakers/-DiarizeModel.
 
     # Route the tool's own stdout/stderr to our log so it does NOT become part
     # of this function's return value (PowerShell captures success-stream output).
@@ -568,6 +570,162 @@ function Invoke-Transcribe {
         throw "expected transcript not found at $produced"
     }
     return $produced
+}
+
+# --------------------------------------------------------------------------- #
+# Speaker diarization - parity with plaude_local/diarize.py.
+# Runs pyannote directly (via pyannote_diarize.py) instead of whisper-ctranslate2's
+# built-in diarization, so it works with the Windows-viable pyannote 3.1.x, and
+# merges the turns onto the transcript segments here (Merge-Turns).
+# --------------------------------------------------------------------------- #
+function Invoke-PyannoteDiarize {
+    # Returns turns as an array of [start, end, label] (empty array on none).
+    param([string]$AudioPath, [string]$Token, [string]$Device, [string]$Model,
+          [int]$Num, [int]$Min, [int]$Max)
+    $py = Resolve-PythonExe
+    if (-not $py) { throw 'python (or py) must be on PATH to run diarization (pyannote).' }
+    $helper = Join-Path $PSScriptRoot 'pyannote_diarize.py'
+    if (-not (Test-Path -LiteralPath $helper)) { throw "diarization helper not found at $helper" }
+    $a = @($helper, $AudioPath, '--device', $Device)
+    if ($Token) { $a += @('--token', $Token) }
+    if ($Model) { $a += @('--model', $Model) }
+    if ($Num -gt 0) { $a += @('--num-speakers', "$Num") }
+    if ($Min -gt 0) { $a += @('--min-speakers', "$Min") }
+    if ($Max -gt 0) { $a += @('--max-speakers', "$Max") }
+    # stdout carries the JSON turns; capture stderr (progress/errors) to a
+    # UNIQUE temp file (overwrite, not append) so a failure reports only this
+    # run's message, then always clean it up.
+    $errFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(),
+        ('plaude-diar-' + [Guid]::NewGuid().ToString('N') + '.err'))
+    try {
+        $out = & $py @a 2> $errFile
+        if ($LASTEXITCODE -ne 0) {
+            $errTxt = if (Test-Path -LiteralPath $errFile) { (Get-Content -LiteralPath $errFile -Raw) } else { '' }
+            throw "diarization failed: $($errTxt.Trim())"
+        }
+    } finally {
+        if (Test-Path -LiteralPath $errFile) { Remove-Item -LiteralPath $errFile -ErrorAction SilentlyContinue }
+    }
+    $json = ($out | Out-String).Trim()
+    if (-not $json) { return @() }
+    # Convert the positional [start,end,label] JSON turns into objects so a SINGLE
+    # turn doesn't get unwrapped into three scalars (PowerShell array semantics).
+    $turns = New-Object System.Collections.Generic.List[object]
+    foreach ($t in @($json | ConvertFrom-Json)) {
+        $turns.Add([pscustomobject]@{ Start = [double]$t[0]; End = [double]$t[1]; Label = [string]$t[2] })
+    }
+    return , $turns.ToArray()
+}
+
+function Get-SpeakerMap {
+    # Map raw backend labels (SPEAKER_00...) to "Speaker N", first-seen by start
+    # time (parity with diarize._relabel). $Turns = objects {Start,End,Label}.
+    param($Turns)
+    $map = [ordered]@{}
+    foreach ($t in (@($Turns) | Sort-Object { [double]$_.Start })) {
+        $label = [string]$t.Label
+        if (-not $map.Contains($label)) { $map[$label] = "Speaker $($map.Count + 1)" }
+    }
+    return $map
+}
+
+function Get-BestSpeaker {
+    # Speaker whose turn overlaps [Start,End] the most (parity with _best_speaker).
+    param([double]$Start, [double]$End, $Turns)
+    $best = $null; $bestOverlap = 0.0
+    foreach ($t in @($Turns)) {
+        $overlap = [Math]::Min($End, [double]$t.End) - [Math]::Max($Start, [double]$t.Start)
+        if ($overlap -gt $bestOverlap) { $bestOverlap = $overlap; $best = [string]$t.Label }
+    }
+    return $best
+}
+
+function Merge-Turns {
+    # Tag each segment with its best-overlap speaker (parity with merge_turns; the
+    # no-words branch, since whisper-ctranslate2 segments carry no word timings).
+    param($Segments, $Turns)
+    $segList = @($Segments)
+    if (-not $Turns -or @($Turns).Count -eq 0) { return $segList }
+    $map = Get-SpeakerMap -Turns $Turns
+    foreach ($s in $segList) {
+        $label = Get-BestSpeaker -Start ([double]$s.start) -End ([double]$s.end) -Turns $Turns
+        $name = if ($label -and $map.Contains($label)) { $map[$label] } else { $null }
+        if ($s.PSObject.Properties['speaker']) { $s.speaker = $name }
+        else { $s | Add-Member -NotePropertyName speaker -NotePropertyValue $name -Force }
+    }
+    return $segList
+}
+
+function Format-DiarizedTranscript {
+    # Rebuild the transcript from speaker-tagged segments for the requested format
+    # (parity with plaude_local.formats: to_text/to_srt/to_vtt/to_json + speaker).
+    param($Segments, [string]$Fmt)
+    $segList = @($Segments)
+    if ($Fmt -eq 'srt') {
+        $blocks = New-Object System.Collections.Generic.List[string]; $i = 1
+        foreach ($s in $segList) {
+            $text = ([string]$s.text).Trim(); if (-not $text) { continue }
+            if ($s.speaker) { $text = "$($s.speaker): $text" }
+            $blocks.Add("$i`n$(Format-SrtTime ([double]$s.start)) --> $(Format-SrtTime ([double]$s.end))`n$text`n"); $i++
+        }
+        return ($blocks -join "`n")
+    }
+    if ($Fmt -eq 'vtt') {
+        $blocks = New-Object System.Collections.Generic.List[string]; $blocks.Add("WEBVTT`n")
+        foreach ($s in $segList) {
+            $text = ([string]$s.text).Trim(); if (-not $text) { continue }
+            if ($s.speaker) { $text = "<v $($s.speaker)>$text" }
+            $blocks.Add("$(Format-VttTime ([double]$s.start)) --> $(Format-VttTime ([double]$s.end))`n$text`n")
+        }
+        return ($blocks -join "`n")
+    }
+    if ($Fmt -eq 'json') {
+        # Force a JSON array for the segment list even when there is one segment
+        # (Windows PowerShell 5.1's ConvertTo-Json unwraps a single-element array).
+        $segJson = @($segList | ForEach-Object { $_ | ConvertTo-Json -Depth 12 -Compress }) -join ','
+        return "{`n  `"segments`": [$segJson]`n}"
+    }
+    # txt / html: turn-by-turn lines. The 'txt' format shows a [MM:SS] clock
+    # (parity with meta.timestamps=diarize -> to_text); the html dashboard does
+    # not (to_text(segments) with timestamps=False).
+    $withClock = ($Fmt -eq 'txt')
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($s in $segList) {
+        $text = ([string]$s.text).Trim(); if (-not $text) { continue }
+        $parts = New-Object System.Collections.Generic.List[string]
+        if ($withClock) { $parts.Add("[$(Format-Clock ([double]$s.start))]") }
+        if ($s.speaker) { $parts.Add("$($s.speaker):") }
+        $prefix = ($parts -join ' ')
+        $lines.Add($(if ($prefix) { "$prefix $text" } else { $text }))
+    }
+    if ($lines.Count -eq 0) { return '' }
+    return (($lines -join "`n") + "`n")
+}
+
+function Format-Clock {
+    # Short [MM:SS] / [H:MM:SS] clock for plain text (parity with formats._clock).
+    param([double]$Seconds)
+    if ($Seconds -lt 0) { $Seconds = 0.0 }
+    $total = [int][Math]::Round($Seconds)
+    $h = [Math]::Floor($total / 3600); $rem = $total - $h * 3600
+    $m = [Math]::Floor($rem / 60); $s = $rem - $m * 60
+    if ($h -gt 0) { return ('{0:0}:{1:00}:{2:00}' -f $h, $m, $s) }
+    return ('{0:00}:{1:00}' -f $m, $s)
+}
+
+function Format-SrtTime {
+    param([double]$Seconds)
+    if ($Seconds -lt 0) { $Seconds = 0.0 }
+    $ms = [int][Math]::Round($Seconds * 1000.0)
+    $h = [Math]::Floor($ms / 3600000); $ms -= $h * 3600000
+    $m = [Math]::Floor($ms / 60000); $ms -= $m * 60000
+    $s = [Math]::Floor($ms / 1000); $ms -= $s * 1000
+    return ('{0:00}:{1:00}:{2:00},{3:000}' -f $h, $m, $s, $ms)
+}
+
+function Format-VttTime {
+    param([double]$Seconds)
+    return (Format-SrtTime $Seconds).Replace(',', '.')
 }
 
 # --------------------------------------------------------------------------- #
@@ -1204,9 +1362,10 @@ function Invoke-Main {
     # download_root). $env change is process-local.
     if ($ModelDir) { $env:HF_HOME = $ModelDir }
 
-    # num/min/max speakers aren't supported by whisper-ctranslate2's diarization.
-    if ($Diarize -and ($NumSpeakers -or $MinSpeakers -or $MaxSpeakers)) {
-        Write-Log 'note: -NumSpeakers/-MinSpeakers/-MaxSpeakers are not supported by the PowerShell diarization engine; ignoring.'
+    # -DiarizeBackend whisperx isn't implemented in the PowerShell port (pyannote
+    # only); note it and proceed with pyannote (parity note in powershell/README).
+    if ($Diarize -and $DiarizeBackend -eq 'whisperx') {
+        Write-Log 'note: -DiarizeBackend whisperx is not implemented in the PowerShell port; using pyannote.'
     }
 
     $work = Join-Path ([System.IO.Path]::GetTempPath()) ("plaude-local-" + [Guid]::NewGuid().ToString('N'))
@@ -1230,9 +1389,7 @@ function Invoke-Main {
         } catch { Write-ErrLine "error: $($_.Exception.Message)"; return 6 }
         $transcriptText = [System.IO.File]::ReadAllText($producedPath, [System.Text.Encoding]::UTF8)
 
-        Write-Log $(if ($Diarize) { '[3/4] diarization handled by the engine' } else { '[3/4] diarization skipped' })
-
-        # Assess recording quality from the JSON metrics whisper-ctranslate2 wrote.
+        # Parse whisper-ctranslate2's JSON (per-segment timings + quality metrics).
         $jsonPath = Join-Path $work ([System.IO.Path]::GetFileNameWithoutExtension($prepared) + '.json')
         $report = $null
         $jsonObj = $null
@@ -1240,6 +1397,26 @@ function Invoke-Main {
         if (Test-Path -LiteralPath $jsonPath) {
             $jsonObj = (Get-Content -LiteralPath $jsonPath -Raw -Encoding UTF8) | ConvertFrom-Json
             $segs = if ($jsonObj.PSObject.Properties['segments']) { $jsonObj.segments } else { @() }
+        }
+
+        # Speaker diarization (parity with Python): run pyannote directly, merge
+        # turns onto the segments, then rebuild the transcript with speaker labels.
+        if ($Diarize) {
+            Write-Log '[3/4] diarizing speakers (pyannote) ...'
+            try {
+                $turns = Invoke-PyannoteDiarize -AudioPath $prepared -Token $token -Device $dev `
+                    -Model $DiarizeModel -Num $NumSpeakers -Min $MinSpeakers -Max $MaxSpeakers
+                $segs = Merge-Turns -Segments $segs -Turns $turns
+                $nspk = (@($segs | ForEach-Object { $_.speaker } | Where-Object { $_ } | Sort-Object -Unique)).Count
+                Write-Log "      $nspk speaker(s) detected"
+                $transcriptText = Format-DiarizedTranscript -Segments $segs -Fmt $Format
+            } catch { Write-ErrLine "error: $($_.Exception.Message)"; return 7 }
+        } else {
+            Write-Log '[3/4] diarization skipped'
+        }
+
+        # Assess recording quality from the JSON metrics whisper-ctranslate2 wrote.
+        if (@($segs).Count -gt 0) {
             $report = Get-QualityReport -Segments $segs -Duration (Get-MediaDuration $InputFile) -Thresholds (Get-Thresholds)
             Write-Log ('      ' + (Format-QualitySummary $report))
         }

@@ -144,8 +144,10 @@ download or `-NoProvision` to just error out.
 | Transcription engine | faster-whisper (CTranslate2) | whisper-ctranslate2 (same engine) |
 | Models / device / compute | `--model/--device/--compute-type` | `-Model/-Device/-ComputeType` |
 | Offline (cache-only models) | `--offline` | `-Offline` |
-| Diarization | `--diarize [--diarize-backend]` | `-Diarize [-DiarizeBackend]` |
-| Diarization model | `--diarize-model REPO` | `-DiarizeModel REPO` (see Known differences) |
+| Diarization | `--diarize` (pyannote, direct) | `-Diarize` (pyannote, direct — same engine) |
+| Diarization model | `--diarize-model REPO` | `-DiarizeModel REPO` (honored) |
+| Diarization speakers | `--num/min/max-speakers N` | `-NumSpeakers/-MinSpeakers/-MaxSpeakers N` (honored) |
+| Diarization backend | `--diarize-backend pyannote/whisperx` | `-DiarizeBackend` (pyannote only; whisperx not ported) |
 | Summarization | `--summarize` (Ollama/llama.cpp) | `-Summarize` (Ollama/llama.cpp) |
 | LLM request timeout | `--summarize-timeout SECONDS` (default 120) | `-SummarizeTimeout SECONDS` |
 | Prereq check + provision | (built-in) | (built-in) |
@@ -154,43 +156,36 @@ download or `-NoProvision` to just error out.
 | Disable provisioning | `--no-provision` | `-NoProvision` |
 | Doctor | `--check` | `-Check` |
 | Version | `--version` | `-Version` |
-| Exit codes | 2/3/4/5/6/8/9/10/11/12 | same meanings (diarize-only 7 → 6 here) |
+| Exit codes | 2/3/4/5/6/7/8/9/10/11/12 | same meanings (incl. 7 = diarize failure) |
 
 ### Known differences
 
 - **Transcript formatting**: the Python version renders txt/srt/vtt/json with
   its own writers; the PowerShell version uses `whisper-ctranslate2`'s output
   writers. Content is equivalent; minor spacing/label differences can occur.
-- **Diarization**: `whisper-ctranslate2` enables speaker diarization by the
-  presence of an HF token (pyannote-based). So `-Diarize` works, but:
-  - `-DiarizeBackend` is accepted for CLI parity and has no effect (the engine
-    uses pyannote).
-  - `-NumSpeakers` / `-MinSpeakers` / `-MaxSpeakers` are **not supported** by the
-    engine and are ignored (with a note). The Python version honors them.
-  - `-DiarizeModel` is accepted for CLI parity but has no effect: `whisper-ctranslate2`
-    loads its own bundled pyannote pipeline. The Python version selects the pipeline
-    by installed pyannote version (4.x → gated `speaker-diarization-community-1`,
-    3.x → `speaker-diarization-3.1`) and honors `--diarize-model`. Whichever pyannote
-    `whisper-ctranslate2` pulls in decides which gated model terms you must accept.
-  - **Diarization runtime on Windows (known blocker)**: pyannote is hard to *run*
-    on Windows, and the PowerShell port hits it harder than Python. `whisper-ctranslate2`
-    (≥0.5) calls pyannote's **4.x** API — `Pipeline.from_pretrained(..., token=...)` —
-    and pyannote 4.x needs `k2`, which has **no Windows wheels**. The Windows-viable
-    pyannote **3.1.x** only accepts the older `use_auth_token=` argument, so
-    `whisper-ctranslate2`'s diarization fails there with
-    `Pipeline.from_pretrained() got an unexpected keyword argument 'token'`.
-    The **Python** version avoids this because `plaude_local` calls pyannote
-    directly through a version-compat shim (`token=` → falls back to
-    `use_auth_token=`), so it diarizes fine on Windows with pyannote 3.1.x. Net:
-    on native Windows, Python `--diarize` works but PowerShell `-Diarize` is
-    effectively blocked — use **WSL2 / Linux** (where pyannote 4.x + k2 install)
-    for PowerShell diarization. Transcription/translation/summary are unaffected.
+- **Diarization**: **now uses the same engine as Python** — pyannote run
+  *directly* (via the bundled `pyannote_diarize.py` helper) rather than through
+  `whisper-ctranslate2`'s built-in diarization. This closes the earlier gaps:
+  `-DiarizeModel`, `-NumSpeakers`, `-MinSpeakers`, and `-MaxSpeakers` are all
+  **honored** (same as Python), speakers are merged onto segments by the shared
+  overlap logic (`Merge-Turns`, parity with `diarize.merge_turns`), and a
+  diarization failure returns **exit 7** (matching Python). The one remaining
+  gap: `-DiarizeBackend whisperx` is **not ported** (pyannote only); it warns and
+  uses pyannote. Diarization needs a Python with `pyannote.audio` on PATH and an
+  HF token (`-HfToken` / `$env:HF_TOKEN`) — see the shared **tech stack** in the
+  main [README](../README.md#tech-stack-that-works-for-both-versions), which is
+  the exact combination verified to run both tools (incl. diarization) on
+  Windows.
+- **Diarization word-level split**: the Python `merge_turns` has a word-level
+  branch that splits a single Whisper segment spanning two speakers using word
+  timestamps. The PowerShell `Merge-Turns` implements only the segment-level
+  branch, because `whisper-ctranslate2` segments carry no word timings — so a
+  segment is tagged as a whole with its best-overlapping speaker. Identical
+  output in practice (no word timings ever reach it); a difference only if
+  word-level input were somehow supplied.
 - **`-ModelDir`**: redirects the Hugging Face cache (via `$env:HF_HOME`) rather
   than mapping to faster-whisper's `download_root`; effect is equivalent
   (controls where model weights are stored/downloaded).
-- **Diarize error code**: Python returns exit 7 for a diarization-specific
-  failure; in the PowerShell port diarization runs inside transcription, so such
-  a failure surfaces as exit 6.
 - **FFmpeg auto-install source**: both ports prefer the platform package
   manager (winget) and fall back to a self-contained download. The Python
   version also supports a Linux static-build download and macOS Homebrew; the

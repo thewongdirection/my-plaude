@@ -72,6 +72,46 @@ both **Windows and Linux**.
 
 ---
 
+## Tech stack that works for both versions
+
+Both the **Python** CLI and the **PowerShell** port (`powershell/Plaude-Local.ps1`)
+share the same underlying engines, so one environment runs both. The table below
+is the exact combination verified end-to-end on **Windows 11 + an 8 GB NVIDIA GPU**,
+including GPU transcription, LLM translation/summary, **and** speaker diarization.
+Linux/WSL2 is more forgiving (pyannote 4.x + `k2` install cleanly there).
+
+| Layer | Package / tool | Verified version | Used by |
+|-------|----------------|------------------|---------|
+| Runtime | Python | **3.11** (diarization); 3.13 works for transcribe/translate only | both |
+| Decode | FFmpeg + ffprobe | any recent (winget `Gyan.FFmpeg`) | both |
+| Transcribe | `faster-whisper` (Py) / `whisper-ctranslate2` (PS) | on **`ctranslate2` 4.8.1** | both |
+| GPU runtime | `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` / `nvidia-cuda-nvrtc-cu12` / `nvidia-cuda-runtime-cu12` | 12.9.2.10 / 9.25.0.15 / 12.9.86 / 12.9.79 | both |
+| Diarization | `pyannote.audio` | **3.1.1** (Windows-viable; avoids `k2`) | both |
+| ↳ its stack | `torch` / `torchaudio` / `numpy` / `huggingface_hub` / `speechbrain` | 2.2.2 / 2.2.2 / 1.26.4 / 0.23.4 / **0.5.16** | both |
+| LLM (translate/summary) | **Ollama** with a GPU-fitting model | `qwen2.5:7b` (~4.7 GB, strong multilingual) | both |
+
+**Windows GPU + diarization notes** (both tools):
+- The diarization stack is version-sensitive: `pyannote.audio 3.1.1` needs the
+  older `huggingface_hub 0.23.4` and **`speechbrain 0.5.16`** (speechbrain 1.x
+  lazily imports `k2`, which has no Windows wheels). Pin all of these together.
+- For **GPU** transcription in a venv, CTranslate2 loads `cublas64_12.dll` by name
+  from its own package directory. The Python entry point registers the
+  `nvidia-*-cu12` wheel DLL dirs automatically; in a separate venv you may also
+  need to copy those wheels' DLLs next to `…/site-packages/ctranslate2/`.
+- Diarization is **CPU** (pyannote via `torch` CPU) while Whisper uses the GPU —
+  they coexist within ~8 GB. On an 8 GB GPU, keep the LLM small (qwen2.5:7b);
+  larger models (gemma4 9.6 GB, 30B+) spill to CPU and crawl. `--list-models`
+  shows what's installed and the translation default.
+- Local LLM URLs default to **`127.0.0.1`** (not `localhost`) so detection is
+  instant on Windows (PowerShell's HTTP client stalls resolving `localhost`→IPv6).
+
+The PowerShell port runs diarization through the same `pyannote.audio` as Python
+(via the bundled `powershell/pyannote_diarize.py` helper) — not
+`whisper-ctranslate2`'s built-in diarization — so both honor `--diarize-model` /
+`-DiarizeModel` and `--num/min/max-speakers` and produce identical speaker labels.
+
+---
+
 ## Setting up your local machine
 
 ### 1. Get the code and a Python environment
