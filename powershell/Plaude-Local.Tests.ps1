@@ -347,6 +347,24 @@ Describe 'Set-HfOffline' {
     }
 }
 
+Describe 'Set-Utf8Subprocess' {
+    BeforeEach {
+        $script:savedIo = $env:PYTHONIOENCODING
+        $script:savedU8 = $env:PYTHONUTF8
+        Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue
+        Remove-Item Env:PYTHONUTF8 -ErrorAction SilentlyContinue
+    }
+    AfterEach {
+        if ($null -eq $script:savedIo) { Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue } else { $env:PYTHONIOENCODING = $script:savedIo }
+        if ($null -eq $script:savedU8) { Remove-Item Env:PYTHONUTF8 -ErrorAction SilentlyContinue } else { $env:PYTHONUTF8 = $script:savedU8 }
+    }
+    It 'forces UTF-8 for the whisper-ctranslate2 subprocess (CJK transcripts would crash cp1252)' {
+        Set-Utf8Subprocess
+        $env:PYTHONIOENCODING | Should -Be 'utf-8'
+        $env:PYTHONUTF8 | Should -Be '1'
+    }
+}
+
 Describe 'Get-CudaBootstrap' {
     # Parity with the Python entry point: the PowerShell GPU path runs
     # whisper-ctranslate2 through a bootstrap that registers the nvidia-*-cu12

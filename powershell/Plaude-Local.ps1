@@ -516,6 +516,15 @@ main()
 '@
 }
 
+function Set-Utf8Subprocess {
+    # Force UTF-8 for Python subprocesses (whisper-ctranslate2). It prints the
+    # transcript verbosely to stdout; on Windows that stream defaults to cp1252,
+    # which cannot encode CJK (Chinese/Japanese/Korean) and crashes the tool with
+    # a UnicodeEncodeError BEFORE it writes the output files. UTF-8 fixes it.
+    $env:PYTHONIOENCODING = 'utf-8'
+    $env:PYTHONUTF8 = '1'
+}
+
 function Invoke-Transcribe {
     param([string]$AudioPath, [string]$WorkDir, [string]$Dev, [string]$Compute,
           [string]$Token, [string]$Task = 'transcribe')
@@ -540,6 +549,8 @@ function Invoke-Transcribe {
     # Windows (pyannote 4.x needs k2, no Windows wheels). We diarize separately via
     # Invoke-PyannoteDiarize + Merge-Turns (pyannote 3.x/4.x compatible), matching
     # the Python implementation and honoring -Num/-Min/-MaxSpeakers/-DiarizeModel.
+
+    Set-Utf8Subprocess   # CJK transcripts otherwise crash whisper-ctranslate2 (see below)
 
     # Route the tool's own stdout/stderr to our log so it does NOT become part
     # of this function's return value (PowerShell captures success-stream output).
@@ -1611,7 +1622,13 @@ function Invoke-Main {
 # tests), so the functions above can be tested in isolation.
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        exit (Invoke-Main)
+        # Take the LAST success-stream value as the exit code: Invoke-Main's final
+        # statement is always `return <int>`, but stray cmdlet output earlier in
+        # the pipeline could otherwise turn (Invoke-Main) into an array and mangle
+        # the process exit code (a run could fail yet report exit 0).
+        $rc = @(Invoke-Main)
+        $rc = if ($rc.Count -gt 0) { $rc[-1] } else { 0 }
+        exit ([int]$rc)
     } catch {
         Write-ErrLine "error: $($_.Exception.Message)"
         exit 1
