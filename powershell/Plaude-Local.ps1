@@ -660,6 +660,17 @@ function Invoke-Prepare {
 # --------------------------------------------------------------------------- #
 # Transcription via whisper-ctranslate2 (same faster-whisper/CTranslate2 engine)
 # --------------------------------------------------------------------------- #
+$Script:CudaLibsRemedy = 'the NVIDIA CUDA libraries (cuBLAS / cuDNN) could not be loaded. Install them with `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12` (picked up automatically), or run on the CPU with -Device cpu.'
+
+function Get-InferenceHint {
+    # Actionable remedy for a failed transcription (parity with Python
+    # transcribe.explain_inference_error): missing CUDA DLLs only surface when
+    # the model first runs.
+    param([string]$ToolOutput)
+    if ($ToolOutput -match '(?i)cublas|cudnn|cudart|cuda driver') { return "`n  -> $($Script:CudaLibsRemedy)" }
+    return ''
+}
+
 function Disable-HfTelemetry {
     # Local-first: no Hugging Face telemetry on any run. Set-default style (an
     # explicit opt-in is respected). Parity with Python cli.disable_telemetry().
@@ -777,11 +788,14 @@ function Invoke-Transcribe {
         }
         $bootstrap = Join-Path $WorkDir '_cuda_bootstrap.py'
         Write-Utf8File -Path $bootstrap -Text (Get-CudaBootstrap)
-        Invoke-NativeMerged { & $py $bootstrap @a } | ForEach-Object { Write-Log $_ }
+        $toolLog = Invoke-NativeMerged { & $py $bootstrap @a } | ForEach-Object { Write-Log $_; $_ }
     } else {
-        Invoke-NativeMerged { whisper-ctranslate2 @a } | ForEach-Object { Write-Log $_ }
+        $toolLog = Invoke-NativeMerged { whisper-ctranslate2 @a } | ForEach-Object { Write-Log $_; $_ }
     }
-    if ($LASTEXITCODE -ne 0) { throw "whisper-ctranslate2 failed (exit $LASTEXITCODE)." }
+    if ($LASTEXITCODE -ne 0) {
+        throw ("whisper-ctranslate2 failed (exit $LASTEXITCODE) on $Dev ($Compute)." +
+            (Get-InferenceHint -ToolOutput (@($toolLog) -join "`n")))
+    }
 
     $base = [System.IO.Path]::GetFileNameWithoutExtension($AudioPath)
     # whisper-ctranslate2 does not emit 'html'; the dashboard reads the txt copy.

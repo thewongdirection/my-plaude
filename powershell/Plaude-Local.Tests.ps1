@@ -622,6 +622,18 @@ Describe 'Set-Utf8Subprocess' {
     }
 }
 
+Describe 'Get-InferenceHint (transcription failure remedy)' {
+    It 'adds the CUDA-libraries remedy when cuBLAS / cuDNN failed to load' {
+        $h = Get-InferenceHint -ToolOutput 'RuntimeError: Library cublas64_12.dll is not found or cannot be loaded'
+        $h | Should -Match 'nvidia-cublas-cu12'
+        $h | Should -Match '-Device cpu'
+        Get-InferenceHint -ToolOutput 'cuDNN failed to initialize' | Should -Match 'nvidia-cudnn-cu12'
+    }
+    It 'adds nothing for unrelated failures' {
+        Get-InferenceHint -ToolOutput 'ValueError: bad audio' | Should -Be ''
+    }
+}
+
 Describe 'Get-CudaBootstrap' {
     # Parity with the Python entry point: the PowerShell GPU path runs
     # whisper-ctranslate2 through a bootstrap that registers the nvidia-*-cu12

@@ -580,6 +580,43 @@ dispatch, local summarization (chunking, backends, detection), the prerequisite
 checker, and the CLI (argument parsing, `--check`, error codes, input probing,
 UTF-8 output, and orchestration).
 
+### Multilingual end-to-end regression suite
+
+`tests/regression/` holds a committed speech corpus and a runner that pushes it
+through **both** implementations for real (transcribe + translate to English):
+
+- **600 files**: 300 clean recordings plus a *damaged twin* of each, across
+  **73 languages** (every language both Whisper and the edge-tts neural voices
+  support). Half are single-speaker monologues, half are **multi-speaker
+  conversations** (2-3 voices taking turns, with speaker-turn timings recorded
+  for future diarization tests). Every file is 2-10 minutes of seeded random
+  content, mono Opus 16 kb/s.
+- **Damaged twins** combine seeded imperfections: noise/static, 50 or 60 Hz
+  mains hum, clicks/crackle, clipping or a very low level, a muffled or
+  telephone-band microphone, and room echo. They run with
+  `--repair --enhance strong --keep-stages`, and `--dehum auto` must detect
+  exactly the hum that was injected (or none).
+- **Scoring** per run: exit code, detected language, transcript character error
+  rate against the source text, and English content-word recall against the
+  exact English reference. Thresholds depend on how well Whisper handles the
+  language (tier A/B/C in `languages.py`); `baseline.json` catches regressions.
+
+```bash
+# quick stratified subset (languages x monologue/conversation x clean/damaged)
+python tests/regression/run_regression.py --sample 24
+# everything (~46 h of audio per implementation - an overnight+ GPU job)
+python tests/regression/run_regression.py
+# one implementation / some languages; record a new baseline
+python tests/regression/run_regression.py --impl powershell --languages de,ja
+python tests/regression/run_regression.py --update-baseline
+```
+
+Needs FFmpeg, faster-whisper (Python) / whisper-ctranslate2 (PowerShell), an
+Ollama server with a translation model, and ideally a CUDA GPU. The corpus is
+regenerated with `tests/regression/generate_corpus.py` (networked: edge-tts +
+local LLM translation; seeded and resumable). Offline unit tests for the
+harness itself run with the normal suite (`tests/test_regression_suite.py`).
+
 ---
 
 ## Hardware notes

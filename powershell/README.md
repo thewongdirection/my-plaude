@@ -128,6 +128,17 @@ download or `-NoProvision` to just error out.
 .\Plaude-Local.ps1 note.mp3 -InstallMissing
 ```
 
+## End-to-end regression suite
+
+The multilingual regression suite in `tests/regression/` (600 files across 73
+languages, clean + damaged, monologues + multi-speaker conversations) runs
+**this script and the Python tool on the same corpus with the same flags** and
+scores both identically - see the main [README](../README.md#multilingual-end-to-end-regression-suite).
+
+```powershell
+python tests/regression/run_regression.py --impl powershell --sample 24
+```
+
 ## Behavior parity with the Python version
 
 | Feature | Python (`plaude-local`) | PowerShell (`Plaude-Local.ps1`) |

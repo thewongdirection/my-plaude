@@ -1,0 +1,259 @@
+"""Offline tests for the multilingual regression harness (tests/regression/).
+
+The end-to-end suite itself needs models, a GPU and Ollama; these cover its
+pure logic (scoring, damage recipes, corpus planning, pass/fail evaluation,
+flag parity of the two CLI invocations) and validate the committed corpus.
+"""
+
+import json
+import random
+import sys
+import unittest
+from pathlib import Path
+
+REG = Path(__file__).resolve().parent / "regression"
+sys.path.insert(0, str(REG))
+
+import damage  # noqa: E402
+import generate_corpus as gen  # noqa: E402
+import languages  # noqa: E402
+import run_regression as rr  # noqa: E402
+import scoring  # noqa: E402
+
+
+class TestScoring(unittest.TestCase):
+    def test_cer_ignores_case_space_and_punctuation(self):
+        self.assertEqual(scoring.cer("Hello, World!", "hello world"), 0.0)
+        self.assertEqual(scoring.cer("今天，我们讨论。", "今天我们讨论"), 0.0)
+
+    def test_cer_counts_edits(self):
+        self.assertAlmostEqual(scoring.cer("abcd", "abxd"), 0.25)
+        self.assertAlmostEqual(scoring.cer("abcd", ""), 1.0)
+        self.assertEqual(scoring.cer("", ""), 0.0)
+
+    def test_cer_keeps_combining_marks(self):
+        # Devanagari vowel signs are category M and must count.
+        self.assertGreater(scoring.cer("किताब", "कतब"), 0.0)
+
+    def test_levenshtein(self):
+        self.assertEqual(scoring.levenshtein("kitten", "sitting"), 3)
+        self.assertEqual(scoring.levenshtein("", "abc"), 3)
+
+    def test_content_recall(self):
+        ref = "The weather today is cold and windy."
+        self.assertEqual(scoring.content_recall(ref, "Today the weather is cold and windy"), 1.0)
+        self.assertLess(scoring.content_recall(ref, "It is sunny."), 0.5)
+        self.assertEqual(scoring.content_recall("", "anything"), 1.0)
+
+    def test_content_recall_light_stemming(self):
+        self.assertEqual(scoring.content_recall("The students were learning", "a student learns"), 1.0)
+
+    def test_detected_language_from_dashboard(self):
+        html = ('<div class="stat"><p class="label">Language detected</p>'
+                '<div class="value">German (de)</div></div>')
+        self.assertEqual(scoring.detected_language(html), "de")
+        self.assertIsNone(scoring.detected_language("<html></html>"))
+
+
+class TestDamage(unittest.TestCase):
+    def test_plan_is_reproducible_and_in_range(self):
+        for i in range(200):
+            a = damage.damage_plan(random.Random(i))
+            self.assertEqual(a, damage.damage_plan(random.Random(i)))
+            self.assertIn(a["hum_hz"], (None, 50, 60))
+            self.assertTrue(0.02 <= a["noise"]["amplitude"] <= 0.06)
+            if a["level"] == "clipped":
+                self.assertGreater(a["level_db"], 0)
+            elif a["level"] == "quiet":
+                self.assertLess(a["level_db"], 0)
+            else:
+                self.assertEqual(a["level_db"], 0.0)
+
+    def test_plans_cover_every_imperfection(self):
+        plans = [damage.damage_plan(random.Random(i)) for i in range(200)]
+        self.assertTrue(any(p["hum_hz"] == 50 for p in plans))
+        self.assertTrue(any(p["hum_hz"] == 60 for p in plans))
+        self.assertTrue(any(p["hum_hz"] is None for p in plans))
+        self.assertTrue(any(p["clicks_density"] for p in plans))
+        self.assertEqual({p["level"] for p in plans}, {"clipped", "quiet", "normal"})
+        self.assertEqual({p["tone"] for p in plans}, {"muffled", "telephone", "none"})
+        self.assertTrue(any(p["reverb"] for p in plans))
+
+    def test_filtergraph_contains_requested_damage(self):
+        plan = {"noise": {"color": "pink", "amplitude": 0.03, "seed": 7}, "hum_hz": 60,
+                "hum_amplitude": 0.05, "clicks_density": 0.0005, "level": "clipped",
+                "level_db": 10.0, "tone": "telephone", "lowpass_hz": None, "reverb": True}
+        g = damage.damage_filtergraph(plan)
+        for needle in ("anoisesrc=color=pink", "sin(2*PI*60*t)", "random(0)",
+                       "highpass=f=300", "lowpass=f=3400", "aecho", "amix=inputs=4",
+                       "volume=10.0dB", "[out]"):
+            self.assertIn(needle, g)
+
+    def test_filtergraph_minimal(self):
+        plan = {"noise": {"color": "white", "amplitude": 0.02, "seed": 1}, "hum_hz": None,
+                "hum_amplitude": None, "clicks_density": None, "level": "normal",
+                "level_db": 0.0, "tone": "none", "lowpass_hz": None, "reverb": False}
+        g = damage.damage_filtergraph(plan)
+        self.assertIn("amix=inputs=2", g)
+        self.assertNotIn("volume=", g)
+        self.assertNotIn("aevalsrc", g)
+        self.assertIsNone(damage.expected_hum(plan))
+
+
+class TestCorpusPlan(unittest.TestCase):
+    def test_plan_shape(self):
+        plan = gen.plan_corpus()
+        self.assertEqual(len(plan), 300)
+        self.assertEqual(sum(p["kind"] == "mono" for p in plan), 150)
+        self.assertEqual(sum(p["kind"] == "conv" for p in plan), 150)
+        self.assertEqual(len({p["id"] for p in plan}), 300)
+        self.assertEqual({p["code"] for p in plan}, {l["code"] for l in languages.LANGUAGES})
+        for p in plan:
+            self.assertTrue(gen.MIN_SECONDS <= p["target_s"] <= gen.MAX_TARGET)
+            self.assertEqual(p["speakers"] == 1, p["kind"] == "mono")
+            self.assertIn(p["speakers"], (1, 2, 3))
+
+    def test_plan_is_reproducible(self):
+        self.assertEqual(gen.plan_corpus(7), gen.plan_corpus(7))
+        self.assertNotEqual(gen.plan_corpus(7), gen.plan_corpus(8))
+
+    def test_every_language_has_both_kinds(self):
+        plan = gen.plan_corpus()
+        for lang in languages.LANGUAGES:
+            kinds = {p["kind"] for p in plan if p["code"] == lang["code"]}
+            self.assertEqual(kinds, {"mono", "conv"}, lang["code"])
+
+    def test_script_checks(self):
+        self.assertEqual(gen.script_ratio("Привет мир", "CYRILLIC"), 1.0)
+        self.assertEqual(gen.script_ratio("今日はいい天気", "CJK"), 1.0)
+        self.assertTrue(gen.translation_ok("Hello there.", "Bonjour à tous.", "LATIN"))
+        self.assertFalse(gen.translation_ok("Hello there.", "Hello there.", "LATIN"))
+        self.assertFalse(gen.translation_ok("Hello.", "Hello.", "CYRILLIC"))
+        self.assertFalse(gen.translation_ok("Hello.", "", "LATIN"))
+
+    def test_pick_speakers_reuses_voice_at_other_pitches(self):
+        lang = {"code": "xx", "locales": ["xx-XX"]}
+        item = {"speakers": 3}
+        sp = gen.pick_speakers(item, lang, {"xx-XX": ["only-voice"]}, random.Random(1))
+        self.assertEqual(len(set(sp)), 3)
+        self.assertEqual({v for v, _ in sp}, {"only-voice"})
+
+    def test_conversation_script_alternates_speakers(self):
+        bank = {"sentences": [], "exchanges": [list(e) for e in gen.EXCHANGES],
+                "reactions": list(gen.REACTIONS)}
+        lines = gen.script_lines({"kind": "conv"}, bank, random.Random(3), ["a", "b", "c"])
+        self.assertEqual({s for s, _, _ in lines}, {0, 1, 2})
+        # Within an exchange the answer never comes from the asker.
+        for (s1, q, _), (s2, a, _) in zip(lines, lines[1:]):
+            if q in {e[0] for e in gen.EXCHANGES} and a in {e[1] for e in gen.EXCHANGES}:
+                self.assertNotEqual(s1, s2)
+
+
+class TestLanguages(unittest.TestCase):
+    def test_codes_unique_and_tiers_valid(self):
+        codes = [l["code"] for l in languages.LANGUAGES]
+        self.assertEqual(len(codes), len(set(codes)))
+        for l in languages.LANGUAGES:
+            self.assertIn(l["tier"], languages.THRESHOLDS)
+            self.assertTrue(l["locales"])
+
+    def test_accepted_codes_include_related_languages(self):
+        self.assertEqual(languages.accepted_codes("de"), {"de"})
+        self.assertIn("id", languages.accepted_codes("ms"))
+
+
+class TestRunner(unittest.TestCase):
+    ENTRY = {"id": "de-mono-01", "code": "de", "kind": "mono", "tier": "A",
+             "damage": {"hum_hz": 60}}
+
+    def _res(self, **kw):
+        base = {"exit_code": 0, "language": "de", "cer": 0.05, "recall": 0.9, "hum_hz": 60}
+        base.update(kw)
+        return base
+
+    def test_pass(self):
+        self.assertEqual(rr.evaluate(self._res(), self.ENTRY, "clean", None), [])
+        self.assertEqual(rr.evaluate(self._res(), self.ENTRY, "damaged", None), [])
+
+    def test_failures(self):
+        self.assertEqual(rr.evaluate(self._res(exit_code=6), self.ENTRY, "clean", None),
+                         ["exit code 6"])
+        self.assertTrue(rr.evaluate(self._res(language="nl"), self.ENTRY, "clean", None))
+        self.assertTrue(rr.evaluate(self._res(cer=0.9), self.ENTRY, "clean", None))
+        self.assertTrue(rr.evaluate(self._res(recall=0.1), self.ENTRY, "clean", None))
+        self.assertTrue(rr.evaluate(self._res(hum_hz=None), self.ENTRY, "damaged", None))
+
+    def test_related_language_accepted(self):
+        entry = dict(self.ENTRY, code="ms")
+        self.assertEqual(rr.evaluate(self._res(language="id"), entry, "clean", None), [])
+
+    def test_low_resource_tier_only_checks_exit_and_baseline(self):
+        entry = dict(self.ENTRY, code="lo", tier="C")
+        bad = self._res(language="th", cer=0.95, recall=0.0)
+        self.assertEqual(rr.evaluate(bad, entry, "clean", None), [])
+        self.assertTrue(rr.evaluate(bad, entry, "clean", {"cer": 0.5, "recall": 0.4}))
+
+    def test_baseline_regression(self):
+        base = {"cer": 0.02, "recall": 0.95}
+        self.assertEqual(rr.evaluate(self._res(cer=0.05, recall=0.9), self.ENTRY, "clean", base), [])
+        self.assertTrue(rr.evaluate(self._res(cer=0.10), self.ENTRY, "clean", base))
+        self.assertTrue(rr.evaluate(self._res(recall=0.80), self.ENTRY, "clean", base))
+
+    def test_commands_have_flag_parity(self):
+        work = Path("w")
+        for variant in ("clean", "damaged"):
+            py = rr.build_command("python", Path("a.opus"), work, variant=variant,
+                                  model="large-v3", engine="llm", translate_model="m")
+            ps = rr.build_command("powershell", Path("a.opus"), work, variant=variant,
+                                  model="large-v3", engine="llm", translate_model="m")
+            py_flags = [a for a in py[3:] if a.startswith("-")]  # skip "python -m plaude_local"
+            ps_flags = [a for a in ps if a.startswith("-") and a not in
+                        ("-NoProfile", "-ExecutionPolicy", "-File")]
+            norm = lambda f: f.lstrip("-").replace("-", "").lower()  # noqa: E731
+            alias = {"f": "format", "o": "output", "y": "yes", "q": "quiet", "m": "model"}
+            self.assertEqual(sorted(alias.get(norm(f), norm(f)) for f in py_flags),
+                             sorted(alias.get(norm(f), norm(f)) for f in ps_flags))
+            self.assertEqual("--repair" in py, variant == "damaged")
+
+    def test_stratified_sample_spreads_languages_and_kinds(self):
+        entries = [{"id": f"{c}-{k}-{i}", "code": c, "kind": k}
+                   for c in "abcdef" for k in ("mono", "conv") for i in range(3)]
+        pick = rr.stratified_sample(entries, 12, seed=1)
+        self.assertEqual(len(pick), 12)
+        self.assertEqual(len({e["code"] for e in pick}), 6)
+        self.assertEqual({e["kind"] for e in pick}, {"mono", "conv"})
+        self.assertEqual(len({e["id"] for e in pick}), 12)
+
+
+class TestCommittedCorpus(unittest.TestCase):
+    """Validates tests/regression/corpus (skipped until it has been generated)."""
+
+    @classmethod
+    def setUpClass(cls):
+        path = REG / "corpus" / "manifest.json"
+        if not path.exists():
+            raise unittest.SkipTest("corpus not generated")
+        cls.items = json.loads(path.read_text(encoding="utf-8"))["items"]
+
+    def test_counts(self):
+        self.assertEqual(len(self.items), 300)
+        self.assertEqual(sum(i["kind"] == "mono" for i in self.items), 150)
+        self.assertEqual(sum(i["kind"] == "conv" for i in self.items), 150)
+
+    def test_files_exist_and_durations_in_range(self):
+        for i in self.items:
+            self.assertTrue((REG / "corpus" / i["file"]).is_file(), i["file"])
+            self.assertTrue((REG / "corpus" / i["damaged_file"]).is_file(), i["damaged_file"])
+            self.assertTrue(120 <= i["duration_s"] <= 600, (i["id"], i["duration_s"]))
+
+    def test_references_and_turns(self):
+        for i in self.items:
+            self.assertTrue(i["text"].strip() and i["reference_en"].strip(), i["id"])
+            if i["kind"] == "conv":
+                self.assertGreaterEqual(len({t["speaker"] for t in i["turns"]}), 2, i["id"])
+                ends = [t["end"] for t in i["turns"]]
+                self.assertEqual(ends, sorted(ends), i["id"])
+
+
+if __name__ == "__main__":
+    unittest.main()

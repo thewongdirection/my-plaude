@@ -62,6 +62,21 @@ def add_cuda_dll_directories() -> None:
             pass
 
 
+CUDA_LIBS_REMEDY = (
+    "the NVIDIA CUDA libraries (cuBLAS / cuDNN) could not be loaded. Install "
+    "them with `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12` (picked up "
+    "automatically), or run on the CPU with --device cpu."
+)
+
+
+def explain_inference_error(exc: BaseException) -> str:
+    """Turn a runtime inference failure into an actionable message."""
+    msg = str(exc)
+    if any(k in msg.lower() for k in ("cublas", "cudnn", "cudart", "cuda driver")):
+        return f"{msg}\n  -> {CUDA_LIBS_REMEDY}"
+    return msg
+
+
 def _maybe_float(value: Any) -> Optional[float]:
     return float(value) if value is not None else None
 
@@ -149,6 +164,23 @@ class Transcriber:
         Returns ``(segments, info)`` where segments are plain dicts and info
         carries detected language / duration metadata.
         """
+        try:
+            return self._run(audio_path, language=language, task=task,
+                             beam_size=beam_size, vad_filter=vad_filter,
+                             word_timestamps=word_timestamps)
+        except TranscribeError:
+            raise
+        except Exception as exc:
+            # Inference errors (e.g. missing cuBLAS/cuDNN DLLs only surface when
+            # the model first runs) must become a clean exit 6, not a traceback.
+            raise TranscribeError(
+                f"transcription failed on {self.device} ({self.compute_type}): "
+                f"{explain_inference_error(exc)}"
+            ) from exc
+
+    def _run(self, audio_path: str, *, language: Optional[str], task: str,
+             beam_size: int, vad_filter: bool, word_timestamps: bool
+             ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         segments_iter, info = self._model.transcribe(
             audio_path,
             language=language,

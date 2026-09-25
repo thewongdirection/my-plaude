@@ -66,6 +66,12 @@ pytest -q
 
 # Doctor / prerequisite check
 python -m plaude_local --check
+
+# Multilingual end-to-end regression (real models, BOTH implementations;
+# needs FFmpeg, GPU recommended, Ollama). Quick subset / full / new baseline:
+python tests/regression/run_regression.py --sample 24
+python tests/regression/run_regression.py
+python tests/regression/run_regression.py --update-baseline
 ```
 
 ```powershell

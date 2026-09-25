@@ -122,3 +122,49 @@ class TestTranscriberGuard(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestInferenceErrors(unittest.TestCase):
+    """Runtime inference failures become TranscribeError (exit 6), not tracebacks."""
+
+    def _engine(self, exc):
+        engine = transcribe.Transcriber.__new__(transcribe.Transcriber)
+        engine.device, engine.compute_type, engine.model_name = "cuda", "float16", "small"
+        engine._model = mock.Mock()
+        engine._model.transcribe.side_effect = exc
+        return engine
+
+    def test_missing_cublas_gets_actionable_remedy(self):
+        engine = self._engine(RuntimeError("Library cublas64_12.dll is not found or cannot be loaded"))
+        with self.assertRaises(transcribe.TranscribeError) as ctx:
+            engine.transcribe("x.wav")
+        msg = str(ctx.exception)
+        self.assertIn("cublas64_12.dll", msg)
+        self.assertIn("nvidia-cublas-cu12", msg)
+        self.assertIn("--device cpu", msg)
+
+    def test_other_errors_are_wrapped_without_cuda_hint(self):
+        engine = self._engine(ValueError("bad audio"))
+        with self.assertRaises(transcribe.TranscribeError) as ctx:
+            engine.transcribe("x.wav")
+        self.assertIn("bad audio", str(ctx.exception))
+        self.assertNotIn("nvidia-cublas-cu12", str(ctx.exception))
+
+    def test_errors_while_iterating_segments_are_wrapped(self):
+        # faster-whisper is lazy: inference (and DLL loading) runs on iteration.
+        def gen():
+            raise RuntimeError("cuDNN failed to initialize")
+            yield  # pragma: no cover
+
+        engine = self._engine(None)
+        engine._model.transcribe.side_effect = None
+        engine._model.transcribe.return_value = (gen(), mock.Mock(language="en"))
+        with self.assertRaises(transcribe.TranscribeError) as ctx:
+            engine.transcribe("x.wav")
+        self.assertIn("nvidia-cudnn-cu12", str(ctx.exception))
+
+    def test_explain_inference_error(self):
+        self.assertIn(transcribe.CUDA_LIBS_REMEDY,
+                      transcribe.explain_inference_error(RuntimeError("CUBLAS_STATUS_NOT_INITIALIZED")))
+        self.assertEqual(transcribe.explain_inference_error(RuntimeError("boom")), "boom")
+
