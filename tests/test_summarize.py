@@ -166,8 +166,11 @@ class TestSummarizeEntryPoint(unittest.TestCase):
         self.assertIn("ollama", str(ctx.exception).lower())
 
     def test_ollama_end_to_end_mocked(self):
+        # Mock the installed-model lookup too, so the test never depends on a
+        # live Ollama server (it used to fail whenever none was running).
         with mock.patch.object(summarize, "_post_json",
-                               return_value={"response": "* point one"}):
+                               return_value={"response": "* point one"}),              mock.patch.object(summarize, "default_ollama_model",
+                               return_value="llama3.1"):
             out = summarize.summarize("hello transcript", backend="ollama")
         self.assertEqual(out, "* point one")
 

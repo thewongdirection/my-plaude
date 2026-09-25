@@ -9,6 +9,7 @@
     decode, fully offline, on an NVIDIA GPU (CUDA) or CPU.
 
     Pipeline (identical to the Python version):
+        0. repair (optional)       (FFmpeg declip / declick / mains-hum notches)
         1. denoise / normalize     (FFmpeg, or optional DeepFilterNet)
         2. transcribe              (whisper-ctranslate2 = faster-whisper engine)
         3. speaker diarization      (optional - pyannote / whisperx)
@@ -71,6 +72,11 @@ param(
     [ValidateSet('none', 'speech', 'strong', 'resemble')]
     [string]$Enhance = 'none',
     [double]$Gain = 0.0,
+    [switch]$Declip,
+    [switch]$Declick,
+    [ValidateSet('none', 'auto', '50', '60')]
+    [string]$Dehum = 'none',
+    [switch]$Repair,
     [string]$KeepClean,
     [string]$KeepStages,
 
@@ -117,10 +123,18 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# Was -Dehum given explicitly? (-Repair implies auto only when it wasn't, so an
+# explicit -Dehum none still turns hum removal off - parity with Python.)
+$Script:DehumGiven = $PSBoundParameters.ContainsKey('Dehum')
 
 # --- constants (parity with the Python version) ---------------------------- #
 $Script:TargetSr = 16000
 $Script:FfmpegDenoiseChain = 'highpass=f=90,lowpass=f=7500,afftdn=nf=-25,dynaudnorm'
+# Repair stage (runs before denoise) - parity with Python audio.py constants.
+$Script:HumHarmonics = 8        # fundamental + 7 harmonics (up to 400/480 Hz)
+$Script:HumNotchQ = 30          # narrow notches (~2 Hz wide at 60 Hz) spare the voice
+$Script:HumMarginDb = 6.0       # 50/60 Hz band must beat the 55 Hz reference by this
+$Script:HumProbeSeconds = 300   # auto-detect looks at the first 5 minutes only
 $Script:EnhanceChains = @{
     speech = 'highpass=f=80,speechnorm=e=6.25:r=0.0005:l=1,loudnorm=I=-16:TP=-1.5:LRA=11'
     strong = 'highpass=f=80,acompressor=threshold=-18dB:ratio=3:attack=20:release=250,' +
@@ -149,6 +163,18 @@ try {
 function Write-Log {
     param([string]$Message)
     if (-not $Quiet) { [Console]::Error.WriteLine($Message) }
+}
+
+function Invoke-NativeMerged {
+    # Run a native command with stderr merged into the output, as plain strings.
+    # Windows PowerShell 5.1 turns each native stderr line into an ErrorRecord,
+    # and under the script's ErrorActionPreference=Stop the first one throws -
+    # so ffmpeg's stderr stats (and any tool's progress/warnings) would abort the
+    # run. Relax the preference for the native call only; callers still check
+    # $LASTEXITCODE.
+    param([scriptblock]$Command)
+    $ErrorActionPreference = 'Continue'
+    & $Command 2>&1 | ForEach-Object { "$_" }
 }
 
 function Write-ErrLine {
@@ -254,9 +280,10 @@ function Register-FfmpegPath {
 function Install-Ffmpeg {
     # Prefer winget when present; otherwise download a self-contained build.
     if (Test-Command 'winget') {
-        & winget install --id Gyan.FFmpeg -e --source winget `
-            --accept-package-agreements --accept-source-agreements 2>&1 |
-            ForEach-Object { Write-Log ([string]$_) }
+        Invoke-NativeMerged {
+            winget install --id Gyan.FFmpeg -e --source winget `
+                --accept-package-agreements --accept-source-agreements
+        } | ForEach-Object { Write-Log $_ }
         if ((Test-Command 'ffmpeg') -and (Test-Command 'ffprobe')) { return $true }
     }
     $target = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'plaude-local\ffmpeg'
@@ -355,9 +382,10 @@ function ConvertFrom-FfmpegLevels {
 
 function Get-AudioStats {
     param([string]$Path)
-    $err = & ffmpeg -hide_banner -nostats -i $Path `
-        -af 'volumedetect,silencedetect=noise=-30dB:d=0.5' -f null - 2>&1 |
-        Out-String
+    $err = Invoke-NativeMerged {
+        ffmpeg -hide_banner -nostats -i $Path `
+            -af 'volumedetect,silencedetect=noise=-30dB:d=0.5' -f null -
+    } | Out-String
     return ConvertFrom-FfmpegLevels -Text $err -Duration (Get-MediaDuration $Path)
 }
 
@@ -371,10 +399,15 @@ function Invoke-Ffmpeg {
 }
 
 function ConvertTo-Wav {
-    param([string]$Src, [string]$Dst, [string]$Filters)
+    # Decode to 16 kHz mono 16-bit wav. -NativeFloat keeps the source sample
+    # rate and writes 32-bit float instead (the repair intermediate: peaks that
+    # adeclip rebuilds above full scale survive, and DeepFilterNet still gets
+    # full-band audio) - parity with Python _to_wav(native_float=True).
+    param([string]$Src, [string]$Dst, [string]$Filters, [switch]$NativeFloat)
     $a = @('-i', $Src)
     if ($Filters) { $a += @('-af', $Filters) }
-    $a += @('-ac', '1', '-ar', "$($Script:TargetSr)", '-c:a', 'pcm_s16le', $Dst)
+    if ($NativeFloat) { $a += @('-ac', '1', '-c:a', 'pcm_f32le', $Dst) }
+    else { $a += @('-ac', '1', '-ar', "$($Script:TargetSr)", '-c:a', 'pcm_s16le', $Dst) }
     Invoke-Ffmpeg -FfArgs $a
 }
 
@@ -385,7 +418,7 @@ function Invoke-DeepFilter {
     }
     $tmp48 = [System.IO.Path]::ChangeExtension($Dst, '.df48.wav')
     ConvertTo-Wav -Src $Src -Dst $tmp48 -Filters $null
-    & deepFilter $tmp48 -o (Split-Path $tmp48 -Parent) 2>&1 | ForEach-Object { Write-Log ([string]$_) }
+    Invoke-NativeMerged { deepFilter $tmp48 -o (Split-Path $tmp48 -Parent) } | ForEach-Object { Write-Log $_ }
     if ($LASTEXITCODE -ne 0) { throw "deepFilter failed (exit $LASTEXITCODE)." }
     # deepFilter writes <name>_DeepFilterNet3.wav next to input; find newest wav.
     $enhanced = Get-ChildItem -LiteralPath (Split-Path $tmp48 -Parent) -Filter '*.wav' |
@@ -413,11 +446,95 @@ function Invoke-ResembleEnhance {
     $outDir = Join-Path (Split-Path $Dst -Parent) 're_out'
     New-Item -ItemType Directory -Path $inDir, $outDir -Force | Out-Null
     Copy-Item -LiteralPath $Src -Destination (Join-Path $inDir 'audio.wav') -Force
-    & resemble-enhance $inDir $outDir 2>&1 | ForEach-Object { Write-Log ([string]$_) }
+    Invoke-NativeMerged { resemble-enhance $inDir $outDir } | ForEach-Object { Write-Log $_ }
     if ($LASTEXITCODE -ne 0) { throw "resemble-enhance failed (exit $LASTEXITCODE)." }
     $enhanced = Get-ChildItem -LiteralPath $outDir -Filter '*.wav' | Select-Object -First 1
     if (-not $enhanced) { throw 'resemble-enhance produced no output.' }
     ConvertTo-Wav -Src $enhanced.FullName -Dst $Dst -Filters $null  # 16 kHz mono
+}
+
+function Get-DehumFilters {
+    # Narrow notch filters at the hum frequency and its harmonics.
+    param([int]$HumHz)
+    $parts = foreach ($k in 1..$Script:HumHarmonics) {
+        "bandreject=f=$($HumHz * $k):width_type=q:w=$($Script:HumNotchQ)"
+    }
+    return ($parts -join ',')
+}
+
+function Get-RepairFilters {
+    # Repair -af chain (declip -> declick -> dehum), or $null when nothing to do.
+    param([bool]$DoDeclip, [bool]$DoDeclick, $HumHz)
+    $parts = @()
+    if ($DoDeclip) { $parts += 'adeclip' }
+    if ($DoDeclick) { $parts += 'adeclick' }
+    if ($HumHz) { $parts += (Get-DehumFilters -HumHz $HumHz) }
+    if ($parts.Count -eq 0) { return $null }
+    return ($parts -join ',')
+}
+
+function Select-HumHz {
+    # Pure (unit-tested): pick 50 or 60 from narrow-band mean levels
+    # @{50=dB; 55=dB; 60=dB}. The louder of 50/60 must beat the 55 Hz reference
+    # by HumMarginDb, else $null (no hum). Parity with Python pick_hum_hz.
+    param([hashtable]$Levels, [double]$MarginDb = $Script:HumMarginDb)
+    $ref = $Levels[55]
+    if ($null -eq $ref) { return $null }
+    $best = $null
+    foreach ($hz in 50, 60) {
+        $lv = $Levels[$hz]
+        if ($null -ne $lv -and ($null -eq $best -or $lv -ge $Levels[$best])) { $best = $hz }
+    }
+    if ($null -eq $best) { return $null }
+    if (($Levels[$best] - $ref) -ge $MarginDb) { return $best }
+    return $null
+}
+
+function ConvertFrom-VolumeDetect {
+    # Pure parser: mean_volume (dB) from ffmpeg volumedetect stderr, or $null.
+    param([string]$Text)
+    $m = [regex]::Match($Text, 'mean_volume:\s*(-?\d+(?:\.\d+)?) dB')
+    if ($m.Success) { return [double]::Parse($m.Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture) }
+    return $null
+}
+
+function Get-BandLevel {
+    # Mean level (dB) of a narrow band around $Hz over the first minutes.
+    param([string]$Path, [int]$Hz)
+    $err = Invoke-NativeMerged {
+        ffmpeg -hide_banner -nostats -t "$($Script:HumProbeSeconds)" -i $Path `
+            -af "bandpass=f=${Hz}:width_type=q:w=20,volumedetect" -f null -
+    } | Out-String
+    # Don't let a failed measurement masquerade as "no hum detected".
+    if ($LASTEXITCODE -ne 0) { throw "hum detection failed (ffmpeg exit $LASTEXITCODE):`n$($err.Trim())" }
+    return (ConvertFrom-VolumeDetect -Text $err)
+}
+
+function Get-HumHz {
+    # Detect mains hum: 50, 60, or $null when neither is clearly present.
+    param([string]$Path)
+    $levels = @{}
+    foreach ($hz in 50, 55, 60) { $levels[$hz] = Get-BandLevel -Path $Path -Hz $hz }
+    return (Select-HumHz -Levels $levels)
+}
+
+function Get-EffectiveDehum {
+    # -Repair implies -Dehum auto unless -Dehum was given explicitly.
+    param([string]$Mode, [bool]$RepairOn, [bool]$Given)
+    if ($RepairOn -and -not $Given) { return 'auto' }
+    return $Mode
+}
+
+function Resolve-Dehum {
+    # -Dehum mode -> hum frequency to notch (or $null).
+    param([string]$Mode, [string]$Path)
+    switch ($Mode) {
+        'none' { return $null }
+        'auto' { return (Get-HumHz -Path $Path) }
+        '50'   { return 50 }
+        '60'   { return 60 }
+        default { throw "unknown dehum mode: '$Mode'" }
+    }
 }
 
 function Save-Stage {
@@ -431,9 +548,10 @@ function Save-Stage {
 }
 
 function Save-Stages {
-    # -KeepStages: save original / denoised / enhanced wavs + a settings manifest
-    # (parity with Python audio._save_stages).
-    param([string]$Src, [string]$WorkDir, [string]$StagesDir, [string]$Denoised, [string]$Enhanced)
+    # -KeepStages: save original / repaired / denoised / enhanced wavs + a
+    # settings manifest (parity with Python audio._save_stages).
+    param([string]$Src, [string]$WorkDir, [string]$StagesDir, [string]$Repaired,
+          [string]$Denoised, [string]$Enhanced, $HumHz, [string]$RepairChain)
     try {
         # PS 5.1's New-Item -Force silently accepts a *file* at this path.
         if (Test-Path -LiteralPath $StagesDir -PathType Leaf) { throw 'a file with that name already exists' }
@@ -443,17 +561,22 @@ function Save-Stages {
     $StagesDir = (Resolve-Path -LiteralPath $StagesDir).ProviderPath
     $stem = [System.IO.Path]::GetFileNameWithoutExtension($Src)
     $files = [ordered]@{}
-    if ($Denoise -eq 'none') {
+    if ($Denoise -eq 'none' -and -not $Repaired) {
         # The "denoise" pass was a plain decode: it *is* the original.
         $files['original'] = Save-Stage -Wav $Denoised -StagesDir $StagesDir -Stem $stem -Label '01-original'
     } else {
         $original = Join-Path $WorkDir ($stem + '.original.wav')
         ConvertTo-Wav -Src $Src -Dst $original -Filters $null
         $files['original'] = Save-Stage -Wav $original -StagesDir $StagesDir -Stem $stem -Label '01-original'
-        $files['denoised'] = Save-Stage -Wav $Denoised -StagesDir $StagesDir -Stem $stem -Label '02-denoised'
+    }
+    if ($Repaired) {
+        $files['repaired'] = Save-Stage -Wav $Repaired -StagesDir $StagesDir -Stem $stem -Label '02-repaired'
+    }
+    if ($Denoise -ne 'none') {
+        $files['denoised'] = Save-Stage -Wav $Denoised -StagesDir $StagesDir -Stem $stem -Label '03-denoised'
     }
     if ($Enhanced) {
-        $files['enhanced'] = Save-Stage -Wav $Enhanced -StagesDir $StagesDir -Stem $stem -Label '03-enhanced'
+        $files['enhanced'] = Save-Stage -Wav $Enhanced -StagesDir $StagesDir -Stem $stem -Label '04-enhanced'
     }
     $denoiseFilters = switch ($Denoise) {
         'ffmpeg'     { $Script:FfmpegDenoiseChain }
@@ -466,6 +589,11 @@ function Save-Stages {
     $manifest = [ordered]@{
         input           = $Src
         sample_rate     = $Script:TargetSr
+        declip          = [bool]$Declip
+        declick         = [bool]$Declick
+        dehum           = $Dehum
+        hum_hz          = $(if ($HumHz) { [int]$HumHz } else { $null })
+        repair_filters  = $(if ($RepairChain) { $RepairChain } else { $null })
         denoise         = $Denoise
         denoise_filters = $denoiseFilters
         enhance         = $Enhance
@@ -482,13 +610,30 @@ function Invoke-Prepare {
     param([string]$Src, [string]$WorkDir, [string]$StagesDir)
     $stem = [System.IO.Path]::GetFileNameWithoutExtension($Src)
     $final = Join-Path $WorkDir ($stem + '.prepared.wav')
+
+    # 1. Repair (declip -> declick -> dehum) into an intermediate that the
+    #    denoise stage then reads instead of the raw input.
+    $humHz = Resolve-Dehum -Mode $Dehum -Path $Src
+    if ($Dehum -eq 'auto') {
+        if ($humHz) { Write-Log "      mains hum: $humHz Hz, removing" }
+        else { Write-Log '      mains hum: none detected, skipping dehum' }
+    }
+    $repairChain = Get-RepairFilters -DoDeclip ([bool]$Declip) -DoDeclick ([bool]$Declick) -HumHz $humHz
+    $repaired = $null
+    if ($repairChain) {
+        $repaired = Join-Path $WorkDir ($stem + '.repaired.wav')
+        ConvertTo-Wav -Src $Src -Dst $repaired -Filters $repairChain -NativeFloat
+    }
+    $denoiseSrc = if ($repaired) { $repaired } else { $Src }
+
+    # 2. Denoise. If we'll enhance, into an intermediate; otherwise to final.
     $needEnhance = ($Enhance -ne 'none') -or ($Gain -ne 0.0)
     $denoiseDst = if ($needEnhance) { Join-Path $WorkDir ($stem + '.denoised.wav') } else { $final }
 
     switch ($Denoise) {
-        'none'       { ConvertTo-Wav -Src $Src -Dst $denoiseDst -Filters $null }
-        'ffmpeg'     { ConvertTo-Wav -Src $Src -Dst $denoiseDst -Filters $Script:FfmpegDenoiseChain }
-        'deepfilter' { Invoke-DeepFilter -Src $Src -Dst $denoiseDst }
+        'none'       { ConvertTo-Wav -Src $denoiseSrc -Dst $denoiseDst -Filters $null }
+        'ffmpeg'     { ConvertTo-Wav -Src $denoiseSrc -Dst $denoiseDst -Filters $Script:FfmpegDenoiseChain }
+        'deepfilter' { Invoke-DeepFilter -Src $denoiseSrc -Dst $denoiseDst }
     }
 
     if ($needEnhance) {
@@ -506,7 +651,8 @@ function Invoke-Prepare {
 
     if ($StagesDir) {
         $enhancedStage = if ($needEnhance) { $final } else { $null }
-        Save-Stages -Src $Src -WorkDir $WorkDir -StagesDir $StagesDir -Denoised $denoiseDst -Enhanced $enhancedStage
+        Save-Stages -Src $Src -WorkDir $WorkDir -StagesDir $StagesDir -Repaired $repaired `
+            -Denoised $denoiseDst -Enhanced $enhancedStage -HumHz $humHz -RepairChain $repairChain
     }
     return $final
 }
@@ -631,9 +777,9 @@ function Invoke-Transcribe {
         }
         $bootstrap = Join-Path $WorkDir '_cuda_bootstrap.py'
         Write-Utf8File -Path $bootstrap -Text (Get-CudaBootstrap)
-        & $py $bootstrap @a 2>&1 | ForEach-Object { Write-Log ([string]$_) }
+        Invoke-NativeMerged { & $py $bootstrap @a } | ForEach-Object { Write-Log $_ }
     } else {
-        & whisper-ctranslate2 @a 2>&1 | ForEach-Object { Write-Log ([string]$_) }
+        Invoke-NativeMerged { whisper-ctranslate2 @a } | ForEach-Object { Write-Log $_ }
     }
     if ($LASTEXITCODE -ne 0) { throw "whisper-ctranslate2 failed (exit $LASTEXITCODE)." }
 
@@ -720,7 +866,9 @@ function Merge-Turns {
     # no-words branch, since whisper-ctranslate2 segments carry no word timings).
     param($Segments, $Turns)
     $segList = @($Segments)
-    if (-not $Turns -or @($Turns).Count -eq 0) { return $segList }
+    # Unary comma: keep the array intact so a single segment isn't unrolled to a
+    # bare object (whose .Count throws under StrictMode on Windows PowerShell 5.1).
+    if (-not $Turns -or @($Turns).Count -eq 0) { return , $segList }
     $map = Get-SpeakerMap -Turns $Turns
     foreach ($s in $segList) {
         $label = Get-BestSpeaker -Start ([double]$s.start) -End ([double]$s.end) -Turns $Turns
@@ -728,7 +876,7 @@ function Merge-Turns {
         if ($s.PSObject.Properties['speaker']) { $s.speaker = $name }
         else { $s | Add-Member -NotePropertyName speaker -NotePropertyValue $name -Force }
     }
-    return $segList
+    return , $segList
 }
 
 function Format-DiarizedTranscript {
@@ -1446,7 +1594,14 @@ function Invoke-Main {
     $work = Join-Path ([System.IO.Path]::GetTempPath()) ("plaude-local-" + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work -Force | Out-Null
     try {
-        Write-Log "[1/4] preparing audio (denoise=$Denoise, enhance=$Enhance, gain=$(Format-Db $Gain)dB) ..."
+        if ($Repair) { $Declip = $true; $Declick = $true }
+        $Dehum = Get-EffectiveDehum -Mode $Dehum -RepairOn ([bool]$Repair) -Given $Script:DehumGiven
+        $repairParts = @()
+        if ($Declip) { $repairParts += 'declip' }
+        if ($Declick) { $repairParts += 'declick' }
+        if ($Dehum -ne 'none') { $repairParts += "dehum=$Dehum" }
+        $repairLabel = if ($repairParts.Count) { $repairParts -join '+' } else { 'none' }
+        Write-Log "[1/4] preparing audio (repair=$repairLabel, denoise=$Denoise, enhance=$Enhance, gain=$(Format-Db $Gain)dB) ..."
         try {
             $prepared = Invoke-Prepare -Src $InputFile -WorkDir $work -StagesDir $KeepStages
         } catch { Write-ErrLine "error: $($_.Exception.Message)"; return 5 }

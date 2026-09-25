@@ -137,8 +137,8 @@ Describe 'Invoke-Summarize (map-reduce)' {
 
 Describe 'Test-Command' {
     It 'finds an existing command' {
-        # pwsh is running these tests, so it must resolve.
-        Test-Command 'pwsh' | Should -BeTrue
+        # A built-in cmdlet always resolves ('pwsh' is absent on Windows PowerShell 5.1).
+        Test-Command 'Get-ChildItem' | Should -BeTrue
     }
     It 'reports a missing command as false' {
         Test-Command 'definitely-not-a-real-command-xyz' | Should -BeFalse
@@ -235,6 +235,153 @@ Describe 'Invoke-Prepare' {
     }
 }
 
+Describe 'Repair stage (-Declip / -Declick / -Dehum)' {
+    It 'builds no chain when nothing is requested' {
+        Get-RepairFilters -DoDeclip $false -DoDeclick $false -HumHz $null | Should -BeNullOrEmpty
+    }
+    It 'orders the chain declip -> declick -> dehum' {
+        Get-RepairFilters -DoDeclip $true -DoDeclick $true -HumHz 50 | Should -BeLike 'adeclip,adeclick,bandreject=f=50:*'
+    }
+    It 'notches the fundamental and 7 harmonics' {
+        $f = Get-DehumFilters -HumHz 60
+        $freqs = $f.Split(',') | ForEach-Object { [int]($_ -replace '^bandreject=f=(\d+):.*$', '$1') }
+        $freqs | Should -Be @(60, 120, 180, 240, 300, 360, 420, 480)
+        $f | Should -Match 'width_type=q:w=30'
+    }
+    It 'picks the hum frequency only when it beats the 55 Hz reference' {
+        Select-HumHz -Levels @{ 50 = -40.0; 55 = -70.0; 60 = -65.0 } | Should -Be 50
+        Select-HumHz -Levels @{ 50 = -66.0; 55 = -70.0; 60 = -45.0 } | Should -Be 60
+        Select-HumHz -Levels @{ 50 = -66.0; 55 = -70.0; 60 = -67.0 } | Should -BeNullOrEmpty
+        Select-HumHz -Levels @{ 50 = -40.0; 55 = $null; 60 = -45.0 } | Should -BeNullOrEmpty
+        Select-HumHz -Levels @{ 50 = $null; 55 = -70.0; 60 = $null } | Should -BeNullOrEmpty
+    }
+    It 'parses volumedetect mean_volume' {
+        ConvertFrom-VolumeDetect -Text '[Parsed_volumedetect_1] mean_volume: -52.3 dB' | Should -Be -52.3
+        ConvertFrom-VolumeDetect -Text 'nothing here' | Should -BeNullOrEmpty
+    }
+    It 'measures the 50 / 55 / 60 Hz bands to detect hum' {
+        Mock Get-BandLevel { switch ($Hz) { 50 { -70.0 } 55 { -71.0 } 60 { -40.0 } } }
+        Get-HumHz -Path 'x.wav' | Should -Be 60
+        Should -Invoke Get-BandLevel -Times 3 -Exactly
+    }
+    It 'resolves dehum modes' {
+        Resolve-Dehum -Mode 'none' -Path 'x.wav' | Should -BeNullOrEmpty
+        Resolve-Dehum -Mode '50' -Path 'x.wav' | Should -Be 50
+        Mock Get-HumHz { 60 }
+        Resolve-Dehum -Mode 'auto' -Path 'x.wav' | Should -Be 60
+        { Resolve-Dehum -Mode '70' -Path 'x.wav' } | Should -Throw
+    }
+    It 'leaves the pipeline unchanged when no repair is requested' {
+        $Denoise = 'ffmpeg'; $Enhance = 'none'; $Gain = 0.0
+        $Declip = $false; $Declick = $false; $Dehum = 'none'
+        Mock ConvertTo-Wav {}
+        Invoke-Prepare -Src (Join-Path $TestDrive 'in.wav') -WorkDir $TestDrive | Out-Null
+        Should -Invoke ConvertTo-Wav -Times 1 -Exactly -ParameterFilter { $Src -like '*in.wav' }
+    }
+    It 'runs repair first, then denoises the repaired audio' {
+        $Denoise = 'ffmpeg'; $Enhance = 'none'; $Gain = 0.0
+        $Declip = $true; $Declick = $true; $Dehum = '50'
+        Mock ConvertTo-Wav {}
+        Invoke-Prepare -Src (Join-Path $TestDrive 'in.wav') -WorkDir $TestDrive | Out-Null
+        Should -Invoke ConvertTo-Wav -Times 1 -Exactly -ParameterFilter {
+            $Src -like '*in.wav' -and $Dst -like '*.repaired.wav' -and $Filters -like 'adeclip,adeclick,bandreject=f=50:*' }
+        Should -Invoke ConvertTo-Wav -Times 1 -Exactly -ParameterFilter {
+            $Src -like '*.repaired.wav' -and $Filters -like '*afftdn*' }
+    }
+    It 'feeds the repaired audio to deepfilter' {
+        $Denoise = 'deepfilter'; $Enhance = 'none'; $Gain = 0.0
+        $Declip = $false; $Declick = $true; $Dehum = 'none'
+        Mock ConvertTo-Wav {}
+        Mock Invoke-DeepFilter {}
+        Invoke-Prepare -Src (Join-Path $TestDrive 'in.wav') -WorkDir $TestDrive | Out-Null
+        Should -Invoke Invoke-DeepFilter -Times 1 -Exactly -ParameterFilter { $Src -like '*.repaired.wav' }
+    }
+    It 'skips repair when auto-dehum finds no hum' {
+        $Denoise = 'none'; $Enhance = 'none'; $Gain = 0.0
+        $Declip = $false; $Declick = $false; $Dehum = 'auto'
+        Mock ConvertTo-Wav {}
+        Mock Get-HumHz { $null }
+        Invoke-Prepare -Src (Join-Path $TestDrive 'in.wav') -WorkDir $TestDrive | Out-Null
+        Should -Invoke ConvertTo-Wav -Times 1 -Exactly -ParameterFilter { -not $Filters }
+    }
+    It 'writes the repaired intermediate at the native rate as 32-bit float' {
+        $Denoise = 'ffmpeg'; $Enhance = 'none'; $Gain = 0.0
+        $Declip = $true; $Declick = $false; $Dehum = 'none'
+        Mock ConvertTo-Wav {}
+        Invoke-Prepare -Src (Join-Path $TestDrive 'in.wav') -WorkDir $TestDrive | Out-Null
+        Should -Invoke ConvertTo-Wav -Times 1 -Exactly -ParameterFilter { $Dst -like '*.repaired.wav' -and $NativeFloat }
+        Should -Invoke ConvertTo-Wav -Times 1 -Exactly -ParameterFilter { $Filters -like '*afftdn*' -and -not $NativeFloat }
+    }
+    It 'ConvertTo-Wav -NativeFloat keeps the rate and uses pcm_f32le' {
+        Mock Invoke-Ffmpeg {}
+        ConvertTo-Wav -Src 'a.wav' -Dst 'b.wav' -Filters 'adeclip' -NativeFloat
+        Should -Invoke Invoke-Ffmpeg -Times 1 -Exactly -ParameterFilter { ($FfArgs -notcontains '-ar') -and ($FfArgs -contains 'pcm_f32le') }
+        ConvertTo-Wav -Src 'a.wav' -Dst 'b.wav'
+        Should -Invoke Invoke-Ffmpeg -Times 1 -Exactly -ParameterFilter { ($FfArgs -contains '-ar') -and ($FfArgs -contains '16000') -and ($FfArgs -contains 'pcm_s16le') }
+    }
+    It '-Repair implies auto dehum only when -Dehum was not given' {
+        Get-EffectiveDehum -Mode 'none' -RepairOn $true -Given $false | Should -Be 'auto'
+        Get-EffectiveDehum -Mode 'none' -RepairOn $true -Given $true | Should -Be 'none'
+        Get-EffectiveDehum -Mode '60' -RepairOn $true -Given $true | Should -Be '60'
+        Get-EffectiveDehum -Mode 'none' -RepairOn $false -Given $false | Should -Be 'none'
+    }
+    It 'rejects an invalid -Dehum value at the CLI' {
+        $script = Join-Path $PSScriptRoot 'Plaude-Local.ps1'
+        $exe = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        # Start-Process: under ErrorActionPreference=Stop, PS 5.1 turns the
+        # child's stderr into a terminating error when captured with 2>&1.
+        $errFile = Join-Path $TestDrive 'dehum-err.txt'
+        $proc = Start-Process -FilePath $exe -Wait -PassThru -NoNewWindow `
+            -RedirectStandardError $errFile -RedirectStandardOutput (Join-Path $TestDrive 'dehum-out.txt') `
+            -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$script`"", 'x.wav', '-Dehum', '70')
+        $proc.ExitCode | Should -Not -Be 0
+        Get-Content -LiteralPath $errFile -Raw | Should -Match 'Dehum'
+    }
+}
+
+Describe 'Native stderr under ErrorActionPreference=Stop (PS 5.1)' {
+    # ffmpeg reports volumedetect stats on stderr. On Windows PowerShell 5.1,
+    # `& native 2>&1` under Stop threw on the first stderr line, so -Dehum auto,
+    # -Repair and -AssessOnly always failed. These run the REAL functions against
+    # a stub ffmpeg.cmd that writes to stderr.
+    BeforeAll {
+        $script:stubDir = Join-Path $TestDrive 'stub-bin'
+        New-Item -ItemType Directory -Path $script:stubDir -Force | Out-Null
+        $script:oldPath = $env:PATH
+    }
+    AfterEach { $env:PATH = $script:oldPath }
+    BeforeEach { $ErrorActionPreference = 'Stop' }
+
+    It 'Invoke-NativeMerged returns stderr lines as strings without throwing' {
+        $out = Invoke-NativeMerged { cmd /c 'echo to-stderr 1>&2' }
+        ($out -join "`n") | Should -Match 'to-stderr'
+        $out | ForEach-Object { $_ | Should -BeOfType [string] }
+    }
+    It 'Get-BandLevel parses ffmpeg stderr' {
+        Set-Content -LiteralPath (Join-Path $script:stubDir 'ffmpeg.cmd') -Encoding ASCII -Value @(
+            '@echo off', 'echo Input #0, wav, from x.wav: 1>&2',
+            'echo [Parsed_volumedetect_1] mean_volume: -52.3 dB 1>&2', 'exit /b 0')
+        $env:PATH = "$script:stubDir;$script:oldPath"
+        Get-BandLevel -Path 'x.wav' -Hz 60 | Should -Be (-52.3)
+    }
+    It 'Get-BandLevel throws when ffmpeg fails (not a silent "no hum")' {
+        Set-Content -LiteralPath (Join-Path $script:stubDir 'ffmpeg.cmd') -Encoding ASCII -Value @(
+            '@echo off', 'echo x.wav: No such file or directory 1>&2', 'exit /b 1')
+        $env:PATH = "$script:stubDir;$script:oldPath"
+        { Get-BandLevel -Path 'x.wav' -Hz 60 } | Should -Throw '*hum detection failed*'
+    }
+    It 'Get-AudioStats (-AssessOnly) parses ffmpeg stderr' {
+        Set-Content -LiteralPath (Join-Path $script:stubDir 'ffmpeg.cmd') -Encoding ASCII -Value @(
+            '@echo off', 'echo [Parsed_volumedetect_0] mean_volume: -20.5 dB 1>&2',
+            'echo [Parsed_volumedetect_0] max_volume: -1.0 dB 1>&2', 'exit /b 0')
+        $env:PATH = "$script:stubDir;$script:oldPath"
+        Mock Get-MediaDuration { 10.0 }
+        $stats = Get-AudioStats -Path 'x.wav'
+        $stats.mean_volume_db | Should -Be (-20.5)
+        $stats.max_volume_db | Should -Be (-1.0)
+    }
+}
+
 Describe 'Invoke-Prepare -StagesDir (-KeepStages)' {
     BeforeEach {
         $src = Join-Path $TestDrive 'lecture.m4a'
@@ -254,11 +401,11 @@ Describe 'Invoke-Prepare -StagesDir (-KeepStages)' {
         $Denoise = 'ffmpeg'; $Enhance = 'strong'; $Gain = 3
         $final = Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages
         (Get-ChildItem -LiteralPath $stages | Sort-Object Name).Name | Should -Be @(
-            'lecture.01-original.wav', 'lecture.02-denoised.wav',
-            'lecture.03-enhanced.wav', 'lecture.stages.json')
+            'lecture.01-original.wav', 'lecture.03-denoised.wav',
+            'lecture.04-enhanced.wav', 'lecture.stages.json')
         Get-Content -LiteralPath (Join-Path $stages 'lecture.01-original.wav') | Should -Match '\| $'
-        Get-Content -LiteralPath (Join-Path $stages 'lecture.02-denoised.wav') | Should -Match 'afftdn'
-        Get-Content -LiteralPath (Join-Path $stages 'lecture.03-enhanced.wav') | Should -Be (Get-Content -LiteralPath $final)
+        Get-Content -LiteralPath (Join-Path $stages 'lecture.03-denoised.wav') | Should -Match 'afftdn'
+        Get-Content -LiteralPath (Join-Path $stages 'lecture.04-enhanced.wav') | Should -Be (Get-Content -LiteralPath $final)
         $m = Get-Content -LiteralPath (Join-Path $stages 'lecture.stages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $m.denoise | Should -Be 'ffmpeg'
         $m.denoise_filters | Should -Match 'afftdn'
@@ -268,14 +415,14 @@ Describe 'Invoke-Prepare -StagesDir (-KeepStages)' {
         $m.enhance_filters | Should -Match 'volume=3dB'
         $m.sample_rate | Should -Be 16000
         $m.files.original | Should -Be 'lecture.01-original.wav'
-        $m.files.denoised | Should -Be 'lecture.02-denoised.wav'
-        $m.files.enhanced | Should -Be 'lecture.03-enhanced.wav'
+        $m.files.denoised | Should -Be 'lecture.03-denoised.wav'
+        $m.files.enhanced | Should -Be 'lecture.04-enhanced.wav'
     }
     It 'has no enhanced stage when only denoising' {
         $Denoise = 'ffmpeg'; $Enhance = 'none'; $Gain = 0.0
         Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages | Out-Null
         (Get-ChildItem -LiteralPath $stages | Sort-Object Name).Name | Should -Be @(
-            'lecture.01-original.wav', 'lecture.02-denoised.wav', 'lecture.stages.json')
+            'lecture.01-original.wav', 'lecture.03-denoised.wav', 'lecture.stages.json')
         $m = Get-Content -LiteralPath (Join-Path $stages 'lecture.stages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $m.enhance_filters | Should -BeNullOrEmpty
     }
@@ -283,7 +430,7 @@ Describe 'Invoke-Prepare -StagesDir (-KeepStages)' {
         $Denoise = 'none'; $Enhance = 'speech'; $Gain = 0.0
         Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages | Out-Null
         (Get-ChildItem -LiteralPath $stages | Sort-Object Name).Name | Should -Be @(
-            'lecture.01-original.wav', 'lecture.03-enhanced.wav', 'lecture.stages.json')
+            'lecture.01-original.wav', 'lecture.04-enhanced.wav', 'lecture.stages.json')
         Should -Invoke ConvertTo-Wav -Times 2 -Exactly
         $m = Get-Content -LiteralPath (Join-Path $stages 'lecture.stages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $m.denoise_filters | Should -BeNullOrEmpty
@@ -294,6 +441,49 @@ Describe 'Invoke-Prepare -StagesDir (-KeepStages)' {
         Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages | Out-Null
         $m = Get-Content -LiteralPath (Join-Path $stages 'lecture.stages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $m.enhance_filters | Should -Be 'Resemble-Enhance'
+    }
+    It 'saves the repaired stage and records the repair settings' {
+        $Denoise = 'ffmpeg'; $Enhance = 'none'; $Gain = 0.0
+        $Declip = $false; $Declick = $true; $Dehum = '60'
+        Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages | Out-Null
+        (Get-ChildItem -LiteralPath $stages | Sort-Object Name).Name | Should -Be @(
+            'lecture.01-original.wav', 'lecture.02-repaired.wav',
+            'lecture.03-denoised.wav', 'lecture.stages.json')
+        Get-Content -LiteralPath (Join-Path $stages 'lecture.02-repaired.wav') | Should -Match 'adeclick'
+        # Denoise reads the repaired wav, not the raw input.
+        Get-Content -LiteralPath (Join-Path $stages 'lecture.03-denoised.wav') | Should -Match '^from lecture\.repaired\.wav'
+        $m = Get-Content -LiteralPath (Join-Path $stages 'lecture.stages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $m.declick | Should -BeTrue
+        $m.declip | Should -BeFalse
+        $m.dehum | Should -Be '60'
+        $m.hum_hz | Should -Be 60
+        $m.repair_filters | Should -Match 'bandreject=f=60'
+        $m.files.repaired | Should -Be 'lecture.02-repaired.wav'
+    }
+    It 'saves the true original when repairing with -Denoise none' {
+        $Denoise = 'none'; $Enhance = 'none'; $Gain = 0.0
+        $Declip = $true; $Declick = $false; $Dehum = 'none'
+        Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages | Out-Null
+        (Get-ChildItem -LiteralPath $stages | Sort-Object Name).Name | Should -Be @(
+            'lecture.01-original.wav', 'lecture.02-repaired.wav', 'lecture.stages.json')
+        Get-Content -LiteralPath (Join-Path $stages 'lecture.01-original.wav') | Should -Match '^from lecture\.m4a \| $'
+    }
+    It 'keeps "auto" in the manifest alongside the detected frequency' {
+        $Denoise = 'ffmpeg'; $Enhance = 'none'; $Gain = 0.0
+        $Declip = $false; $Declick = $true; $Dehum = 'auto'
+        Mock Get-HumHz { $null }
+        Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages | Out-Null
+        $m = Get-Content -LiteralPath (Join-Path $stages 'lecture.stages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $m.dehum | Should -Be 'auto'
+        $m.hum_hz | Should -BeNullOrEmpty
+    }
+    It 'records a fractional gain exactly (parity with Python)' {
+        $Denoise = 'none'; $Enhance = 'none'; $Gain = -3.5
+        $Declip = $false; $Declick = $false; $Dehum = 'none'
+        Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages | Out-Null
+        $m = Get-Content -LiteralPath (Join-Path $stages 'lecture.stages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $m.gain_db | Should -Be -3.5
+        $m.enhance_filters | Should -Be 'volume=-3.5dB'
     }
     It 'throws when the stages folder cannot be created' {
         $Denoise = 'ffmpeg'; $Enhance = 'none'; $Gain = 0.0

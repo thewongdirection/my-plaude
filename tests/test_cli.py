@@ -406,6 +406,56 @@ class TestOrchestration(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertEqual(prep.call_args.kwargs.get("stages_dir"), str(stages))
 
+    def _run_prepare(self, extra):
+        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            out = pathlib.Path(d) / "o.txt"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True), \
+                 mock.patch.object(audio, "prepare", return_value=f) as prep, \
+                 mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)):
+                rc = cli.run([str(f), "-o", str(out), "-f", "txt", "-q", *extra])
+        self.assertEqual(rc, 0)
+        return prep.call_args.kwargs
+
+    def test_repair_flags_default_off(self):
+        kw = self._run_prepare([])
+        self.assertFalse(kw["declip"])
+        self.assertFalse(kw["declick"])
+        self.assertEqual(kw["dehum"], "none")
+
+    def test_declip_declick_dehum_forwarded(self):
+        kw = self._run_prepare(["--declip", "--declick", "--dehum", "50"])
+        self.assertTrue(kw["declip"])
+        self.assertTrue(kw["declick"])
+        self.assertEqual(kw["dehum"], "50")
+
+    def test_dehum_auto_passed_through_with_reporter(self):
+        # prepare() runs the detection itself, so the manifest records "auto".
+        kw = self._run_prepare(["--dehum", "auto"])
+        self.assertEqual(kw["dehum"], "auto")
+        self.assertTrue(callable(kw["on_hum"]))
+
+    def test_repair_shorthand_enables_all(self):
+        kw = self._run_prepare(["--repair"])
+        self.assertTrue(kw["declip"])
+        self.assertTrue(kw["declick"])
+        self.assertEqual(kw["dehum"], "auto")
+
+    def test_repair_shorthand_keeps_explicit_dehum(self):
+        self.assertEqual(self._run_prepare(["--repair", "--dehum", "60"])["dehum"], "60")
+        # An explicit none turns hum removal off even with --repair.
+        self.assertEqual(self._run_prepare(["--repair", "--dehum", "none"])["dehum"], "none")
+
+    def test_empty_keep_stages_is_off(self):
+        self.assertIsNone(self._run_prepare(["--keep-stages", ""])["stages_dir"])
+
+    def test_invalid_dehum_rejected(self):
+        with self.assertRaises(SystemExit):
+            cli.build_parser().parse_args(["x.wav", "--dehum", "70"])
+
     def test_keep_stages_defaults_off(self):
         segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
         with tempfile.TemporaryDirectory() as d:

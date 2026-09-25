@@ -94,6 +94,10 @@ $env:HF_TOKEN = "hf_xxx"
 # Save every preprocessing stage (original / denoised / enhanced) for inspection
 .\Plaude-Local.ps1 lecture.m4a -Enhance strong -KeepStages .\stages
 
+# Repair bad-hardware damage first: clipping, clicks/crackle, mains hum
+.\Plaude-Local.ps1 lecture.m4a -Repair -Denoise deepfilter -Enhance strong
+.\Plaude-Local.ps1 hum.wav -Dehum 50          # or 60, or auto
+
 # Flag / triage bad recordings
 .\Plaude-Local.ps1 suspect.wav -AssessOnly       # fast, no transcription
 .\Plaude-Local.ps1 clip.mp3 -OnBad fail          # exit 12 on a bad recording
@@ -143,7 +147,11 @@ download or `-NoProvision` to just error out.
 | Enhance | `--enhance none/speech/strong/resemble` | `-Enhance none/speech/strong/resemble` |
 | Gain | `--gain DB` | `-Gain DB` |
 | Save cleaned audio | `--keep-clean PATH` | `-KeepClean PATH` |
-| Save preprocessing stages | `--keep-stages DIR` (`01-original` / `02-denoised` / `03-enhanced` wav + `.stages.json`) | `-KeepStages DIR` (same files and manifest) |
+| Repair: declip | `--declip` (FFmpeg `adeclip`) | `-Declip` |
+| Repair: declick | `--declick` (FFmpeg `adeclick`) | `-Declick` |
+| Repair: mains hum | `--dehum none/auto/50/60` (auto = 50/60/55 Hz band check, 6 dB margin, first 5 min) | `-Dehum none/auto/50/60` (same detection) |
+| Repair: all | `--repair` (= `--declip --declick --dehum auto`; explicit `--dehum` kept) | `-Repair` (explicit `-Dehum` kept) |
+| Save preprocessing stages | `--keep-stages DIR` (`01-original` / `02-repaired` / `03-denoised` / `04-enhanced` wav + `.stages.json`) | `-KeepStages DIR` (same files; same manifest fields and values, see Known differences for JSON formatting) |
 | Quality triage | `--assess-only` | `-AssessOnly` |
 | Bad-recording policy | `--on-bad warn/skip/fail` | `-OnBad warn/skip/fail` |
 | Transcription engine | faster-whisper (CTranslate2) | whisper-ctranslate2 (same engine) |
@@ -200,6 +208,12 @@ download or `-NoProvision` to just error out.
   `-OnBad`. In JSON output, the Python version nests the report under
   `meta.quality`; the PowerShell port adds it as a top-level `quality` field
   (because the JSON file is produced by `whisper-ctranslate2`). Same data.
+- **`-KeepStages` manifest JSON formatting**: the `.stages.json` fields and
+  values match Python's, but the bytes can differ: Windows PowerShell 5.1's
+  `ConvertTo-Json` escapes `&` and `'` as `\u0026` / `\u0027` and uses its
+  own indentation, and `input` records the path exactly as typed, whereas
+  Python normalizes it (e.g. `./x.wav` becomes `x.wav`). Any JSON parser
+  reads the same data.
 - **`-Enhance resemble`**: the PowerShell port drives the `resemble-enhance`
   **CLI** (which processes a directory), whereas the Python version calls the
   Resemble-Enhance Python API directly. Same model, equivalent result. The

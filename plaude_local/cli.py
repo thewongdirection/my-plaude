@@ -140,10 +140,28 @@ def build_parser() -> argparse.ArgumentParser:
                               "(e.g. 6 to boost, -3 to attenuate)")
     g_audio.add_argument("--keep-clean", default=None, metavar="PATH",
                          help="also save the denoised/enhanced 16kHz wav to PATH")
+    g_audio.add_argument("--declip", action="store_true",
+                         help="repair clipped/distorted peaks (too-hot input) "
+                              "before denoising (FFmpeg adeclip; slow on long files)")
+    g_audio.add_argument("--declick", action="store_true",
+                         help="remove clicks, pops and crackle/static bursts "
+                              "before denoising (FFmpeg adeclick)")
+    # default=SUPPRESS (read via getattr) so --repair can tell "not given" from
+    # an explicit --dehum none, and --help doesn't print "(default: None)".
+    g_audio.add_argument("--dehum", choices=["none", "auto", "50", "60"],
+                         default=argparse.SUPPRESS,
+                         help="remove mains hum + harmonics before denoising: "
+                              "50 / 60 Hz, or auto (detect from the first 5 min; "
+                              "skipped if no hum is found). Default: none "
+                              "(auto with --repair)")
+    g_audio.add_argument("--repair", action="store_true",
+                         help="shorthand for --declip --declick --dehum auto "
+                              "(an explicit --dehum none/50/60 is kept)")
     g_audio.add_argument("--keep-stages", default=None, metavar="DIR",
                          help="save every preprocessing stage to DIR for "
                               "inspection: <name>.01-original.wav, "
-                              ".02-denoised.wav, .03-enhanced.wav (16kHz mono) "
+                              ".02-repaired.wav, .03-denoised.wav, "
+                              ".04-enhanced.wav (16kHz mono) "
                               "+ <name>.stages.json listing the settings used")
 
     # Diarization
@@ -584,14 +602,28 @@ def run(argv: Optional[List[str]] = None) -> int:
     whisper_translate_segs = None  # English translation segments (dashboard only)
     translate_engine = _resolve_translate_engine(args) if args.format == "html" else "whisper"
     with tempfile.TemporaryDirectory(prefix="plaude-local-") as tmp:
-        # 1. Preprocess / denoise / enhance
+        # 1. Preprocess / repair / denoise / enhance
+        if args.repair:
+            args.declip = args.declick = True
+        if getattr(args, "dehum", None) is None:  # not given: --repair implies auto
+            args.dehum = "auto" if args.repair else "none"
+        repair = [n for n in ("declip", "declick") if getattr(args, n)]
+        if args.dehum != "none":
+            repair.append(f"dehum={args.dehum}")
         _log(args.quiet,
-             f"[1/4] preparing audio (denoise={args.denoise}, "
-             f"enhance={args.enhance}, gain={args.gain}dB) ...")
+             f"[1/4] preparing audio (repair={'+'.join(repair) or 'none'}, "
+             f"denoise={args.denoise}, enhance={args.enhance}, gain={args.gain}dB) ...")
+        def _report_hum(hz):
+            _log(args.quiet, f"      mains hum: {hz} Hz, removing" if hz
+                 else "      mains hum: none detected, skipping dehum")
+
         try:
             prepared = audio.prepare(in_path, tmp, denoise=args.denoise,
                                      enhance=args.enhance, gain_db=args.gain,
-                                     stages_dir=args.keep_stages)
+                                     declip=args.declip, declick=args.declick,
+                                     dehum=args.dehum,
+                                     stages_dir=args.keep_stages or None,
+                                     on_hum=_report_hum)
         except audio.AudioError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 5

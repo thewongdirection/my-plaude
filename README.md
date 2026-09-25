@@ -336,6 +336,10 @@ plaude-local noisy.mp3 --denoise deepfilter --keep-clean cleaned.wav
 # Save every preprocessing stage (original / denoised / enhanced) to compare by ear
 plaude-local lecture.m4a --denoise ffmpeg --enhance strong --keep-stages stages/
 
+# Repair bad-hardware damage first: clipping, clicks/crackle, mains hum
+plaude-local lecture.m4a --repair --denoise deepfilter --enhance strong
+plaude-local hum.wav --dehum 50          # or 60, or auto
+
 # Flag bad recordings (warn by default; transcript still written)
 plaude-local maybe-empty.mp3
 
@@ -482,7 +486,11 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
 | `--summarize-model` | — | e.g. `llama3.1` (Ollama) |
 | `--summarize-timeout` | `120` | per-request LLM timeout (s); raise for big reasoning models (deepseek-r1) |
 | `--keep-clean PATH` | — | also save the denoised 16 kHz wav |
-| `--keep-stages DIR` | — | save each preprocessing stage (original / denoised / enhanced wav) + a `.stages.json` settings manifest to DIR |
+| `--declip` | off | repair clipped/distorted peaks before denoise (FFmpeg `adeclip`; slow on long files) |
+| `--declick` | off | remove clicks, pops and crackle/static bursts before denoise (FFmpeg `adeclick`) |
+| `--dehum` | `none` | remove mains hum + 7 harmonics: `50`, `60`, or `auto` (detect from the first 5 min; skipped if none) |
+| `--repair` | off | shorthand for `--declip --declick --dehum auto` (an explicit `--dehum none/50/60` is kept) |
+| `--keep-stages DIR` | — | save each preprocessing stage (original / repaired / denoised / enhanced wav) + a `.stages.json` settings manifest to DIR |
 | `--no-vad` | off | disable silence trimming |
 
 ---
@@ -493,6 +501,19 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
   `ffprobe` confirms it contains a decodable audio stream — so support tracks
   exactly what your FFmpeg build can decode, whatever the extension. Files with
   no audio stream get a clear error before any model runs.
+- **Repair.** Optional and off by default; runs *before* denoise on the
+  decoded input, to undo damage from bad hardware. `--declip` rebuilds
+  peaks flattened by a too-hot input (FFmpeg `adeclip`; CPU-heavy on long
+  files). `--declick` removes clicks, pops and bursts of crackle/static
+  (`adeclick`). `--dehum 50|60` puts narrow notch filters (Q 30, about 2 Hz
+  wide) on the mains frequency and its first 7 harmonics, leaving the voice
+  alone; `--dehum auto` compares the 50 Hz and 60 Hz bands with a 55 Hz
+  reference over the first 5 minutes and only notches a band that is at
+  least 6 dB louder, so clean files are left untouched (the detected
+  frequency is logged). `--repair` turns all three on; add `--dehum none`
+  to keep hum removal off. The repaired audio is kept at the source sample
+  rate as 32-bit float, so peaks rebuilt above full scale are not clipped
+  again and DeepFilterNet still gets full-band input. No extra dependencies.
 - **Denoising.** Default (`--denoise ffmpeg`) runs a speech-tuned FFmpeg filter
   chain (`highpass`, `lowpass`, `afftdn`, `dynaudnorm`) — no extra deps.
   `--denoise deepfilter` swaps in DeepFilterNet, a small neural denoiser that's
@@ -507,12 +528,15 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
   N-dB volume change. Enhancement improves clarity but can't fully recover
   speech that's clipped or destroyed.
 - **Inspecting the stages.** `--keep-stages DIR` saves every intermediate as a
-  16 kHz mono wav so you can A/B them by ear or in an audio editor:
-  `<name>.01-original.wav` (unprocessed decode), `<name>.02-denoised.wav`
-  (omitted with `--denoise none`, where the decode *is* the original) and
-  `<name>.03-enhanced.wav` (only with `--enhance`/`--gain`; this is exactly
-  what Whisper hears). `<name>.stages.json` records the denoise/enhance modes,
-  gain, and the exact FFmpeg filter chains used. Re-running with other
+  mono wav so you can A/B them by ear or in an audio editor (16 kHz 16-bit,
+  except `02-repaired`, which keeps the source rate as 32-bit float):
+  `<name>.01-original.wav` (unprocessed decode), `<name>.02-repaired.wav`
+  (only with `--declip`/`--declick`/`--dehum`), `<name>.03-denoised.wav`
+  (omitted with `--denoise none`) and `<name>.04-enhanced.wav` (only with
+  `--enhance`/`--gain`). The last stage written is exactly what Whisper
+  hears. `<name>.stages.json` records the repair/denoise/enhance settings
+  as requested (e.g. `"dehum": "auto"`), the detected hum frequency
+  (`hum_hz`), gain, and the exact FFmpeg filter chains used. Re-running with other
   settings into the same folder overwrites that input's files, so use one
   folder per experiment.
 - **Transcription.** `faster-whisper` runs Whisper via CTranslate2 with int8/
