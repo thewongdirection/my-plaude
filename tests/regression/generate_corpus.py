@@ -3,7 +3,7 @@
 The corpus has 300 clean recordings plus a damaged twin of each (600 files):
 
 * 150 single-speaker monologues and 150 multi-speaker conversations (2-3
-  voices taking turns), spread round-robin over the 74 languages in
+  voices taking turns), spread round-robin over the 73 languages in
   ``languages.py`` (every language that both Whisper and edge-tts support);
 * each clean file is 2-10 minutes long (seeded, skewed towards shorter files)
   with seeded random content: a shuffled selection of ``sentences.py`` lines
@@ -21,8 +21,11 @@ reference, voices, turns and damage recipe.
 
 This is a one-off, networked, multi-hour step (edge-tts calls Microsoft's TTS
 service); the result is committed so regression runs are reproducible
-offline. It resumes where it left off. Requirements: ``pip install edge-tts``,
-FFmpeg on PATH, and an Ollama server with a translation model.
+offline. It resumes where it left off (translations and TTS clips are cached
+outside the repo, so ``--force`` rebuilds files from the same cached material;
+delete the cache folder to re-translate / re-synthesize). Requirements:
+``pip install edge-tts``, FFmpeg on PATH, and an Ollama server with a
+translation model.
 
     python tests/regression/generate_corpus.py
     python tests/regression/generate_corpus.py --languages de,ja --force
@@ -39,7 +42,9 @@ import random
 import subprocess
 import sys
 import tempfile
+import re
 import unicodedata
+import uuid
 import wave
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -51,6 +56,7 @@ sys.path.insert(0, str(HERE.parents[1]))
 from damage import damage_filtergraph, damage_plan  # noqa: E402
 from dialogues import EXCHANGES, REACTIONS  # noqa: E402
 from languages import LANGUAGES, NO_SPACE_SCRIPTS  # noqa: E402
+from scoring import content_words  # noqa: E402
 from sentences import SENTENCES  # noqa: E402
 
 DEFAULT_SEED = 2026
@@ -104,12 +110,31 @@ def script_ratio(text: str, script: str) -> float:
     return ok / len(letters)
 
 
+_THINK = re.compile(r"(?is)<think>.*?</think>")
+_PREAMBLE = re.compile(r"(?i)^(here is|here's|translation|sure[,!.])")
+
+
+def clean_reply(text: str) -> str:
+    """One translated line from an LLM reply: no reasoning, preamble or quotes."""
+    lines = [l.strip() for l in _THINK.sub("", text or "").splitlines() if l.strip()]
+    lines = [l for l in lines if not _PREAMBLE.match(l)] or lines
+    return lines[0].strip(" \"'\u201c\u201d\u00ab\u00bb") if lines else ""
+
+
 def translation_ok(src_en: str, text: str, script: str) -> bool:
-    """A usable translation: non-empty, right script, not just the English."""
+    """A usable translation: non-empty, right script, and not (mostly) English."""
     text = (text or "").strip()
     if not text or script_ratio(text, script) < 0.6:
         return False
-    return script != "LATIN" or text.casefold() != src_en.strip().casefold()
+    if script != "LATIN":
+        return True
+    if _PREAMBLE.match(text) or text.casefold().strip(".!? ") == src_en.casefold().strip(".!? "):
+        return False
+    # An English echo keeps most of the source's content words; a real
+    # translation keeps at most a few cognates (model, internet, museum ...).
+    src = content_words(src_en)
+    shared = src & content_words(text)
+    return not (len(src) >= 3 and len(shared) >= 0.6 * len(src))
 
 
 # --------------------------------------------------------------------------- #
@@ -131,13 +156,14 @@ def translate_language(lang: dict, model) -> dict:
         out = list(src)
     else:
         call = summarize._resolve_call("ollama", model, None, 900)
-        out = summarize.translate_lines(src, call, target_language=lang["name"])
+        out = [clean_reply(line) for line in
+               summarize.translate_lines(src, call, target_language=lang["name"])]
         for i, line in enumerate(out):  # retry lines the batched reply got wrong
             for _ in range(2):
                 if translation_ok(src[i], out[i], lang["script"]):
                     break
-                out[i] = summarize.translate_text(src[i], call,
-                                                  target_language=lang["name"]).strip()
+                out[i] = clean_reply(summarize.translate_text(
+                    src[i], call, target_language=lang["name"]))
         bad = [i for i, line in enumerate(out) if not translation_ok(src[i], line, lang["script"])]
         if len(bad) > len(src) * 0.05:
             raise RuntimeError(f"{lang['code']}: {len(bad)} of {len(src)} lines are not "
@@ -161,18 +187,19 @@ def translate_language(lang: dict, model) -> dict:
 async def _tts_one(text: str, voice: str, pitch: str, sem: asyncio.Semaphore) -> Path:
     import edge_tts
 
-    key = hashlib.sha1(f"{voice}|{pitch}|{text}".encode("utf-8")).hexdigest()
-    wav = CACHE / "tts" / voice / f"{key}.wav"
+    wav = tts_path(text, voice, pitch)
     if wav.exists():
         return wav
     wav.parent.mkdir(parents=True, exist_ok=True)
     async with sem:
         for attempt in range(4):
+            if wav.exists():  # another coroutine / run finished it meanwhile
+                return wav
             try:
                 with tempfile.TemporaryDirectory() as tmp:
                     mp3 = Path(tmp) / "a.mp3"
                     await edge_tts.Communicate(text, voice, pitch=pitch).save(str(mp3))
-                    part = wav.with_suffix(".part.wav")
+                    part = wav.with_name(f"{wav.stem}.{uuid.uuid4().hex}.part.wav")
                     subprocess.run(
                         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(mp3),
                          "-ac", "1", "-ar", str(TTS_RATE), "-c:a", "pcm_s16le", str(part)],
@@ -186,12 +213,23 @@ async def _tts_one(text: str, voice: str, pitch: str, sem: asyncio.Semaphore) ->
     return wav
 
 
+def tts_path(text: str, voice: str, pitch: str) -> Path:
+    key = hashlib.sha1(f"{voice}|{pitch}|{text}".encode("utf-8")).hexdigest()
+    return CACHE / "tts" / voice / f"{key}.wav"
+
+
 def synthesize(lines: list) -> list:
-    """TTS ``[(text, voice, pitch)]`` concurrently; returns cached wav paths."""
+    """TTS ``[(text, voice, pitch)]`` concurrently; returns cached wav paths.
+
+    Identical lines are synthesized once (two coroutines must never write the
+    same cache file)."""
+    unique = list(dict.fromkeys(lines))
+
     async def go():
         sem = asyncio.Semaphore(TTS_CONCURRENCY)
-        return await asyncio.gather(*(_tts_one(t, v, p, sem) for t, v, p in lines))
-    return asyncio.run(go())
+        await asyncio.gather(*(_tts_one(t, v, p, sem) for t, v, p in unique))
+    asyncio.run(go())
+    return [tts_path(*line) for line in lines]
 
 
 def list_voices() -> dict:
@@ -346,6 +384,9 @@ def main(argv=None) -> int:
     manifest_path = corpus / "manifest.json"
     manifest = (json.loads(manifest_path.read_text(encoding="utf-8"))
                 if manifest_path.exists() else {})
+    if manifest.get("seed") not in (None, args.seed) and not args.force:
+        p.error(f"the corpus was generated with --seed {manifest['seed']}; "
+                f"pass --force to regenerate it with --seed {args.seed}")
     entries = {e["id"]: e for e in manifest.get("items", [])}
     model = args.model or summarize.default_ollama_model()
     voices = list_voices()
@@ -370,7 +411,10 @@ def main(argv=None) -> int:
         }, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
     # Translate the next language on a worker thread while this one synthesizes.
-    with ThreadPoolExecutor(max_workers=1) as pool:
+    # On any error (or Ctrl+C) cancel the queued translations instead of
+    # silently working through every remaining language first.
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
         futures = {lang["code"]: pool.submit(translate_language, lang, model)
                    for lang in langs if any(todo(it) for it in plan if it["code"] == lang["code"])}
         for lang in langs:
@@ -388,6 +432,8 @@ def main(argv=None) -> int:
                 save()
                 print(f"{it['id']:14} {entry['duration_s']:6.1f}s  "
                       f"{len(entry['voices'])} voice(s)", flush=True)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
     missing = [it["id"] for it in plan if it["id"] not in entries]
     print(f"done: {len(entries)} items ({2 * len(entries)} files); missing: {missing or 'none'}")
     return 1 if missing else 0

@@ -3,6 +3,9 @@
 * ``cer`` - character error rate of a transcript against the source text,
   computed on letters/digits/combining marks only (case, spaces and
   punctuation ignored), so it works the same for spaced and unspaced scripts.
+  Script variants a correct transcript may legitimately use are folded first:
+  Serbian Cyrillic/Latin, and Traditional/Simplified Chinese (when the optional
+  ``zhconv`` package is installed).
 * ``content_recall`` - share of the English reference's content words that
   appear in the tool's English translation (light stemming, stopwords
   removed). A translation is free to rephrase, so this measures whether the
@@ -30,9 +33,29 @@ up down out over under again once let lets
 _WORD = re.compile(r"[a-z]+")
 
 
-def normalize_chars(text: str) -> str:
-    """NFKC, lowercase, keep only letters, digits and combining marks."""
-    text = unicodedata.normalize("NFKC", text or "").lower()
+# Serbian is written in both Cyrillic and Latin; Whisper often answers in Latin.
+_SR_CYR = dict(zip("абвгдђежзијклљмнњопрстћуфхцчџш",
+                   ["a", "b", "v", "g", "d", "đ", "e", "ž", "z", "i", "j", "k", "l", "lj",
+                    "m", "n", "nj", "o", "p", "r", "s", "t", "ć", "u", "f", "h", "c", "č",
+                    "dž", "š"]))
+
+
+def fold_script(text: str, lang: Optional[str]) -> str:
+    """Fold script variants of the same language onto one spelling."""
+    if lang == "sr":
+        return "".join(_SR_CYR.get(c, c) for c in text.lower())
+    if lang in ("zh", "yue"):
+        try:
+            import zhconv  # optional: pip install zhconv
+            return zhconv.convert(text, "zh-hans")
+        except ImportError:
+            return text
+    return text
+
+
+def normalize_chars(text: str, lang: Optional[str] = None) -> str:
+    """NFKC, lowercase, fold script variants, keep letters/digits/marks only."""
+    text = fold_script(unicodedata.normalize("NFKC", text or "").lower(), lang)
     return "".join(c for c in text if unicodedata.category(c)[0] in "LNM")
 
 
@@ -49,10 +72,10 @@ def levenshtein(a: str, b: str) -> int:
     return prev[-1]
 
 
-def cer(reference: str, hypothesis: str) -> float:
+def cer(reference: str, hypothesis: str, lang: Optional[str] = None) -> float:
     """Character error rate of ``hypothesis`` against ``reference`` (0 = perfect)."""
-    ref = normalize_chars(reference)
-    hyp = normalize_chars(hypothesis)
+    ref = normalize_chars(reference, lang)
+    hyp = normalize_chars(hypothesis, lang)
     if not ref:
         return 0.0 if not hyp else 1.0
     return levenshtein(ref, hyp) / len(ref)

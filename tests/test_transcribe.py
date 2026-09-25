@@ -120,8 +120,6 @@ class TestTranscriberGuard(unittest.TestCase):
                 transcribe.Transcriber(model="tiny", device="cpu")
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestInferenceErrors(unittest.TestCase):
@@ -153,7 +151,7 @@ class TestInferenceErrors(unittest.TestCase):
     def test_errors_while_iterating_segments_are_wrapped(self):
         # faster-whisper is lazy: inference (and DLL loading) runs on iteration.
         def gen():
-            raise RuntimeError("cuDNN failed to initialize")
+            raise RuntimeError("Could not load library cudnn_ops64_9.dll")
             yield  # pragma: no cover
 
         engine = self._engine(None)
@@ -164,7 +162,27 @@ class TestInferenceErrors(unittest.TestCase):
         self.assertIn("nvidia-cudnn-cu12", str(ctx.exception))
 
     def test_explain_inference_error(self):
+        explain = lambda m: transcribe.explain_inference_error(RuntimeError(m))  # noqa: E731
+        # Missing libraries -> install hint.
         self.assertIn(transcribe.CUDA_LIBS_REMEDY,
-                      transcribe.explain_inference_error(RuntimeError("CUBLAS_STATUS_NOT_INITIALIZED")))
-        self.assertEqual(transcribe.explain_inference_error(RuntimeError("boom")), "boom")
+                      explain("Library cublas64_12.dll is not found or cannot be loaded"))
+        # Loaded but failed (GPU reset / OOM / driver) -> GPU hint, NOT the install hint.
+        for m in ("CUBLAS_STATUS_NOT_INITIALIZED", "CUDA failed with error out of memory",
+                  "CUDNN_STATUS_EXECUTION_FAILED", "CUDA driver version is insufficient"):
+            self.assertIn(transcribe.GPU_FAILURE_REMEDY, explain(m), m)
+            self.assertNotIn(transcribe.CUDA_LIBS_REMEDY, explain(m), m)
+        self.assertEqual(explain("boom"), "boom")
 
+    def test_model_load_failure_gets_remedy(self):
+        fake = types.ModuleType("faster_whisper")
+        fake.WhisperModel = mock.Mock(side_effect=RuntimeError(
+            "Library cublas64_12.dll is not found or cannot be loaded"))
+        with mock.patch.dict(sys.modules, {"faster_whisper": fake}), \
+             mock.patch.object(transcribe, "add_cuda_dll_directories"):
+            with self.assertRaises(transcribe.TranscribeError) as ctx:
+                transcribe.Transcriber("small", device="cuda", compute_type="float16")
+        self.assertIn("nvidia-cublas-cu12", str(ctx.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()

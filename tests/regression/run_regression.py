@@ -1,6 +1,6 @@
 """Multilingual end-to-end regression suite for BOTH implementations.
 
-Runs corpus files (300 clean + 300 damaged across 74 languages, monologues
+Runs corpus files (300 clean + 300 damaged across 73 languages, monologues
 and multi-speaker conversations - see generate_corpus.py) through the real tool - Python (``python -m plaude_local``) and/or PowerShell
 (``powershell/Plaude-Local.ps1``) - transcribing and translating to English
 via the HTML dashboard's split outputs, then scores each run:
@@ -20,7 +20,9 @@ also fails if it regresses beyond the tolerance against ``baseline.json``
 Whisper model). Needs FFmpeg, faster-whisper / whisper-ctranslate2 and an
 Ollama server; a CUDA GPU is strongly recommended. The full suite is long
 (~46 h of audio per implementation), so ``--sample N`` runs a seeded,
-stratified subset (spread over languages, monologue/conversation, clean/damaged).
+stratified subset of N items spread over languages and monologue/conversation;
+each item still runs clean + damaged in every selected implementation
+(``--sample 24`` = 96 runs with ``--impl both``).
 
     python tests/regression/run_regression.py --sample 24          # quick check
     python tests/regression/run_regression.py                      # everything
@@ -124,6 +126,36 @@ def child_env() -> dict:
     return env
 
 
+def run_with_timeout(cmd: list, log_path: Path, timeout: int) -> int:
+    """Run ``cmd`` with its output in ``log_path``; kill the whole tree on timeout.
+
+    Output goes to a file, not a pipe: a grandchild (e.g. whisper-ctranslate2
+    started by powershell.exe) inherits pipe handles, so killing only the
+    direct child would leave ``communicate()`` blocked on the grandchild.
+    """
+    flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    with open(log_path, "w", encoding="utf-8", errors="replace") as log:
+        proc = subprocess.Popen(cmd, cwd=REPO, env=child_env(), stdout=log,
+                                stderr=subprocess.STDOUT, creationflags=flags,
+                                start_new_session=os.name != "nt")
+        try:
+            return proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            kill_tree(proc)
+            log.write(f"\n[regression] timeout after {timeout}s - process tree killed\n")
+            return -1
+
+
+def kill_tree(proc: subprocess.Popen) -> None:
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                       capture_output=True)
+    else:  # pragma: no cover - POSIX
+        import signal
+        os.killpg(proc.pid, signal.SIGKILL)
+    proc.wait()
+
+
 def run_one(impl: str, entry: dict, variant: str, out_dir: Path, args) -> dict:
     audio = CORPUS / (entry["file"] if variant == "clean" else entry["damaged_file"])
     work = out_dir / impl / f"{entry['id']}.{variant}"
@@ -131,14 +163,7 @@ def run_one(impl: str, entry: dict, variant: str, out_dir: Path, args) -> dict:
     cmd = build_command(impl, audio, work, variant=variant, model=args.model,
                         engine=args.translate_engine, translate_model=args.translate_model)
     t0 = time.time()
-    try:
-        proc = subprocess.run(cmd, cwd=REPO, env=child_env(), capture_output=True,
-                              text=True, encoding="utf-8", errors="replace",
-                              timeout=args.timeout)
-        code, log = proc.returncode, (proc.stdout or "") + (proc.stderr or "")
-    except subprocess.TimeoutExpired as exc:
-        code, log = -1, f"timeout after {exc.timeout}s"
-    (work / "run.log").write_text(log, encoding="utf-8")
+    code = run_with_timeout(cmd, work / "run.log", args.timeout)
 
     transcript = _read(work / "transcription.txt")
     translation = _read(work / "translation.txt")
@@ -148,7 +173,7 @@ def run_one(impl: str, entry: dict, variant: str, out_dir: Path, args) -> dict:
         "exit_code": code, "seconds": round(time.time() - t0, 1),
         "audio_s": entry["duration_s"],
         "language": detected_language(_read(work / "dashboard.html")),
-        "cer": round(cer(entry["text"], transcript), 4),
+        "cer": round(cer(entry["text"], transcript, entry["code"]), 4),
         "recall": round(content_recall(entry["reference_en"], translation), 4),
     }
     if variant == "damaged":
@@ -213,8 +238,14 @@ def main(argv=None) -> int:
 
     out_dir = Path(args.out or HERE / "results" / datetime.now().strftime("%Y%m%d-%H%M%S"))
     out_dir.mkdir(parents=True, exist_ok=True)
+    config = {"model": args.model, "translate_engine": args.translate_engine,
+              "translate_model": args.translate_model}
     base = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
-    base_scores = base.get("results", {}) if base.get("model") == args.model else {}
+    same_config = base.get("config") == config
+    base_scores = base.get("results", {}) if same_config else {}
+    if base and not same_config:
+        print(f"note: baseline.json was recorded with {base.get('config')}; "
+              f"no baseline comparison for {config}", flush=True)
 
     results, failed = [], 0
     total = len(impls) * len(entries) * len(variants)
@@ -234,18 +265,17 @@ def main(argv=None) -> int:
                       + (f"  <- {'; '.join(r['failures'])}" if r["failures"] else ""),
                       flush=True)
 
-    summary = {"model": args.model, "translate_engine": args.translate_engine,
-               "translate_model": args.translate_model, "passed": len(results) - failed,
-               "failed": failed, "results": results}
+    summary = {**config, "passed": len(results) - failed, "failed": failed,
+               "results": results}
     (out_dir / "results.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(f"\n{len(results) - failed}/{len(results)} passed - details in {out_dir}")
 
     if args.update_baseline:
-        merged = dict(base.get("results", {})) if base.get("model") == args.model else {}
+        merged = dict(base.get("results", {})) if same_config else {}
         merged.update({f"{r['impl']}/{r['id']}/{r['variant']}":
                        {"cer": r["cer"], "recall": r["recall"]} for r in results
                        if r["exit_code"] == 0})
-        BASELINE.write_text(json.dumps({"model": args.model, "results": dict(sorted(merged.items()))},
+        BASELINE.write_text(json.dumps({"config": config, "results": dict(sorted(merged.items()))},
                                        indent=2) + "\n", encoding="utf-8")
         print(f"baseline updated -> {BASELINE}")
     return 1 if failed else 0

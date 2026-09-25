@@ -67,13 +67,27 @@ CUDA_LIBS_REMEDY = (
     "them with `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12` (picked up "
     "automatically), or run on the CPU with --device cpu."
 )
+GPU_FAILURE_REMEDY = (
+    "the GPU failed while running the model (out of memory, a driver problem, "
+    "or a GPU reset). Close other GPU programs and retry, try a smaller --model "
+    "or --compute-type int8_float16, update / reinstall the NVIDIA driver (a "
+    "reboot recovers a 'GPU is lost' state), or run on the CPU with --device cpu."
+)
+# A CUDA library that is missing vs. one that loaded but then failed.
+_CUDA_LOAD_FAILURE = ("is not found or cannot be loaded", "could not load library",
+                      "cannot open shared object", "cannot load symbol")
+_CUDA_RUNTIME_FAILURE = ("cublas", "cudnn", "cudart", "cuda", "out of memory")
 
 
 def explain_inference_error(exc: BaseException) -> str:
-    """Turn a runtime inference failure into an actionable message."""
+    """Turn a model load / inference failure into an actionable message."""
     msg = str(exc)
-    if any(k in msg.lower() for k in ("cublas", "cudnn", "cudart", "cuda driver")):
+    low = msg.lower()
+    if any(k in low for k in _CUDA_LOAD_FAILURE) and any(
+            k in low for k in ("cublas", "cudnn", "cudart", "cuda", "nvrtc")):
         return f"{msg}\n  -> {CUDA_LIBS_REMEDY}"
+    if any(k in low for k in _CUDA_RUNTIME_FAILURE):
+        return f"{msg}\n  -> {GPU_FAILURE_REMEDY}"
     return msg
 
 
@@ -144,7 +158,7 @@ class Transcriber:
         except Exception as exc:
             raise TranscribeError(
                 f"failed to load model {model!r} on {self.device} "
-                f"({self.compute_type}): {exc}"
+                f"({self.compute_type}): {explain_inference_error(exc)}"
             ) from exc
 
     def transcribe(

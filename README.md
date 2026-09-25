@@ -602,7 +602,8 @@ through **both** implementations for real (transcribe + translate to English):
   language (tier A/B/C in `languages.py`); `baseline.json` catches regressions.
 
 ```bash
-# quick stratified subset (languages x monologue/conversation x clean/damaged)
+# quick stratified subset: 24 items spread over languages and monologue/conversation,
+# each run clean + damaged in both implementations (96 runs)
 python tests/regression/run_regression.py --sample 24
 # everything (~46 h of audio per implementation - an overnight+ GPU job)
 python tests/regression/run_regression.py

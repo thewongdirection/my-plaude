@@ -661,13 +661,19 @@ function Invoke-Prepare {
 # Transcription via whisper-ctranslate2 (same faster-whisper/CTranslate2 engine)
 # --------------------------------------------------------------------------- #
 $Script:CudaLibsRemedy = 'the NVIDIA CUDA libraries (cuBLAS / cuDNN) could not be loaded. Install them with `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12` (picked up automatically), or run on the CPU with -Device cpu.'
+$Script:GpuFailureRemedy = "the GPU failed while running the model (out of memory, a driver problem, or a GPU reset). Close other GPU programs and retry, try a smaller -Model or -ComputeType int8_float16, update / reinstall the NVIDIA driver (a reboot recovers a 'GPU is lost' state), or run on the CPU with -Device cpu."
 
 function Get-InferenceHint {
-    # Actionable remedy for a failed transcription (parity with Python
-    # transcribe.explain_inference_error): missing CUDA DLLs only surface when
-    # the model first runs.
+    # Actionable remedy for a failed model load / transcription (parity with
+    # Python transcribe.explain_inference_error): a CUDA library that is
+    # missing gets the install hint; one that loaded but then failed (out of
+    # memory, driver, GPU reset) gets the GPU hint.
     param([string]$ToolOutput)
-    if ($ToolOutput -match '(?i)cublas|cudnn|cudart|cuda driver') { return "`n  -> $($Script:CudaLibsRemedy)" }
+    $cudaLib = $ToolOutput -match '(?i)cublas|cudnn|cudart|cuda|nvrtc'
+    if ($cudaLib -and $ToolOutput -match '(?i)is not found or cannot be loaded|could not load library|cannot open shared object|cannot load symbol') {
+        return "`n  -> $($Script:CudaLibsRemedy)"
+    }
+    if ($ToolOutput -match '(?i)cublas|cudnn|cudart|cuda|out of memory') { return "`n  -> $($Script:GpuFailureRemedy)" }
     return ''
 }
 

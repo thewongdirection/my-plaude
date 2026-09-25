@@ -627,7 +627,15 @@ Describe 'Get-InferenceHint (transcription failure remedy)' {
         $h = Get-InferenceHint -ToolOutput 'RuntimeError: Library cublas64_12.dll is not found or cannot be loaded'
         $h | Should -Match 'nvidia-cublas-cu12'
         $h | Should -Match '-Device cpu'
-        Get-InferenceHint -ToolOutput 'cuDNN failed to initialize' | Should -Match 'nvidia-cudnn-cu12'
+        Get-InferenceHint -ToolOutput 'Could not load library cudnn_ops64_9.dll' | Should -Match 'nvidia-cudnn-cu12'
+    }
+    It 'gives the GPU-failure remedy (not the install hint) when CUDA loaded but failed' {
+        foreach ($m in 'CUBLAS_STATUS_NOT_INITIALIZED', 'CUDA failed with error out of memory',
+                       'CUDNN_STATUS_EXECUTION_FAILED', 'CUDA driver version is insufficient') {
+            $h = Get-InferenceHint -ToolOutput $m
+            $h | Should -Match 'GPU failed while running the model'
+            $h | Should -Not -Match 'nvidia-cublas-cu12'
+        }
     }
     It 'adds nothing for unrelated failures' {
         Get-InferenceHint -ToolOutput 'ValueError: bad audio' | Should -Be ''

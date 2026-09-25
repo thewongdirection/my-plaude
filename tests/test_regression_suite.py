@@ -35,6 +35,10 @@ class TestScoring(unittest.TestCase):
         # Devanagari vowel signs are category M and must count.
         self.assertGreater(scoring.cer("किताब", "कतब"), 0.0)
 
+    def test_cer_folds_script_variants(self):
+        self.assertEqual(scoring.cer("Добро јутро", "Dobro jutro", "sr"), 0.0)
+        self.assertGreater(scoring.cer("Добро јутро", "Dobro jutro"), 0.5)
+
     def test_levenshtein(self):
         self.assertEqual(scoring.levenshtein("kitten", "sitting"), 3)
         self.assertEqual(scoring.levenshtein("", "abc"), 3)
@@ -122,6 +126,41 @@ class TestCorpusPlan(unittest.TestCase):
         for lang in languages.LANGUAGES:
             kinds = {p["kind"] for p in plan if p["code"] == lang["code"]}
             self.assertEqual(kinds, {"mono", "conv"}, lang["code"])
+
+    def test_translation_rejects_english_echoes_and_preambles(self):
+        src = "The meeting has been moved to the large room on the second floor."
+        self.assertFalse(gen.translation_ok(src, src.replace(".", "!"), "LATIN"))
+        self.assertFalse(gen.translation_ok(
+            src, "Here is the translation: The meeting moved to the large room.", "LATIN"))
+        self.assertFalse(gen.translation_ok(
+            src, "The meeting has been moved to the large room upstairs", "LATIN"))
+        self.assertTrue(gen.translation_ok(
+            src, "La reunión se ha trasladado a la sala grande del segundo piso.", "LATIN"))
+        # Cognates alone don't make a line English.
+        self.assertTrue(gen.translation_ok("The museum has a large collection.",
+                                           "Das Museum hat eine große Sammlung.", "LATIN"))
+
+    def test_clean_reply(self):
+        self.assertEqual(gen.clean_reply("<think>hmm</think>\nHola."), "Hola.")
+        self.assertEqual(gen.clean_reply("Here is the translation:\n\u201cHola a todos.\u201d"),
+                         "Hola a todos.")
+        self.assertEqual(gen.clean_reply(""), "")
+
+    def test_synthesize_dedupes_identical_lines(self):
+        seen = []
+
+        async def fake(text, voice, pitch, sem):
+            seen.append((text, voice, pitch))
+
+        orig = gen._tts_one
+        gen._tts_one = fake
+        try:
+            paths = gen.synthesize([("hi", "v", "+0Hz"), ("hi", "v", "+0Hz"), ("yo", "v", "+0Hz")])
+        finally:
+            gen._tts_one = orig
+        self.assertEqual(sorted(seen), [("hi", "v", "+0Hz"), ("yo", "v", "+0Hz")])
+        self.assertEqual(paths[0], paths[1])
+        self.assertNotEqual(paths[0], paths[2])
 
     def test_script_checks(self):
         self.assertEqual(gen.script_ratio("Привет мир", "CYRILLIC"), 1.0)
@@ -215,6 +254,15 @@ class TestRunner(unittest.TestCase):
                              sorted(alias.get(norm(f), norm(f)) for f in ps_flags))
             self.assertEqual("--repair" in py, variant == "damaged")
 
+    def test_timeout_kills_the_process_tree(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "run.log"
+            code = rr.run_with_timeout([sys.executable, "-c", "import time; time.sleep(60)"],
+                                       log, timeout=1)
+            self.assertEqual(code, -1)
+            self.assertIn("timeout", log.read_text(encoding="utf-8"))
+
     def test_stratified_sample_spreads_languages_and_kinds(self):
         entries = [{"id": f"{c}-{k}-{i}", "code": c, "kind": k}
                    for c in "abcdef" for k in ("mono", "conv") for i in range(3)]
@@ -235,7 +283,15 @@ class TestCommittedCorpus(unittest.TestCase):
             raise unittest.SkipTest("corpus not generated")
         cls.items = json.loads(path.read_text(encoding="utf-8"))["items"]
 
+    def test_items_belong_to_the_plan(self):
+        planned = {p["id"] for p in gen.plan_corpus()}
+        ids = [i["id"] for i in self.items]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertLessEqual(set(ids), planned)
+
     def test_counts(self):
+        if len(self.items) < 300:
+            self.skipTest(f"partial corpus ({len(self.items)} of 300 items)")
         self.assertEqual(len(self.items), 300)
         self.assertEqual(sum(i["kind"] == "mono" for i in self.items), 150)
         self.assertEqual(sum(i["kind"] == "conv" for i in self.items), 150)

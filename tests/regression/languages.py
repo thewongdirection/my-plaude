@@ -1,5 +1,5 @@
 """Languages in the regression corpus: every language that both Whisper
-(large-v3) and the edge-tts neural voices support - 74 languages.
+(large-v3) and the edge-tts neural voices support - 73 languages.
 
 Fields:
 
