@@ -43,7 +43,7 @@ See `CONTRIBUTING.md` for the human-facing statement of this same policy.
 | Module | Responsibility |
 |--------|----------------|
 | `cli.py` | argument parsing, orchestration, output/overwrite, `--check` |
-| `audio.py` | FFmpeg probe (`ffprobe`) + denoise + enhance (speech/strong/resemble) + gain; input is anything FFmpeg decodes |
+| `audio.py` | FFmpeg probe (`ffprobe`) + denoise + enhance (speech/strong/resemble) + gain + optional per-stage wav dump & manifest (`--keep-stages`); input is anything FFmpeg decodes |
 | `transcribe.py` | faster-whisper (CTranslate2) wrapper; device/compute auto-resolve |
 | `diarize.py` | pyannote + whisperx backends → shared `merge_turns` |
 | `summarize.py` | local LLM summary via Ollama / llama.cpp over stdlib `urllib` |

@@ -235,6 +235,73 @@ Describe 'Invoke-Prepare' {
     }
 }
 
+Describe 'Invoke-Prepare -StagesDir (-KeepStages)' {
+    BeforeEach {
+        $src = Join-Path $TestDrive 'lecture.m4a'
+        Set-Content -LiteralPath $src -Value 'x'
+        $work = Join-Path $TestDrive ('work-' + [Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $work | Out-Null
+        $stages = Join-Path $TestDrive ('stages-' + [Guid]::NewGuid().ToString('N'))
+        # Fake ffmpeg: record source + filters into the destination file.
+        Mock ConvertTo-Wav { Set-Content -LiteralPath $Dst -Value "from $(Split-Path $Src -Leaf) | $Filters" }
+    }
+    It 'saves nothing when no stages folder is given' {
+        $Denoise = 'ffmpeg'; $Enhance = 'speech'; $Gain = 0.0
+        Invoke-Prepare -Src $src -WorkDir $work | Out-Null
+        Test-Path -LiteralPath $stages | Should -BeFalse
+    }
+    It 'saves original, denoised, enhanced and a manifest' {
+        $Denoise = 'ffmpeg'; $Enhance = 'strong'; $Gain = 3
+        $final = Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages
+        (Get-ChildItem -LiteralPath $stages | Sort-Object Name).Name | Should -Be @(
+            'lecture.01-original.wav', 'lecture.02-denoised.wav',
+            'lecture.03-enhanced.wav', 'lecture.stages.json')
+        Get-Content -LiteralPath (Join-Path $stages 'lecture.01-original.wav') | Should -Match '\| $'
+        Get-Content -LiteralPath (Join-Path $stages 'lecture.02-denoised.wav') | Should -Match 'afftdn'
+        Get-Content -LiteralPath (Join-Path $stages 'lecture.03-enhanced.wav') | Should -Be (Get-Content -LiteralPath $final)
+        $m = Get-Content -LiteralPath (Join-Path $stages 'lecture.stages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $m.denoise | Should -Be 'ffmpeg'
+        $m.denoise_filters | Should -Match 'afftdn'
+        $m.enhance | Should -Be 'strong'
+        $m.gain_db | Should -Be 3
+        $m.enhance_filters | Should -Match 'acompressor'
+        $m.enhance_filters | Should -Match 'volume=3dB'
+        $m.sample_rate | Should -Be 16000
+        $m.files.original | Should -Be 'lecture.01-original.wav'
+        $m.files.denoised | Should -Be 'lecture.02-denoised.wav'
+        $m.files.enhanced | Should -Be 'lecture.03-enhanced.wav'
+    }
+    It 'has no enhanced stage when only denoising' {
+        $Denoise = 'ffmpeg'; $Enhance = 'none'; $Gain = 0.0
+        Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages | Out-Null
+        (Get-ChildItem -LiteralPath $stages | Sort-Object Name).Name | Should -Be @(
+            'lecture.01-original.wav', 'lecture.02-denoised.wav', 'lecture.stages.json')
+        $m = Get-Content -LiteralPath (Join-Path $stages 'lecture.stages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $m.enhance_filters | Should -BeNullOrEmpty
+    }
+    It 'saves the plain decode as the original when -Denoise none (no extra pass)' {
+        $Denoise = 'none'; $Enhance = 'speech'; $Gain = 0.0
+        Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages | Out-Null
+        (Get-ChildItem -LiteralPath $stages | Sort-Object Name).Name | Should -Be @(
+            'lecture.01-original.wav', 'lecture.03-enhanced.wav', 'lecture.stages.json')
+        Should -Invoke ConvertTo-Wav -Times 2 -Exactly
+        $m = Get-Content -LiteralPath (Join-Path $stages 'lecture.stages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $m.denoise_filters | Should -BeNullOrEmpty
+    }
+    It 'names the neural model in the manifest for -Enhance resemble' {
+        $Denoise = 'ffmpeg'; $Enhance = 'resemble'; $Gain = 0.0
+        Mock Invoke-ResembleEnhance { Set-Content -LiteralPath $Dst -Value 'restored' }
+        Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages | Out-Null
+        $m = Get-Content -LiteralPath (Join-Path $stages 'lecture.stages.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $m.enhance_filters | Should -Be 'Resemble-Enhance'
+    }
+    It 'throws when the stages folder cannot be created' {
+        $Denoise = 'ffmpeg'; $Enhance = 'none'; $Gain = 0.0
+        Set-Content -LiteralPath $stages -Value 'not a folder'
+        { Invoke-Prepare -Src $src -WorkDir $work -StagesDir $stages } | Should -Throw '*stages folder*'
+    }
+}
+
 Describe 'ConvertFrom-FfmpegLevels' {
     BeforeAll {
         # Assign inside BeforeAll (not the Describe body) so the value survives

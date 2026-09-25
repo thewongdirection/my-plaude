@@ -249,6 +249,26 @@ def _enhance_resemble(src: Path, dst: Path) -> None:
         tmp.unlink(missing_ok=True)
 
 
+def _save_stage(wav: Path, stages_dir: Path, stem: str, label: str) -> str:
+    """Copy an intermediate ``wav`` into ``stages_dir`` as ``<stem>.<label>.wav``."""
+    name = f"{stem}.{label}.wav"
+    try:
+        shutil.copyfile(wav, stages_dir / name)
+    except OSError as exc:
+        raise AudioError(f"could not save audio stage to {stages_dir}: {exc}") from exc
+    return name
+
+
+def _write_stages_manifest(stages_dir: Path, stem: str, manifest: dict) -> None:
+    """Record which settings produced the saved stages (``<stem>.stages.json``)."""
+    import json
+    try:
+        (stages_dir / f"{stem}.stages.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        raise AudioError(f"could not save audio stage to {stages_dir}: {exc}") from exc
+
+
 def prepare(
     input_path: str | Path,
     workdir: str | Path,
@@ -256,6 +276,7 @@ def prepare(
     denoise: str = "ffmpeg",
     enhance: str = "none",
     gain_db: float = 0.0,
+    stages_dir: str | Path | None = None,
 ) -> Path:
     """Produce a 16 kHz mono WAV ready for transcription.
 
@@ -265,6 +286,11 @@ def prepare(
     * ``denoise``: ``"ffmpeg"``, ``"deepfilter"`` or ``"none"``.
     * ``enhance``: ``"none"``, ``"speech"``, ``"strong"`` or ``"resemble"``.
     * ``gain_db``: manual volume adjustment in dB (0 = none).
+    * ``stages_dir``: if set, also save each intermediate as a 16 kHz mono WAV
+      for later inspection - ``<stem>.01-original.wav`` (unprocessed decode),
+      ``<stem>.02-denoised.wav`` (unless ``denoise="none"``),
+      ``<stem>.03-enhanced.wav`` (only when enhancing / gain) - plus a
+      ``<stem>.stages.json`` manifest of the settings that produced them.
     """
     if enhance not in ENHANCE_MODES:
         raise AudioError(f"unknown enhance mode: {enhance!r}")
@@ -290,16 +316,54 @@ def prepare(
     else:
         raise AudioError(f"unknown denoise mode: {denoise!r}")
 
-    if not need_enhance:
-        return final  # denoise_dst is final
+    if need_enhance:
+        if enhance == "resemble":
+            _enhance_resemble(denoise_dst, final)
+            if gain_db:  # apply the manual gain as a follow-up pass
+                gained = workdir / (src.stem + ".gained.wav")
+                _to_wav(final, gained, filters=f"volume={gain_db}dB")
+                gained.replace(final)
+        else:
+            _to_wav(denoise_dst, final, filters=_enhance_filters(enhance, gain_db))
 
-    if enhance == "resemble":
-        _enhance_resemble(denoise_dst, final)
-        if gain_db:  # apply the manual gain as a follow-up pass
-            gained = workdir / (src.stem + ".gained.wav")
-            _to_wav(final, gained, filters=f"volume={gain_db}dB")
-            gained.replace(final)
-    else:
-        _to_wav(denoise_dst, final, filters=_enhance_filters(enhance, gain_db))
-
+    if stages_dir is not None:
+        _save_stages(src, workdir, Path(stages_dir), denoise=denoise,
+                     enhance=enhance, gain_db=gain_db,
+                     denoised=denoise_dst, enhanced=final if need_enhance else None)
     return final
+
+
+def _save_stages(src: Path, workdir: Path, stages_dir: Path, *, denoise: str,
+                 enhance: str, gain_db: float, denoised: Path,
+                 enhanced: Optional[Path]) -> None:
+    """Save original / denoised / enhanced WAVs + manifest into ``stages_dir``."""
+    try:
+        stages_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise AudioError(f"could not create stages folder {stages_dir}: {exc}") from exc
+    stem = src.stem
+    files = {}
+    if denoise == "none":
+        # The "denoise" pass was a plain decode: it *is* the original.
+        files["original"] = _save_stage(denoised, stages_dir, stem, "01-original")
+    else:
+        original = workdir / (stem + ".original.wav")
+        _to_wav(src, original, filters=None)
+        files["original"] = _save_stage(original, stages_dir, stem, "01-original")
+        files["denoised"] = _save_stage(denoised, stages_dir, stem, "02-denoised")
+    if enhanced is not None:
+        files["enhanced"] = _save_stage(enhanced, stages_dir, stem, "03-enhanced")
+    denoise_filters = {"ffmpeg": _FFMPEG_DENOISE_CHAIN,
+                       "deepfilter": "DeepFilterNet"}.get(denoise)
+    enhance_filters = ("Resemble-Enhance" + (f" + volume={gain_db}dB" if gain_db else "")
+                       if enhance == "resemble" else _enhance_filters(enhance, gain_db))
+    _write_stages_manifest(stages_dir, stem, {
+        "input": str(src),
+        "sample_rate": TARGET_SR,
+        "denoise": denoise,
+        "denoise_filters": denoise_filters,
+        "enhance": enhance,
+        "gain_db": gain_db,
+        "enhance_filters": enhance_filters,
+        "files": files,
+    })

@@ -72,6 +72,7 @@ param(
     [string]$Enhance = 'none',
     [double]$Gain = 0.0,
     [string]$KeepClean,
+    [string]$KeepStages,
 
     # diarization
     [switch]$Diarize,
@@ -419,8 +420,66 @@ function Invoke-ResembleEnhance {
     ConvertTo-Wav -Src $enhanced.FullName -Dst $Dst -Filters $null  # 16 kHz mono
 }
 
+function Save-Stage {
+    param([string]$Wav, [string]$StagesDir, [string]$Stem, [string]$Label)
+    # Copy an intermediate wav into the stages folder as <stem>.<label>.wav.
+    $name = "$Stem.$Label.wav"
+    try {
+        Copy-Item -LiteralPath $Wav -Destination (Join-Path $StagesDir $name) -Force -ErrorAction Stop
+    } catch { throw "could not save audio stage to ${StagesDir}: $($_.Exception.Message)" }
+    return $name
+}
+
+function Save-Stages {
+    # -KeepStages: save original / denoised / enhanced wavs + a settings manifest
+    # (parity with Python audio._save_stages).
+    param([string]$Src, [string]$WorkDir, [string]$StagesDir, [string]$Denoised, [string]$Enhanced)
+    try {
+        # PS 5.1's New-Item -Force silently accepts a *file* at this path.
+        if (Test-Path -LiteralPath $StagesDir -PathType Leaf) { throw 'a file with that name already exists' }
+        New-Item -ItemType Directory -Path $StagesDir -Force -ErrorAction Stop | Out-Null
+    } catch { throw "could not create stages folder ${StagesDir}: $($_.Exception.Message)" }
+    # Full path: Write-Utf8File uses .NET, which ignores the PowerShell location.
+    $StagesDir = (Resolve-Path -LiteralPath $StagesDir).ProviderPath
+    $stem = [System.IO.Path]::GetFileNameWithoutExtension($Src)
+    $files = [ordered]@{}
+    if ($Denoise -eq 'none') {
+        # The "denoise" pass was a plain decode: it *is* the original.
+        $files['original'] = Save-Stage -Wav $Denoised -StagesDir $StagesDir -Stem $stem -Label '01-original'
+    } else {
+        $original = Join-Path $WorkDir ($stem + '.original.wav')
+        ConvertTo-Wav -Src $Src -Dst $original -Filters $null
+        $files['original'] = Save-Stage -Wav $original -StagesDir $StagesDir -Stem $stem -Label '01-original'
+        $files['denoised'] = Save-Stage -Wav $Denoised -StagesDir $StagesDir -Stem $stem -Label '02-denoised'
+    }
+    if ($Enhanced) {
+        $files['enhanced'] = Save-Stage -Wav $Enhanced -StagesDir $StagesDir -Stem $stem -Label '03-enhanced'
+    }
+    $denoiseFilters = switch ($Denoise) {
+        'ffmpeg'     { $Script:FfmpegDenoiseChain }
+        'deepfilter' { 'DeepFilterNet' }
+        default      { $null }
+    }
+    $enhanceFilters = if ($Enhance -eq 'resemble') {
+        'Resemble-Enhance' + $(if ($Gain -ne 0.0) { " + volume=$(Format-Db $Gain)dB" } else { '' })
+    } else { Get-EnhanceFilters -Mode $Enhance -GainDb $Gain }
+    $manifest = [ordered]@{
+        input           = $Src
+        sample_rate     = $Script:TargetSr
+        denoise         = $Denoise
+        denoise_filters = $denoiseFilters
+        enhance         = $Enhance
+        gain_db         = [double]$Gain
+        enhance_filters = $enhanceFilters
+        files           = $files
+    }
+    try {
+        Write-Utf8File -Path (Join-Path $StagesDir "$stem.stages.json") -Text (($manifest | ConvertTo-Json -Depth 4) + "`n")
+    } catch { throw "could not save audio stage to ${StagesDir}: $($_.Exception.Message)" }
+}
+
 function Invoke-Prepare {
-    param([string]$Src, [string]$WorkDir)
+    param([string]$Src, [string]$WorkDir, [string]$StagesDir)
     $stem = [System.IO.Path]::GetFileNameWithoutExtension($Src)
     $final = Join-Path $WorkDir ($stem + '.prepared.wav')
     $needEnhance = ($Enhance -ne 'none') -or ($Gain -ne 0.0)
@@ -432,17 +491,22 @@ function Invoke-Prepare {
         'deepfilter' { Invoke-DeepFilter -Src $Src -Dst $denoiseDst }
     }
 
-    if (-not $needEnhance) { return $final }
-
-    if ($Enhance -eq 'resemble') {
-        Invoke-ResembleEnhance -Src $denoiseDst -Dst $final
-        if ($Gain -ne 0.0) {
-            $gained = Join-Path $WorkDir ($stem + '.gained.wav')
-            ConvertTo-Wav -Src $final -Dst $gained -Filters "volume=$(Format-Db $Gain)dB"
-            Move-Item -LiteralPath $gained -Destination $final -Force
+    if ($needEnhance) {
+        if ($Enhance -eq 'resemble') {
+            Invoke-ResembleEnhance -Src $denoiseDst -Dst $final
+            if ($Gain -ne 0.0) {
+                $gained = Join-Path $WorkDir ($stem + '.gained.wav')
+                ConvertTo-Wav -Src $final -Dst $gained -Filters "volume=$(Format-Db $Gain)dB"
+                Move-Item -LiteralPath $gained -Destination $final -Force
+            }
+        } else {
+            ConvertTo-Wav -Src $denoiseDst -Dst $final -Filters (Get-EnhanceFilters -Mode $Enhance -GainDb $Gain)
         }
-    } else {
-        ConvertTo-Wav -Src $denoiseDst -Dst $final -Filters (Get-EnhanceFilters -Mode $Enhance -GainDb $Gain)
+    }
+
+    if ($StagesDir) {
+        $enhancedStage = if ($needEnhance) { $final } else { $null }
+        Save-Stages -Src $Src -WorkDir $WorkDir -StagesDir $StagesDir -Denoised $denoiseDst -Enhanced $enhancedStage
     }
     return $final
 }
@@ -1384,12 +1448,13 @@ function Invoke-Main {
     try {
         Write-Log "[1/4] preparing audio (denoise=$Denoise, enhance=$Enhance, gain=$(Format-Db $Gain)dB) ..."
         try {
-            $prepared = Invoke-Prepare -Src $InputFile -WorkDir $work
+            $prepared = Invoke-Prepare -Src $InputFile -WorkDir $work -StagesDir $KeepStages
         } catch { Write-ErrLine "error: $($_.Exception.Message)"; return 5 }
         if ($KeepClean) {
             Copy-Item -LiteralPath $prepared -Destination $KeepClean -Force
             Write-Log "      saved cleaned audio -> $KeepClean"
         }
+        if ($KeepStages) { Write-Log "      saved audio stages -> $KeepStages" }
 
         $dev = Resolve-Device
         $compute = Resolve-ComputeType -Dev $dev

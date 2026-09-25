@@ -392,6 +392,32 @@ class TestOrchestration(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertTrue(clean.is_file())
 
+    def test_keep_stages_forwarded_to_prepare(self):
+        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            out = pathlib.Path(d) / "o.txt"
+            stages = pathlib.Path(d) / "stages"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True),                  mock.patch.object(audio, "prepare", return_value=f) as prep,                  mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)):
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-f", "txt",
+                              "--keep-stages", str(stages), "-q"])
+            self.assertEqual(rc, 0)
+            self.assertEqual(prep.call_args.kwargs.get("stages_dir"), str(stages))
+
+    def test_keep_stages_defaults_off(self):
+        segs = [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": None}]
+        with tempfile.TemporaryDirectory() as d:
+            f = self._input(d)
+            out = pathlib.Path(d) / "o.txt"
+            with mock.patch.object(audio, "have_ffmpeg", return_value=True),                  mock.patch.object(audio, "prepare", return_value=f) as prep,                  mock.patch.object(
+                     transcribe, "Transcriber",
+                     lambda **kw: _FakeEngine(segs, **kw)):
+                rc = cli.run([str(f), "-o", str(out), "--denoise", "none", "-f", "txt", "-q"])
+            self.assertEqual(rc, 0)
+            self.assertIsNone(prep.call_args.kwargs.get("stages_dir"))
+
     def test_summary_to_stdout(self):
         # --summary-output - streams the summary to stdout instead of a file.
         segs = [{"start": 0.0, "end": 1.0, "text": "some talk", "speaker": None}]

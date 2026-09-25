@@ -333,6 +333,9 @@ plaude-local meeting.mp3 --denoise deepfilter --diarize --summarize -f txt
 # Keep the cleaned audio for inspection
 plaude-local noisy.mp3 --denoise deepfilter --keep-clean cleaned.wav
 
+# Save every preprocessing stage (original / denoised / enhanced) to compare by ear
+plaude-local lecture.m4a --denoise ffmpeg --enhance strong --keep-stages stages/
+
 # Flag bad recordings (warn by default; transcript still written)
 plaude-local maybe-empty.mp3
 
@@ -479,6 +482,7 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
 | `--summarize-model` | — | e.g. `llama3.1` (Ollama) |
 | `--summarize-timeout` | `120` | per-request LLM timeout (s); raise for big reasoning models (deepseek-r1) |
 | `--keep-clean PATH` | — | also save the denoised 16 kHz wav |
+| `--keep-stages DIR` | — | save each preprocessing stage (original / denoised / enhanced wav) + a `.stages.json` settings manifest to DIR |
 | `--no-vad` | off | disable silence trimming |
 
 ---
@@ -502,6 +506,15 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
   degraded speech (optional extra, GPU-friendly). `--gain N` applies a manual
   N-dB volume change. Enhancement improves clarity but can't fully recover
   speech that's clipped or destroyed.
+- **Inspecting the stages.** `--keep-stages DIR` saves every intermediate as a
+  16 kHz mono wav so you can A/B them by ear or in an audio editor:
+  `<name>.01-original.wav` (unprocessed decode), `<name>.02-denoised.wav`
+  (omitted with `--denoise none`, where the decode *is* the original) and
+  `<name>.03-enhanced.wav` (only with `--enhance`/`--gain`; this is exactly
+  what Whisper hears). `<name>.stages.json` records the denoise/enhance modes,
+  gain, and the exact FFmpeg filter chains used. Re-running with other
+  settings into the same folder overwrites that input's files, so use one
+  folder per experiment.
 - **Transcription.** `faster-whisper` runs Whisper via CTranslate2 with int8/
   float16 quantization, so `large-v3` fits on an 8 GB GPU and also runs on CPU.
   Voice-activity detection trims silence.

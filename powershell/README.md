@@ -91,6 +91,9 @@ $env:HF_TOKEN = "hf_xxx"
 .\Plaude-Local.ps1 muffled.m4a -Enhance strong
 .\Plaude-Local.ps1 faint.wav -Gain 8
 
+# Save every preprocessing stage (original / denoised / enhanced) for inspection
+.\Plaude-Local.ps1 lecture.m4a -Enhance strong -KeepStages .\stages
+
 # Flag / triage bad recordings
 .\Plaude-Local.ps1 suspect.wav -AssessOnly       # fast, no transcription
 .\Plaude-Local.ps1 clip.mp3 -OnBad fail          # exit 12 on a bad recording
@@ -139,6 +142,8 @@ download or `-NoProvision` to just error out.
 | Denoise | `--denoise ffmpeg/deepfilter/none` | `-Denoise ffmpeg/deepfilter/none` |
 | Enhance | `--enhance none/speech/strong/resemble` | `-Enhance none/speech/strong/resemble` |
 | Gain | `--gain DB` | `-Gain DB` |
+| Save cleaned audio | `--keep-clean PATH` | `-KeepClean PATH` |
+| Save preprocessing stages | `--keep-stages DIR` (`01-original` / `02-denoised` / `03-enhanced` wav + `.stages.json`) | `-KeepStages DIR` (same files and manifest) |
 | Quality triage | `--assess-only` | `-AssessOnly` |
 | Bad-recording policy | `--on-bad warn/skip/fail` | `-OnBad warn/skip/fail` |
 | Transcription engine | faster-whisper (CTranslate2) | whisper-ctranslate2 (same engine) |

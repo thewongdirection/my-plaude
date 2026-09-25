@@ -140,6 +140,11 @@ def build_parser() -> argparse.ArgumentParser:
                               "(e.g. 6 to boost, -3 to attenuate)")
     g_audio.add_argument("--keep-clean", default=None, metavar="PATH",
                          help="also save the denoised/enhanced 16kHz wav to PATH")
+    g_audio.add_argument("--keep-stages", default=None, metavar="DIR",
+                         help="save every preprocessing stage to DIR for "
+                              "inspection: <name>.01-original.wav, "
+                              ".02-denoised.wav, .03-enhanced.wav (16kHz mono) "
+                              "+ <name>.stages.json listing the settings used")
 
     # Diarization
     g_diar = p.add_argument_group("speaker diarization (optional)")
@@ -585,7 +590,8 @@ def run(argv: Optional[List[str]] = None) -> int:
              f"enhance={args.enhance}, gain={args.gain}dB) ...")
         try:
             prepared = audio.prepare(in_path, tmp, denoise=args.denoise,
-                                     enhance=args.enhance, gain_db=args.gain)
+                                     enhance=args.enhance, gain_db=args.gain,
+                                     stages_dir=args.keep_stages)
         except audio.AudioError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 5
@@ -593,6 +599,8 @@ def run(argv: Optional[List[str]] = None) -> int:
             import shutil
             shutil.copyfile(prepared, args.keep_clean)
             _log(args.quiet, f"      saved cleaned audio -> {args.keep_clean}")
+        if args.keep_stages:
+            _log(args.quiet, f"      saved audio stages -> {args.keep_stages}")
 
         # 2. Transcribe
         from . import transcribe  # lazy: avoids importing ctranslate2 for --help

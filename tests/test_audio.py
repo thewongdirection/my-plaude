@@ -153,6 +153,103 @@ class TestPrepareDispatch(unittest.TestCase):
             audio.prepare(self.src, self.workdir, enhance="magic")
 
 
+class TestKeepStages(unittest.TestCase):
+    """--keep-stages: every preprocessing stage is saved for inspection."""
+
+    def setUp(self):
+        import tempfile
+        import pathlib
+        self._dir = tempfile.mkdtemp(prefix="plaude-test-")
+        self.workdir = pathlib.Path(self._dir) / "work"
+        self.stages = pathlib.Path(self._dir) / "stages"
+        self.src = pathlib.Path(self._dir) / "lecture.m4a"
+        self.src.write_bytes(b"RIFF....")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._dir, ignore_errors=True)
+
+    @staticmethod
+    def _fake_to_wav(src, dst, *, filters=None):
+        import pathlib
+        pathlib.Path(dst).write_bytes(f"from {pathlib.Path(src).name} | {filters}".encode())
+
+    def _names(self):
+        return sorted(p.name for p in self.stages.iterdir())
+
+    def _manifest(self):
+        import json
+        return json.loads((self.stages / "lecture.stages.json").read_text(encoding="utf-8"))
+
+    def test_no_stages_dir_saves_nothing(self):
+        with mock.patch.object(audio, "_to_wav", side_effect=self._fake_to_wav):
+            audio.prepare(self.src, self.workdir, denoise="ffmpeg", enhance="speech")
+        self.assertFalse(self.stages.exists())
+
+    def test_denoise_and_enhance_saves_all_three_stages(self):
+        with mock.patch.object(audio, "_to_wav", side_effect=self._fake_to_wav):
+            final = audio.prepare(self.src, self.workdir, denoise="ffmpeg",
+                                  enhance="strong", gain_db=3.0,
+                                  stages_dir=self.stages)
+        self.assertEqual(self._names(), [
+            "lecture.01-original.wav", "lecture.02-denoised.wav",
+            "lecture.03-enhanced.wav", "lecture.stages.json"])
+        # The original is an unfiltered decode; the enhanced stage is the final wav.
+        self.assertIn(b"| None", (self.stages / "lecture.01-original.wav").read_bytes())
+        self.assertIn(b"afftdn", (self.stages / "lecture.02-denoised.wav").read_bytes())
+        self.assertEqual((self.stages / "lecture.03-enhanced.wav").read_bytes(),
+                         final.read_bytes())
+        m = self._manifest()
+        self.assertEqual(m["denoise"], "ffmpeg")
+        self.assertIn("afftdn", m["denoise_filters"])
+        self.assertEqual(m["enhance"], "strong")
+        self.assertEqual(m["gain_db"], 3.0)
+        self.assertIn("acompressor", m["enhance_filters"])
+        self.assertIn("volume=3.0dB", m["enhance_filters"])
+        self.assertEqual(m["sample_rate"], 16000)
+        self.assertEqual(m["files"], {"original": "lecture.01-original.wav",
+                                      "denoised": "lecture.02-denoised.wav",
+                                      "enhanced": "lecture.03-enhanced.wav"})
+
+    def test_denoise_only_has_no_enhanced_stage(self):
+        with mock.patch.object(audio, "_to_wav", side_effect=self._fake_to_wav):
+            audio.prepare(self.src, self.workdir, denoise="ffmpeg",
+                          stages_dir=self.stages)
+        self.assertEqual(self._names(), [
+            "lecture.01-original.wav", "lecture.02-denoised.wav",
+            "lecture.stages.json"])
+        self.assertIsNone(self._manifest()["enhance_filters"])
+
+    def test_denoise_none_saves_decode_as_original_only(self):
+        with mock.patch.object(audio, "_to_wav", side_effect=self._fake_to_wav) as to_wav:
+            audio.prepare(self.src, self.workdir, denoise="none", enhance="speech",
+                          stages_dir=self.stages)
+        self.assertEqual(self._names(), [
+            "lecture.01-original.wav", "lecture.03-enhanced.wav",
+            "lecture.stages.json"])
+        # No extra decode pass: the plain decode already is the original.
+        self.assertEqual(to_wav.call_count, 2)
+        self.assertIsNone(self._manifest()["denoise_filters"])
+
+    def test_resemble_manifest_names_the_neural_model(self):
+        import pathlib
+
+        def fake_resemble(src, dst):
+            pathlib.Path(dst).write_bytes(b"restored")
+
+        with mock.patch.object(audio, "_to_wav", side_effect=self._fake_to_wav),              mock.patch.object(audio, "_enhance_resemble", side_effect=fake_resemble):
+            audio.prepare(self.src, self.workdir, denoise="ffmpeg",
+                          enhance="resemble", stages_dir=self.stages)
+        self.assertEqual(self._manifest()["enhance_filters"], "Resemble-Enhance")
+
+    def test_unwritable_stages_dir_raises_audio_error(self):
+        self.stages.write_bytes(b"not a folder")  # a file where the folder should be
+        with mock.patch.object(audio, "_to_wav", side_effect=self._fake_to_wav):
+            with self.assertRaises(audio.AudioError):
+                audio.prepare(self.src, self.workdir, denoise="ffmpeg",
+                              stages_dir=self.stages)
+
+
 class TestEnhanceFilters(unittest.TestCase):
     def test_none_no_gain_is_none(self):
         self.assertIsNone(audio._enhance_filters("none", 0.0))
