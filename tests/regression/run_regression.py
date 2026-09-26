@@ -54,6 +54,10 @@ CORPUS = HERE / "corpus"
 BASELINE = HERE / "baseline.json"
 PS_SCRIPT = REPO / "powershell" / "Plaude-Local.ps1"
 
+# Best-first: the regression suite uses the strongest models available.
+BEST_WHISPER = "large-v3"
+BEST_TRANSLATORS = ("translategemma:27b", "translategemma:12b", "translategemma:4b")
+OLLAMA_URL = "http://127.0.0.1:11434"
 TOL_CER = 0.05       # allowed CER increase vs baseline
 TOL_RECALL = 0.10    # allowed recall drop vs baseline
 
@@ -207,6 +211,22 @@ def stratified_sample(entries: list, n: int, seed: int = 0) -> list:
     return picked
 
 
+def best_translate_model(installed: list) -> Optional[str]:
+    """The strongest installed translation model (None: leave it to the tool)."""
+    for name in BEST_TRANSLATORS:
+        if name in installed:
+            return name
+    return None
+
+
+def cuda_available() -> bool:
+    try:
+        import ctranslate2
+        return ctranslate2.get_cuda_device_count() > 0
+    except Exception:
+        return False
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--impl", choices=["both", "python", "powershell"], default="both")
@@ -216,15 +236,29 @@ def main(argv=None) -> int:
     p.add_argument("--sample", type=int, default=0,
                    help="run a seeded stratified subset of N items (default: all)")
     p.add_argument("--sample-seed", type=int, default=0)
-    p.add_argument("--model", default="large-v3", help="Whisper model (default large-v3)")
+    p.add_argument("--model", default=BEST_WHISPER,
+                   help=f"Whisper model (default {BEST_WHISPER}, the most accurate)")
     p.add_argument("--translate-engine", default="llm", choices=["auto", "llm", "whisper"])
-    p.add_argument("--translate-model", default=None,
-                   help="Ollama model for translation (default: the tool's default)")
+    p.add_argument("--translate-model", default="best",
+                   help="Ollama model for translation; 'best' (default) picks the "
+                        f"strongest installed of {', '.join(BEST_TRANSLATORS)}")
     p.add_argument("--out", default=None, help="results folder (default: results/<time>)")
     p.add_argument("--timeout", type=int, default=3600, help="per-file timeout (s)")
     p.add_argument("--update-baseline", action="store_true",
                    help="record this run's scores as the new baseline")
     args = p.parse_args(argv)
+
+    # Rule: regression runs use the GPU and the best models whenever possible.
+    if args.translate_model == "best":
+        from plaude_local import summarize
+        args.translate_model = best_translate_model(summarize.list_ollama_models(OLLAMA_URL))
+    gpu = cuda_available()
+    print(f"regression config: whisper={args.model} on {'GPU (CUDA)' if gpu else 'CPU'}, "
+          f"translate={args.translate_engine}/{args.translate_model or 'tool default'}",
+          flush=True)
+    if not gpu:
+        print("warning: no CUDA GPU - large-v3 on the CPU is very slow; pass --model small "
+              "for a quick CPU check (its scores won't match a GPU baseline)", flush=True)
 
     manifest = json.loads((CORPUS / "manifest.json").read_text(encoding="utf-8"))
     wanted = {c.strip() for c in args.languages.split(",") if c.strip()}

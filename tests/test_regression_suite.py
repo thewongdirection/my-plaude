@@ -693,6 +693,13 @@ class TestRunner(unittest.TestCase):
             self.assertEqual(code, -1)
             self.assertIn("timeout", log.read_text(encoding="utf-8"))
 
+    def test_best_models_are_preferred(self):
+        self.assertEqual(rr.BEST_WHISPER, "large-v3")
+        self.assertEqual(rr.best_translate_model(
+            ["gemma4:12b", "translategemma:4b", "translategemma:12b"]), "translategemma:12b")
+        self.assertEqual(rr.best_translate_model(["translategemma:4b"]), "translategemma:4b")
+        self.assertIsNone(rr.best_translate_model(["llama3.1"]))
+
     def test_stratified_sample_spreads_languages_and_kinds(self):
         entries = [{"id": f"{c}-{k}-{i}", "code": c, "kind": k}
                    for c in "abcdef" for k in ("mono", "conv") for i in range(3)]

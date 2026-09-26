@@ -81,6 +81,15 @@ Invoke-Pester -Path ./powershell
 
 Keep both suites green when changing either implementation.
 
+## Regression test runs (rule)
+
+Run the multilingual regression suite on the **GPU with the best models
+available**: Whisper `large-v3` (the runner's default) and the strongest
+installed translation model (`--translate-model best`, the default: prefers
+translategemma 27B > 12B > 4B). Only fall back to the CPU or a smaller model
+when no GPU is available, and never compare such a run against a GPU/large-v3
+baseline (the baseline is keyed by model + translation engine + model).
+
 ## Regression corpus translations (rule)
 
 The multilingual regression corpus (`tests/regression/`) is translated from the
