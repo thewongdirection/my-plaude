@@ -1,0 +1,512 @@
+{
+ "language": "af",
+ "model": "translategemma:12b",
+ "sentences": [
+  "Goeiemôre almal, en welkom by vandag se les.",
+  "Vandag gaan ons praat oor hoe masjien van voorbeelde leer.",
+  "n Model leer patrone van die opleidingsdata wat dit gegee word.",
+  "As die model die opleidingsdata onthou, presteer dit swak op nuwe data.",
+  "Hierdie probleem word oorpassing genoem, en dit is baie algemeen.",
+  "Een manier om oorpassing te verminder, is om meer opleidingsdata te versamel.",
+  "n Ander manier is om die model eenvoudig te hou.",
+  "Kruisvalidasie help ons om te skat hoe goed 'n model sal kan generaliseer.",
+  "Skryf asseblief die hoofidees in jou noteboek.",
+  "Die huiswerk vir volgende week is om 'n eenvoudige klassifikasiemodel te evalueer.",
+  "Die biblioteek is elke dag oop tot laat in die aand.",
+  "Baie studente verkies om saam in klein groepe te studeer.",
+  "Om die hoofstuk voor die les te lees, maak die les baie makliker om te volg.",
+  "As jy 'n vraag het, rig asseblief jou hand op enige tyd.",
+  "Die weer vandag is koud en winderig, so neem 'n warm baadjie.",
+  "Dis het gisteraand baie gereën, en sommige strate was oorstroom.",
+  "Lente is my gunstelingseisoen omdat die blomme begin bloei.",
+  "Die trein na die stad vertrek elke oggend vanaf die hoofstasie.",
+  "My ouma het my geleer hoe om sop met vars groentevoorkom.",
+  "Ons het 'n klein dorpie naby die berge tydens die somervakansie besoek.",
+  "Die mark verkoop vrugte, brood, kaas en vars vis.",
+  "Om genoeg water elke dag te drink, is belangrik vir jou gesondheid.",
+  "Regte oefening verbeter zowel die liggaam as die gees.",
+  "Dokters beveel aan om goed te slaap voor 'n belangrike eksamen.",
+  "Die museum het 'n groot versameling van ouer skilderings en beeldhouwerke.",
+  "Musiek kan mense help om te ontspan na 'n lank en stresvolle dag.",
+  "Die kinders het voetbal in die park gespeel totdat die son ondergegaan het.",
+  "Ons bure het 'n vriendelike hond by die dierdepot aangeneem.",
+  "Die rivier vloei stadig deur die vallei na die see.",
+  "Bosse bied huise vir baie diere en lug wat ons asem.",
+  "Klimaatsverandering beïnvloed boere, stede en wildelewe regoor die wêreld.",
+  "Sonpaneel verander sonlig in elektrisiteit vir huise en skole.",
+  "Om papier en plastiek te herwin, verminder die hoeveelheid afval wat ons produseer.",
+  "Die nuwe brug sal reis tussen die twee dorpe baie vinniger maak.",
+  "Ingenieurs moet elke ontwerp noukeurig toets voordat dit gebou word.",
+  "n Goeie wetenskapenaar bevraagteken altyd die resultate van 'n eksperiment.",
+  "Die teleskoop laat ons toe om verre sterre en planete te sien.",
+  "Die maan het 'n sterk invloed op die getye van die oseaan.",
+  "Geskiedenis leer ons hoe mense in die verlede geleef en gewerk het.",
+  "Antieke stede is dikwels naby riviere gebou vir vars water.",
+  "Die leer van 'n tweede taal oop die deur na nuwe kulture.",
+  "Oefen om 'n bietjie elke dag te praat, selfs wanneer dit moeilik voel.",
+  "Die onderwyser het die grammatikareël met verskeie duidelike voorbeelde verduidelik.",
+  "Om 'n kort opsomming te skryf, help jou om te onthou wat jy gelees het.",
+  "Rekenaars volg instruksies wat deur programmeerders geskryf is.",
+  "n Klein fout in die kode kan veroorsaak dat die hele program faal.",
+  "Maak altyd 'n rugsteunkopie van jou belangrike lêers.",
+  "Die internet het die manier verander waarop ons met mekaar kommunikeer.",
+  "Slá asseblief jou foon af tydens die eksamen.",
+  "Die vergadering is na die groot kamer op die tweede verdieping verskuif.",
+  "Ons maatskappy is op soek na mense wat dit geniet om in 'n span te werk.",
+  "Goeie kommunikasie is die sleutel tot 'n suksesvolle projek.",
+  "Die restaurant om die draai bedien heerlike noedels en rys.",
+  "Ons moet vroeg vertrek om die swaarde verkeer in die oggende te vermy.",
+  "Die hospitaal bou 'n nuwe vleuel vir kinders.",
+  "Vrywilligers het die strand skoon gemaak en baie sakke met rommel versamel.",
+  "Die fees lok besoekers van baie verskillende lande aan.",
+  "Dankie dat julle geluister het, en totsiens volgende week.",
+  "Voordat ons klaar is, laat ons die belangrikste punte uiteensit.",
+  "Onthou dat leer tyd, geduld en nuuskierigheid verg.",
+  "Die bakery maak baie vroeg oop sodat mense brood kan koop op pad na werk.",
+  "Sy hou 'n klein tuin op haar balkon met kruie en tamaties.",
+  "Die bus was vandagoggend laat weens 'n ongeluk op die snelweg.",
+  "Hy lees altyd die koerant terwyl hy sy koffie drink.",
+  "Die stadsraad het besluit om meer bome langs die hooflaan te plant.",
+  "Ons skool organiseer 'n wetenskapskou aan die einde van elke jaar.",
+  "Die studente het hul projekte aan ouers en onderwysers voorgestel.",
+  "n Sterke wind het verskeie takke in die park laat val.",
+  "Die boere hoop op reën ná 'n lank en droë somer.",
+  "Die ou kasteel op die heuwel lok baie toeriste aan.",
+  "Moet asseblief onthou om jou identiteitskaart na die kantoor te bring.",
+  "Die apteek is langs die poskantoor, oor die pad van die bank.",
+  "My broer leer om gitaar te speel in die aand.",
+  "Die konsert is gekanselleer omdat die sanger siek was.",
+  "Ons het 'n dokumentêr oor die diere van die reënwoud gekyk.",
+  "Die oseaan bedek die meeste van die oppervlak van ons planeet.",
+  "Walvissê kommunikeer met mekaar deur middel van lank en komplekse liedere.",
+  "Bye speel 'n belangrike rol in die groei van vrugte en groentes.",
+  "Die bergpad is in die winter gesluit weens die sneeu.",
+  "Bergstappers moet altyd water, kos en 'n kaart by hulle hê.",
+  "Die span het hul oorwinning met 'n groot aandete gevier.",
+  "Die afrigter herinner die spelers om te rus voor die laaste wedstryd.",
+  "Ons grootouers vertel dikwels stories oor hul kindjare.",
+  "Die dorp hou elke naweek 'n mark in die plein.",
+  "Die sjef gebruik vars bestanddele van plaaslike boerderye.",
+  "Was asseblief jou hande voor jy kos voorberei.",
+  "Die kombuis ruik heerlik wanneer my moeder 'n koek bak.",
+  "Die prys van groentevoer het hierdie maand aansienlik gestyg.",
+  "Om 'n klein bedrag elke week te spaar, kan 'n groot verskil maak.",
+  "Die bank bied advies aan mense wat 'n huis wil koop.",
+  "Die fabriek het nuwe werknemers gehuur om aan die groeiende vraag te voldoen.",
+  "Openbare vervoer help om besoedeling in groot stede te verminder.",
+  "Al meer mense ry fiets na werk.",
+  "Die regering het 'n plan aangekondig om landelike paaie te verbeter.",
+  "Koerante en webwerwe het die nuus binne minute berig.",
+  "Die wetenskaplike het haar ontdekking in eenvoudige woorde verduidelik.",
+  "Die laboratorium benodig nuwe toerusting vir sy eksperimente.",
+  "Vaksinne het miljoene mense teen ernstige siektes beskerm.",
+  "Die verpleger het die pasiënt se temperatuur elke uur gemeet.",
+  "n Gebalanseerde dieet sluit vrugte, groentevoer en graan in.",
+  "Om in die natuur te stap, kan stres verminder en jou bui verbeter.",
+  "Die kunstenaar het die portret met helder kleure geskilder.",
+  "Die teater bied hierdie seisoen 'n nuwe drama.",
+  "Die skrywer het handtekeninge op kopieë van haar nuutste boek by die boekwinkel gegee.",
+  "Poësie druk dikwels gevoelens uit wat moeilik is om te beskryf.",
+  "Die fotograaf het ure lank gewag om die sonsop te vasvang.",
+  "Die fliek vertel die storie van 'n familie wat na 'n nuwe land verhuis.",
+  "Kinders leer vinnig as hulle nuuskierig is en aangemoedig word.",
+  "Die onderwyser het die klas gevra om in pare te werk.",
+  "Die finale eksamen sal alles dek wat ons hierdie kwartaal bestudeer het.",
+  "Dien asseblief jou opstel voor die einde van die week in.",
+  "Die professor het vrae ná die les beantwoord.",
+  "Om gereeld pouses te neem, help jou om langer te konsentreer.",
+  "Die robot kan pakkette vinniger sorteer as 'n menslike werknemer.",
+  "Kunsmatige intelligensie verander baie industrieë.",
+  "Ingenieurs ontwerp motors wat minder energie gebruik.",
+  "Die sagtewar-opdatering het verskeie sekuriteitsprobleme opgelaat.",
+  "Sterke wagwoorde beskerm jou rekeninge teen aanvallers.",
+  "Die printer op die derde verdieping is weer sonder papier.",
+  "Ons internetverbinding was stadig tydens die storm.",
+  "Die lughawe was vol reisigers gedurende die vakansie.",
+  "Die vlug was vertraag as gevolg van die mis.",
+  "Die hotelkamer het 'n pragtige uitsig oor die see.",
+  "Ons het 'n klein boot gehuur en langs die kus gesaai.",
+  "Die vuurtoring het skepe veilig na die hawe gelei.",
+  "Die vissers het teruggekeer na die hawe met 'n groot vang.",
+  "Sneeu bedek die dakke en die strate was stil.",
+  "Die kinders het 'n sneeu-man gebou voor die skool.",
+  "Herfstblare word rooi, oranje en geel.",
+  "Die sonsondergang oor die see was absoluut pragtig."
+ ],
+ "exchanges": [
+  [
+   "Het jy die hoofstuk vir vandag klaar gelees?",
+   "Ja, ek het dit gisteraand gelees, maar die tweede helfte was moeilik."
+  ],
+  [
+   "Wat het jy gedink van die lesing vanoggens?",
+   "Dit was interessant, veral die deel oor die trainingsdata."
+  ],
+  [
+   "Kom jy na die studiegroep van aand?",
+   "Ek wil graag, maar ek moet tot laat werk."
+  ],
+  [
+   "Waar moet ons voor die eksamen ontmoet?",
+   "Kom ons ontmoet voor die biblioteek 'n bietjie vroeg."
+  ],
+  [
+   "Verstaan jy hoe kruisvalidasie werk?",
+   "Ek dink so. Jy toets die model op data wat dit nog nie gesien het nie."
+  ],
+  [
+   "Waarom presteer die model sleg op nuwe data?",
+   "Want dit het die trainingsvoorbeelde ge memoriseer in plaas daarvan om patrone te leer."
+  ],
+  [
+   "Hoe lank het die huiswerk jou geneem?",
+   "Die meeste van die middag, want ek het aan die begin 'n fout gemaak."
+  ],
+  [
+   "Kan jy die laaste voorbeeld weer verduidelik?",
+   "Natuurlik. Ons verdeel die data en vergelyk die resultate."
+  ],
+  [
+   "Is die professor streng oor deadlyne?",
+   "Baie streng, so moenie enigiets laat indien nie."
+  ],
+  [
+   "Het jy die nuwe tydsduur vir volgende week gesien?",
+   "Ja, die vergadering is na die middag geskuif."
+  ],
+  [
+   "Hoe is die weer buite?",
+   "Dit is koud en winderig, so neem 'n warm baadjie."
+  ],
+  [
+   "Sal dit hierdie naweek reën?",
+   "Die voorspelling sê daar sal ligte reën op Sondag wees."
+  ],
+  [
+   "Waar het jy jou somervakansie deurgebring?",
+   "Ons het 'n stil dorpie naby die berge besoek."
+  ],
+  [
+   "Hoe was die reis na die kus?",
+   "Pragtig. Ons het elke aand langs die strand gestap."
+  ],
+  [
+   "Het jy die trein of die bus geneem?",
+   "Die trein, want dit is vinniger en gerieker."
+  ],
+  [
+   "Is die museum oop op Maandae?",
+   "Nee, dit is gesluit op Maandae, maar oop die res van die week."
+  ],
+  [
+   "Wat sou jy graag vandag aand wil eet?",
+   "Iets eenvoudigs, dalk sop en vars brood."
+  ],
+  [
+   "Kan jy 'n goeie restaurant in die omgewing aanbeveel?",
+   "Die klein plek om die draai om bied uitstekende noedels."
+  ],
+  [
+   "Kook jy dikwels tuis?",
+   "Bykans elke dag. Dit is gesonder en goedkoper."
+  ],
+  [
+   "Wie het jou geleer hoe om brood te bak?",
+   "My ouma het my geleer toe ek 'n kind was."
+  ],
+  [
+   "Moet ons vrugte by die mark koop?",
+   "Ja, die vrugte daar is varser as in die supermark."
+  ],
+  [
+   "",
+   "Nie genoeg nie, ek moet regtig meer drink."
+  ],
+  [
+   "Oefen jy voor of ná werk?",
+   "Gewoonlik in die oggend, voor die kantoor oopmaak."
+  ],
+  [
+   "Hoe het jy gisteraand geslaap?",
+   "Sleg. Die bure was baie musiek bespeel."
+  ],
+  [
+   "Voel jy vandag beter?",
+   "Baie beter, dankie. Die rus het regtig gehelp."
+  ],
+  [
+   "Het die dokter jou enige advies gegee?",
+   "Sy het vir my gesê om te rus en baie water te drink."
+  ],
+  [
+   "Het jy al ooit probeer om 'n tweede taal te leer?",
+   "Ja, ek oefen 'n bietjie elke dag met 'n toepassing."
+  ],
+  [
+   "Wat is die moeilikste deel van 'n taal leer?",
+   "Om met selfvertroue te praat, veral aan die telefoon."
+  ],
+  [
+   "Verkies jy om boeke te lees of films te kyk?",
+   "Boeke, want ek kan self die storie verbeel."
+  ],
+  [
+   "Watter soort musiek geniet jy?",
+   "Meestal rustige musiek wat my help om te ontspan."
+  ],
+  [
+   "Het jy die konsert gisteraand geniet?",
+   "Baie. Die orkes was wonderlik."
+  ],
+  [
+   "Het jy die nuwe kunsgalery besoek?",
+   "Nog nie, maar ek het gehoor die skilderings is indrukwekkend."
+  ],
+  [
+   "Is jou rekenaar weer werk?",
+   "Ja, die opdatering het die probleem opgemaak."
+  ],
+  [
+   "Het jy 'n rugsteun van jou lêers gemaak?",
+   "Natuurlik, ek bêre altyd 'n kopie op 'n ander skyf."
+  ],
+  [
+   "Waarom is die internet vandag so stadig?",
+   "Die storm het sommige van die kabels in die area beskadig."
+  ],
+  [
+   "Kan jy my help met hierdie program?",
+   "Seker. Laat ek eers die foutboodskap sien."
+  ],
+  [
+   "Wat beteken hierdie foutboodskap?",
+   "Dit beteken dat die lêer nie gevind kon word nie."
+  ],
+  [
+   "Moet ek 'n sterker wagwoord gebruik?",
+   "Beslis. Gebruik 'n lang frase wat maklik vir jou is om te onthou."
+  ],
+  [
+   "Hoe produseer sonpane krag?",
+   "Hulle omskep sonlig direk in elektriese energie."
+  ],
+  [
+   "Is dit regtig die moeite werd om te herwin?",
+   "Ja, dit verminder afval en bespaar natuurlike hulpbronne."
+  ],
+  [
+   "Waarom is bye so belangrik?",
+   "Hulle bestuif die plante wat vir ons vrugte en groente gee."
+  ],
+  [
+   "Wat veroorsaak die getye in die oseaan?",
+   "Hoofsaaklik die aantrekkingskrag van die maan op die water."
+  ],
+  [
+   "Het jy al ooit 'n walvis in die natuur gesien?",
+   "Een keer, vanaf 'n boot ver op see."
+  ],
+  [
+   "Is die bergpaaie in die winter oop?",
+   "Nee, hulle is gewoonlik gesluit as gevolg van die sneeu."
+  ],
+  [
+   "Wat moet ons vir die wandeling saamneem?",
+   "Water, kos, 'n kaart en 'n warm laag."
+  ],
+  [
+   "Hoe ver is die see vanaf hier?",
+   "Oor 'n uur se voetstappe deur die bos."
+  ],
+  [
+   "Het jou span die wedstryd op Saterdag gewen?",
+   "Ja, ons het in die laaste paar minute gewen."
+  ],
+  [
+   "Hoe dikwels oefen die span?",
+   "Tweeduisend per week, en meer voor belangrike wedstryde."
+  ],
+  [
+   "Wil jy voetbal in die park speel?",
+   "Miskien later, as dit nie so warm is nie."
+  ],
+  [
+   "Wanneer vertrek die volgende bus?",
+   "In tien minute, vanaf die halte aan die ander kant van die straat."
+  ],
+  [
+   "Is die lughawe ver van die middestad?",
+   "Nie regtig nie, die trein neem ongeveer halfuur."
+  ],
+  [
+   "Waarom was die vlug vertraag?",
+   "Daar was dik mis vroegoggend."
+  ],
+  [
+   "Het jy 'n kamer by die hotel bespreek?",
+   "Ja, 'n kamer met 'n uitsig op die see."
+  ],
+  [
+   "Hoe was jou eerste dag by die nuwe werk?",
+   "Besig, maar my kollegas was baie vriendelik."
+  ],
+  [
+   "Wat vind jy die meeste aan jou werk?",
+   "Werk saam met 'n span wat goed kommunikeer."
+  ],
+  [
+   "Is jy bekommerd oor die presentasie?",
+   "n Bietsie, maar ek het dit verskeie kere geoefen."
+  ],
+  [
+   "Wie lei die projek vanjaar?",
+   "Die bestuurder van die ontwerpafdeling."
+  ],
+  [
+   "Wanneer is die verslag ingedien?",
+   "Aan die einde van die week, voor die vergadering."
+  ],
+  [
+   "Kan ons die vergadering na die middag skuif?",
+   "Dis goed vir my. Ek sal die ander mense vertel."
+  ],
+  [
+   "Het jy die nuus vandagoggend gelees?",
+   "Slegs die opskrifte. Is iets belangriks aangekondig?"
+  ],
+  [
+   "Wat het die regering aangekondig?",
+   "n Nuwe plan om paaie in landelike areas te verbeter."
+  ],
+  [
+   "Is openbare vervoer goedkoper as om te ry?",
+   "Gewoonlik, en dit is ook beter vir die omgewing."
+  ],
+  [
+   "Ry jy op jou fiets na werk?",
+   "Wanneer die weer goed is, ja."
+  ],
+  [
+   "Waarom het die prys van groente gestyg?",
+   "Die somer was baie droog, so die oogst was klein."
+  ],
+  [
+   "Hoe slaag jy daar om geld te spaar?",
+   "Ek sit 'n bietjie apart elke week."
+  ],
+  [
+   "Sou jy graag eens 'n huis wil koop?",
+   "Miskien, maar vir nou is huur makliker."
+  ],
+  [
+   "Wat doen die kinders vandagmiddag?",
+   "Hulle bou 'n sneeuman voor die skool."
+  ],
+  [
+   "Hou jou hond daarvan om te stap?",
+   "Hy is daarvan aangename, veral naby die rivier."
+  ],
+  [
+   "Waar het jy jou kat gekry?",
+   "Van die dierbeskermingsorganisasie aan die rand van die dorp."
+  ],
+  [
+   "Het jy iets in die tuin geplant?",
+   "n Paar kruie en tamaties op die balkon."
+  ],
+  [
+   "Wat is jou gunstelseisoen?",
+   "Herfs, wanneer die blare van kleur verander."
+  ],
+  [
+   "Het jy die sonsondergang gister gesien?",
+   "Ja, die hele lug het oranje en pienk geword."
+  ],
+  [
+   "Kan jy 'n goeie boek aanbeveel?",
+   "Ek het pas 'n roman oor 'n familie wat na die buiteland verhuis, afgemaak."
+  ],
+  [
+   "Gee die skrywer 'n praatjie by die boekwinkel?",
+   "Ja, op Donderdag aand, en sy sal handtekeninge op kopieë sit."
+  ],
+  [
+   "Hoe onthou jy wat jy lees?",
+   "Ek skryf 'n kort opsomming na elke hoofstuk."
+  ],
+  [
+   "Waarom neem jy so baie breaks terwyl jy studeer?",
+   "Kort breaks help my om langer te konsentreer."
+  ],
+  [
+   "Waar sal die finale eksamen oor gaan?",
+   "Alles wat ons hierdie semester bestudeer het."
+  ],
+  [
+   "Mag ons notas gebruik tydens die eksamen?",
+   "Nee, en telefone moet afgeskakel wees."
+  ],
+  [
+   "Het jy vrywilligerswerk gedoen by die skoonmaak van die strand?",
+   "Ja, ons het baie sakke met rommel ingesamel."
+  ],
+  [
+   "Is die fees die moeite werd om te besoek?",
+   "Absoluut. Mense kom van baie lande."
+  ],
+  [
+   "Wie het die ou kasteel op die heuwel gebou?",
+   "Niemand weet dit seker, maar dit is baie oud."
+  ],
+  [
+   "Waarom is antieke stede naby riviere gebou?",
+   "Riviere het water, kos en vervoer voorsien."
+  ],
+  [
+   "Wat het jy by die wetenskapsbeurs geleer?",
+   "Hoe robots pakkette baie vinnig kan sorteer."
+  ],
+  [
+   "Sal kunsmatige intelligensie baie werkposte vervang?",
+   "Sommige werkposte sal verander, en nuwe sal ontstaan."
+  ],
+  [
+   "Hoe kan ingenieurs verseker dat motors minder energie gebruik?",
+   "Deur hulle ligter en meer doeltreffend te maak."
+  ],
+  [
+   "Waarom is goeie kommunikasie so belangrik?",
+   "Want misverstande kan 'n projek vernietig."
+  ],
+  [
+   "Is dit moeilik om in 'n groot span te werk?",
+   "Soms, maar duidelike rolle maak dit makliker."
+  ],
+  [
+   "Sal ons die hoofpunte deurbly voordat ons klaar is?",
+   "Goeie idee. Laat ons dit een vir een deurloop."
+  ],
+  [
+   "Het jy enige vrae voordat ons eindig?",
+   "Net een: wanneer is die volgende sessie?"
+  ],
+  [
+   "Dankie vir jou hulp vandag.",
+   "Asseblief. Tot volgende week."
+  ]
+ ],
+ "reactions": [
+  "Dit maak sin.",
+  "Ek stem daarmee saam.",
+  "Regtig? Ek het dit nie geweet nie.",
+  "Dit is 'n goeie punt.",
+  "Ek het dieselfde ervaring gehad.",
+  "Interessant, vertel my meer.",
+  "Ek is nie so seker daaroor nie.",
+  "Presies wat ek besig was om te dink.",
+  "Dit klink fantasties.",
+  "Goed om te weet, dankie.",
+  "Ek sal dit onthou.",
+  "Dieselfde hier."
+ ]
+}

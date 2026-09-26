@@ -188,6 +188,81 @@ class TestCorpusPlan(unittest.TestCase):
                 self.assertNotEqual(s1, s2)
 
 
+class TestNoGpuTranslation(unittest.TestCase):
+    """CPU-only Ollama translation phase and the committed translation files."""
+
+    def test_cpu_call_sends_num_gpu_zero_and_retries(self):
+        from unittest import mock
+        from plaude_local import summarize
+
+        replies = [summarize.SummarizeError("HTTP 500"), {"response": " Hallo "}]
+
+        def fake_post(url, payload, timeout):
+            fake_post.payload = payload
+            r = replies.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+        slept = []
+        with mock.patch.object(summarize, "_post_json", side_effect=fake_post):
+            call = gen.make_ollama_call("m", "http://x:1", cpu=True, sleep=slept.append)
+            self.assertEqual(call("p"), "Hallo")
+        self.assertEqual(fake_post.payload["options"]["num_gpu"], 0)
+        self.assertEqual(fake_post.payload["model"], "m")
+        self.assertEqual(len(slept), 1)  # one backoff before the successful retry
+
+    def test_auto_device_leaves_gpu_choice_to_ollama(self):
+        from unittest import mock
+        from plaude_local import summarize
+
+        with mock.patch.object(summarize, "_post_json",
+                               return_value={"response": "ok"}) as post:
+            gen.make_ollama_call("m", "http://x:1", cpu=False)("p")
+        self.assertNotIn("num_gpu", post.call_args.args[1]["options"])
+
+    def test_call_gives_up_after_retries(self):
+        from unittest import mock
+        from plaude_local import summarize
+
+        with mock.patch.object(summarize, "_post_json",
+                               side_effect=summarize.SummarizeError("down")):
+            call = gen.make_ollama_call("m", "http://x:1", retries=3, sleep=lambda s: None)
+            with self.assertRaises(summarize.SummarizeError):
+                call("p")
+
+    def test_audio_phase_refuses_missing_translations(self):
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as d, \
+             mock.patch.object(gen, "TRANSLATIONS", Path(d) / "none"), \
+             mock.patch.object(gen, "list_voices", return_value={}), \
+             mock.patch.object(gen, "assemble") as assemble:
+            rc = gen.main(["--phase", "audio", "--languages", "de",
+                           "--corpus", str(Path(d) / "corpus")])
+        self.assertEqual(rc, 1)
+        assemble.assert_not_called()
+
+    def test_committed_translation_files_are_complete(self):
+        files = sorted((REG / "translations").glob("*.json"))
+        if not files:
+            self.skipTest("no committed translations yet")
+        by_code = languages.BY_CODE
+        for f in files:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            self.assertIn(f.stem, by_code, f.name)
+            self.assertEqual(len(data["sentences"]), len(gen.SENTENCES), f.name)
+            self.assertEqual(len(data["exchanges"]), len(gen.EXCHANGES), f.name)
+            self.assertEqual(len(data["reactions"]), len(gen.REACTIONS), f.name)
+            lines = data["sentences"] + [l for e in data["exchanges"] for l in e] + data["reactions"]
+            usable = [l for l in lines if l]
+            self.assertGreaterEqual(len(usable), 0.95 * len(lines), f.name)
+            script = by_code[f.stem]["script"]
+            for line in usable:
+                self.assertGreaterEqual(gen.script_ratio(line, script), 0.6, (f.name, line))
+
+
 class TestLanguages(unittest.TestCase):
     def test_codes_unique_and_tiers_valid(self):
         codes = [l["code"] for l in languages.LANGUAGES]

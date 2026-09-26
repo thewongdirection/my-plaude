@@ -613,9 +613,22 @@ python tests/regression/run_regression.py --update-baseline
 ```
 
 Needs FFmpeg, faster-whisper (Python) / whisper-ctranslate2 (PowerShell), an
-Ollama server with a translation model, and ideally a CUDA GPU. The corpus is
-regenerated with `tests/regression/generate_corpus.py` (networked: edge-tts +
-local LLM translation; seeded and resumable). Offline unit tests for the
+Ollama server with a translation model, and ideally a CUDA GPU.
+
+The corpus is regenerated with `tests/regression/generate_corpus.py` (seeded and
+resumable) in two phases, **neither of which needs a GPU**:
+
+```bash
+# 1. translate the English source text into every language with Ollama, forced
+#    onto the CPU (num_gpu 0; ~5 s/line with a 12B model, ~30 min/language).
+#    Writes tests/regression/translations/<code>.json - commit these.
+python tests/regression/generate_corpus.py --phase translate
+# 2. synthesize + assemble the audio: edge-tts (cloud TTS) + FFmpeg, no LLM.
+python tests/regression/generate_corpus.py --phase audio
+```
+
+Pass `--ollama-device auto` to let Ollama use a GPU, `--model` to pick the
+translation model, and `--languages de,ja` to limit either phase. Offline unit tests for the
 harness itself run with the normal suite (`tests/test_regression_suite.py`).
 
 ---
