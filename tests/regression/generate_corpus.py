@@ -74,7 +74,8 @@ import unicodedata
 import urllib.error
 import uuid
 import wave
-from concurrent.futures import ThreadPoolExecutor
+import threading
+from concurrent.futures import Future
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -639,6 +640,29 @@ def assemble(item: dict, lang: dict, bank: dict, voices: dict, corpus: Path, see
     return entry
 
 
+def prefetch(fn, items: list) -> dict:
+    """Run ``fn(item)`` for each item, in order, on ONE daemon thread.
+
+    Returns ``{item code: Future}``. A daemon thread matters: if the main
+    thread dies (or Ctrl+C), the process exits at once instead of lingering
+    to finish a multi-minute CPU translation and writing files behind a new
+    run's back (a ThreadPoolExecutor's worker is joined at exit)."""
+    futures = {item["code"]: Future() for item in items}
+
+    def work():
+        for item in items:
+            fut = futures[item["code"]]
+            if not fut.set_running_or_notify_cancel():
+                continue
+            try:
+                fut.set_result(fn(item))
+            except BaseException as exc:  # noqa: BLE001 - reported via the future
+                fut.set_exception(exc)
+
+    threading.Thread(target=work, name="translate-prefetch", daemon=True).start()
+    return futures
+
+
 def _ffmpeg(args: list) -> None:
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *args], check=True)
 
@@ -779,9 +803,8 @@ def main(argv=None) -> int:
             raise RuntimeError("no translations/%s.json - run --phase translate first" % lang["code"])
         return translate_with_fallback(lang)
 
-    pool = ThreadPoolExecutor(max_workers=1)
+    futures = prefetch(get_bank, need)
     try:
-        futures = {lang["code"]: pool.submit(get_bank, lang) for lang in need}
         for lang in langs:
             items = [it for it in plan if it["code"] == lang["code"] and todo(it)]
             if not items:
@@ -799,7 +822,8 @@ def main(argv=None) -> int:
                 print(f"{it['id']:14} {entry['duration_s']:6.1f}s  "
                       f"{len(entry['voices'])} voice(s)", flush=True)
     finally:
-        pool.shutdown(wait=False, cancel_futures=True)
+        for fut in futures.values():  # queued translations: don't start them
+            fut.cancel()
     missing = [it["id"] for it in plan if it["id"] not in entries
                or not (corpus / entries[it["id"]]["file"]).exists()
                or not (corpus / entries[it["id"]]["damaged_file"]).exists()]

@@ -182,6 +182,23 @@ class TestCorpusPlan(unittest.TestCase):
         self.assertEqual(paths[0], paths[1])
         self.assertNotEqual(paths[0], paths[2])
 
+    def test_prefetch_runs_in_order_on_a_daemon_thread(self):
+        import threading
+        seen = []
+
+        def work(item):
+            seen.append((item["code"], threading.current_thread().daemon))
+            if item["code"] == "b":
+                raise ValueError("boom")
+            return item["code"].upper()
+
+        futures = gen.prefetch(work, [{"code": "a"}, {"code": "b"}, {"code": "c"}])
+        self.assertEqual(futures["a"].result(timeout=5), "A")
+        with self.assertRaises(ValueError):
+            futures["b"].result(timeout=5)
+        self.assertEqual(futures["c"].result(timeout=5), "C")
+        self.assertEqual(seen, [("a", True), ("b", True), ("c", True)])
+
     def test_refused_tts_line_is_skipped_not_fatal(self):
         import tempfile
         from unittest import mock
