@@ -166,20 +166,53 @@ class TestCorpusPlan(unittest.TestCase):
         self.assertEqual(gen.clean_reply(""), "")
 
     def test_synthesize_dedupes_identical_lines(self):
+        import tempfile
+        from unittest import mock
         seen = []
 
         async def fake(text, voice, pitch, sem):
             seen.append((text, voice, pitch))
+            path = gen.tts_path(text, voice, pitch)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"RIFF")
 
-        orig = gen._tts_one
-        gen._tts_one = fake
-        try:
+        with tempfile.TemporaryDirectory() as d,              mock.patch.object(gen, "CACHE", Path(d)),              mock.patch.object(gen, "_tts_one", fake):
             paths = gen.synthesize([("hi", "v", "+0Hz"), ("hi", "v", "+0Hz"), ("yo", "v", "+0Hz")])
-        finally:
-            gen._tts_one = orig
         self.assertEqual(sorted(seen), [("hi", "v", "+0Hz"), ("yo", "v", "+0Hz")])
         self.assertEqual(paths[0], paths[1])
         self.assertNotEqual(paths[0], paths[2])
+
+    def test_refused_tts_line_is_skipped_not_fatal(self):
+        import tempfile
+        from unittest import mock
+        import edge_tts
+
+        class Refuse:
+            def __init__(self, *a, **k):
+                pass
+
+            async def save(self, path):
+                raise edge_tts.exceptions.NoAudioReceived("no audio")
+
+        async def no_sleep(_):
+            return None
+
+        with tempfile.TemporaryDirectory() as d, \
+             mock.patch.object(gen, "CACHE", Path(d)), \
+             mock.patch.object(edge_tts, "Communicate", Refuse), \
+             mock.patch.object(gen.asyncio, "sleep", no_sleep):
+            self.assertEqual(gen.synthesize([("bad line", "v", "+0Hz")]), [None])
+            marker = gen.tts_path("bad line", "v", "+0Hz").with_suffix(".refused")
+            self.assertTrue(marker.exists())
+        # A refusal is remembered: no further service calls for that line.
+        with tempfile.TemporaryDirectory() as d, \
+             mock.patch.object(gen, "CACHE", Path(d)):
+            marker = gen.tts_path("bad line", "v", "+0Hz").with_suffix(".refused")
+            marker.parent.mkdir(parents=True)
+            marker.write_text("x", encoding="utf-8")
+            with mock.patch.object(edge_tts, "Communicate") as comm:
+                self.assertEqual(gen.synthesize([("bad line", "v", "+0Hz")]), [None])
+            comm.assert_not_called()
 
     def test_script_checks(self):
         self.assertEqual(gen.script_ratio("Привет мир", "CYRILLIC"), 1.0)

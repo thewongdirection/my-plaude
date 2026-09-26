@@ -441,12 +441,21 @@ def _write_translation(code: str, out: list, model: str) -> dict:
 # --------------------------------------------------------------------------- #
 # Speech synthesis (edge-tts, cached per voice + pitch + text)
 # --------------------------------------------------------------------------- #
-async def _tts_one(text: str, voice: str, pitch: str, sem: asyncio.Semaphore) -> Path:
+async def _tts_one(text: str, voice: str, pitch: str, sem: asyncio.Semaphore):
+    """Cached wav for one line, or None if the TTS service refuses the line.
+
+    The service deterministically returns no audio for a few lines (it
+    appears to filter some content, e.g. a Vietnamese sentence about
+    vaccines); such a line is remembered with a ``.refused`` marker and
+    skipped by the caller instead of aborting the whole corpus run."""
     import edge_tts
 
     wav = tts_path(text, voice, pitch)
+    refused = wav.with_suffix(".refused")
     if wav.exists():
         return wav
+    if refused.exists():
+        return None
     wav.parent.mkdir(parents=True, exist_ok=True)
     async with sem:
         for attempt in range(4):
@@ -463,11 +472,18 @@ async def _tts_one(text: str, voice: str, pitch: str, sem: asyncio.Semaphore) ->
                         check=True)
                     part.replace(wav)
                 return wav
+            except edge_tts.exceptions.NoAudioReceived:
+                if attempt == 3:
+                    refused.write_text(f"{voice} {pitch}\n{text}\n", encoding="utf-8")
+                    print(f"note: TTS service refused a line ({voice} {pitch}): {text!r} "
+                          f"- skipping it", flush=True)
+                    return None
+                await asyncio.sleep(2 * (attempt + 1))
             except Exception:
                 if attempt == 3:
                     raise
                 await asyncio.sleep(2 * (attempt + 1))
-    return wav
+    return wav if wav.exists() else None
 
 
 def tts_path(text: str, voice: str, pitch: str) -> Path:
@@ -476,7 +492,8 @@ def tts_path(text: str, voice: str, pitch: str) -> Path:
 
 
 def synthesize(lines: list) -> list:
-    """TTS ``[(text, voice, pitch)]`` concurrently; returns cached wav paths.
+    """TTS ``[(text, voice, pitch)]`` concurrently; returns cached wav paths
+    (None for a line the service refused).
 
     Identical lines are synthesized once (two coroutines must never write the
     same cache file)."""
@@ -486,7 +503,8 @@ def synthesize(lines: list) -> list:
         sem = asyncio.Semaphore(TTS_CONCURRENCY)
         await asyncio.gather(*(_tts_one(t, v, p, sem) for t, v, p in unique))
     asyncio.run(go())
-    return [tts_path(*line) for line in lines]
+    paths = [tts_path(*line) for line in lines]
+    return [path if path.exists() else None for path in paths]
 
 
 def list_voices() -> dict:
@@ -561,6 +579,8 @@ def assemble(item: dict, lang: dict, bank: dict, voices: dict, corpus: Path, see
         for (speaker, text, en), wav in zip(batch, wavs):
             if t >= item["target_s"]:
                 break
+            if wav is None:  # refused by the TTS service: leave the line out
+                continue
             frames = _wav_frames(wav)
             dur = len(frames) / 2 / TTS_RATE
             if prev_speaker is None:

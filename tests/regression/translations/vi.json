@@ -1,0 +1,513 @@
+{
+ "language": "vi",
+ "model": "translategemma:4b + translategemma:12b",
+ "source_sha1": "fba76066ed28099b550acc310984f2a97d35ed64",
+ "sentences": [
+  "Chào buổi sáng mọi người, và chào mừng đến với buổi giảng hôm nay.",
+  "Hôm nay chúng ta sẽ nói về cách máy học từ các ví dụ.",
+  "Một mô hình học các mẫu từ dữ liệu huấn luyện mà nó được cung cấp.",
+  "Nếu mô hình ghi nhớ dữ liệu huấn luyện, nó sẽ hoạt động kém trên dữ liệu mới.",
+  "Vấn đề này được gọi là overfitting, và nó rất phổ biến.",
+  "Một cách để giảm overfitting là thu thập thêm dữ liệu huấn luyện.",
+  "Một cách khác là giữ cho mô hình đơn giản.",
+  "Cross validation giúp chúng ta ước tính mô hình sẽ tổng quát hóa tốt như thế nào.",
+  "Vui lòng ghi lại các ý chính trong sổ tay của bạn.",
+  "Bài tập về nhà cho tuần tới là đánh giá một mô hình phân loại đơn giản.",
+  "Thư viện mở cửa mỗi ngày cho đến khuya.",
+  "Nhiều sinh viên thích học cùng nhau trong các nhóm nhỏ.",
+  "Đọc chương trước khi học giúp buổi giảng dễ hiểu hơn.",
+  "Nếu bạn có câu hỏi, vui lòng nâng tay bất cứ lúc nào.",
+  "Thời tiết hôm nay là lạnh và gió, vì vậy hãy mang theo áo ấm.",
+  "Tối qua trời mưa rất to, và một số con phố bị ngập.",
+  "Mùa xuân là mùa yêu thích của tôi vì hoa bắt đầu nở.",
+  "Tàu đến thành phố xuất phát từ nhà ga trung tâm mỗi sáng.",
+  "Bà tôi đã dạy tôi cách nấu súp với rau tươi.",
+  "Chúng tôi đã đến thăm một ngôi làng nhỏ gần núi trong kỳ nghỉ hè.",
+  "Chợ bán trái cây, bánh mì, phô mai và cá tươi.",
+  "U đủ nước mỗi ngày rất quan trọng cho sức khỏe của bạn.",
+  "Tập thể dục thường xuyên cải thiện cả cơ thể và tâm trí.",
+  "Các bác sĩ khuyên bạn nên ngủ đủ giấc trước một kỳ thi quan trọng.",
+  "Bảo tàng có một bộ sưu tập lớn các bức tranh và tượng cổ.",
+  "Âm nhạc có thể giúp mọi người thư giãn sau một ngày dài và căng thẳng.",
+  "Các em bé đã chơi bóng đá trong công viên cho đến khi mặt trời lặn.",
+  "Bác hàng xóm của chúng tôi đã nhận nuôi một chú chó thân thiện từ trung tâm cứu trợ động vật.",
+  "Sông chảy chậm qua thung lũng hướng ra biển.",
+  "Rừng cung cấp nơi ở cho nhiều loài động vật và làm sạch không khí chúng ta hít thở.",
+  "Biến đổi khí hậu ảnh hưởng đến nông dân, thành phố và động vật hoang dã trên khắp thế giới.",
+  "Các tấm pin mặt trời chuyển đổi ánh sáng mặt trời thành điện cho các hộ gia đình và trường học.",
+  "Tái chế giấy và nhựa giúp giảm lượng rác thải chúng ta tạo ra.",
+  "Cây cầu mới sẽ giúp di chuyển giữa hai thị trấn trở nên nhanh hơn.",
+  "Kỹ sư phải kiểm tra cẩn thận mọi thiết kế trước khi xây dựng.",
+  "Một nhà khoa học tốt luôn đặt câu hỏi về kết quả của một thí nghiệm.",
+  "Telescope cho phép chúng ta nhìn thấy các ngôi sao và hành tinh ở xa.",
+  "Mặt trăng có ảnh hưởng mạnh mẽ đến thủy triều của đại dương.",
+  "Lịch sử dạy chúng ta cách con người đã sống và làm việc trong quá khứ.",
+  "Các thành phố cổ thường được xây dựng bên cạnh sông để có nước ngọt.",
+  "Học một ngôn ngữ thứ hai mở ra cánh cửa đến những nền văn hóa mới.",
+  "Luyện tập nói một chút mỗi ngày, ngay cả khi cảm thấy khó khăn.",
+  "Giáo viên đã giải thích quy tắc ngữ pháp với nhiều ví dụ rõ ràng.",
+  "Viết một bản tóm tắt ngắn giúp bạn nhớ những gì đã đọc.",
+  "Máy tính tuân theo hướng dẫn được viết bởi các lập trình viên.",
+  "Một lỗi nhỏ trong mã có thể khiến toàn bộ chương trình bị lỗi.",
+  "Luôn lưu một bản sao dự phòng của các tệp quan trọng.",
+  "Internet đã thay đổi cách chúng ta giao tiếp với nhau.",
+  "Vui lòng tắt điện thoại trong khi thi.",
+  "Cuộc họp đã được chuyển đến phòng lớn trên tầng hai.",
+  "Công ty đang tìm kiếm những người thích làm việc nhóm.",
+  "Giao tiếp tốt là chìa khóa để một dự án thành công.",
+  "Nhà hàng trên góc phố phục vụ mì và cơm ngon.",
+  "Chúng ta nên ra sớm để tránh tình trạng kẹt xe vào buổi sáng.",
+  "Bệnh viện đang xây dựng một khu mới cho trẻ em.",
+  "Những người tình nguyện đã dọn dẹp bãi biển và thu gom rất nhiều túi rác.",
+  "Lễ hội thu hút khách tham quan từ nhiều quốc gia khác nhau.",
+  "Cảm ơn đã lắng nghe, hẹn gặp mọi người vào tuần tới.",
+  "Trước khi kết thúc, hãy cùng xem lại những điểm quan trọng nhất.",
+  "Hãy nhớ rằng học tập cần thời gian, sự kiên nhẫn và sự tò mò.",
+  "Tiệm bánh mở cửa rất sớm để mọi người có thể mua bánh trên đường đi làm.",
+  "Cô ấy có một khu vườn nhỏ trên ban công với rau và cà chua.",
+  "Xe buýt đến muộn vào buổi sáng vì tai nạn trên đường cao tốc.",
+  "Anh ấy luôn đọc báo trong khi uống cà phê.",
+  "Hội đồng thành phố quyết định trồng thêm cây dọc theo con đường chính.",
+  "Trường của chúng tôi tổ chức hội chợ khoa học vào cuối mỗi năm.",
+  "Học sinh đã trình bày dự án của mình cho phụ huynh và giáo viên.",
+  "Gió mạnh đã làm gãy nhiều cành cây trong công viên.",
+  "Nông dân đang mong đợi mưa sau một mùa hè khô hạn.",
+  "Lâu đài cũ trên đồi thu hút rất nhiều du khách.",
+  "Vui lòng nhớ mang theo thẻ căn cước đến văn phòng.",
+  "Dược sĩ nằm bên cạnh bưu điện, đối diện với ngân hàng.",
+  "Anh trai tôi đang học cách chơi guitar vào buổi tối.",
+  "Concert đã bị hủy bỏ vì ca sĩ bị ốm.",
+  "Chúng tôi đã xem một bộ phim tài liệu về động vật của rừng mưa.",
+  "Đại dương bao phủ phần lớn bề mặt của hành tinh của chúng ta.",
+  "Cá voi giao tiếp với nhau bằng những bài hát dài và phức tạp.",
+  "Ong đóng vai trò quan trọng trong việc trồng trái cây và rau.",
+  "Đường núi bị đóng băng vào mùa đông vì tuyết.",
+  "Những người đi bộ đường dài nên luôn mang theo nước, thức ăn và bản đồ.",
+  "Đội đã ăn mừng chiến thắng với một bữa tối lớn.",
+  "Huấn luyện viên nhắc nhở các cầu thủ nghỉ ngơi trước trận đấu cuối.",
+  "Ông bà thường kể những câu chuyện về tuổi thơ của họ.",
+  "Ngôi làng tổ chức chợ ở quảng trường mỗi cuối tuần.",
+  "Đầu bếp sử dụng nguyên liệu tươi từ các trang trại địa phương.",
+  "Vui lòng rửa tay trước khi chuẩn bị thức ăn.",
+  "Bếp có mùi thơm khi mẹ tôi làm bánh.",
+  "Giá rau củ đã tăng mạnh trong tháng này.",
+  "Tiết kiệm một ít tiền mỗi tuần có thể tạo ra sự khác biệt lớn.",
+  "Ngân hàng cung cấp lời khuyên cho những người muốn mua nhà.",
+  "Nhà máy đã thuê thêm nhân viên để đáp ứng nhu cầu ngày càng tăng.",
+  "Giao thông công cộng giúp giảm ô nhiễm ở các thành phố lớn.",
+  "Ngày càng có nhiều người đi xe đạp đến công việc.",
+  "Chính phủ đã công bố kế hoạch cải thiện đường ở vùng nông thôn.",
+  "Các báo và trang web đã đưa tin trong vòng vài phút.",
+  "Nhà khoa học đã giải thích phát hiện của mình bằng những từ đơn giản.",
+  "Phòng thí nghiệm cần thiết bị mới cho các thí nghiệm.",
+  "Thuốc tiêm đã bảo vệ hàng triệu người khỏi các bệnh nghiêm trọng.",
+  "Y tá đã kiểm tra nhiệt độ của bệnh nhân mỗi giờ.",
+  "Chế độ ăn uống cân bằng bao gồm trái cây, rau củ và ngũ cốc nguyên hạt.",
+  "Đi bộ trong thiên nhiên có thể giúp giảm căng thẳng và cải thiện tâm trạng.",
+  "Nghệ sĩ đã vẽ bức chân dung bằng những màu sắc tươi sáng.",
+  "Nhà hát đang biểu diễn một vở kịch mới trong mùa này.",
+  "Tác giả đã ký tặng bản sao cuốn sách mới nhất tại hiệu sách.",
+  "Thơ thường thể hiện những cảm xúc khó mô tả.",
+  "Nhà nhiếp ảnh đã đợi hàng giờ để chụp cảnh bình minh.",
+  "Bộ phim kể về một gia đình chuyển đến một quốc gia mới.",
+  "Trẻ em học nhanh khi chúng tò mò và được khuyến khích.",
+  "Giáo viên yêu cầu học sinh làm việc theo cặp.",
+  "Bài kiểm tra cuối kỳ sẽ bao gồm tất cả những gì chúng ta đã học trong học kỳ này.",
+  "Vui lòng nộp bài luận trước khi kết thúc tuần.",
+  "Giáo sư đã trả lời các câu hỏi sau bài giảng.",
+  "Nghỉ ngơi thường xuyên giúp bạn tập trung lâu hơn.",
+  "Robot có thể sắp xếp hàng hóa nhanh hơn so với người lao động.",
+  "Trí tuệ nhân tạo đang thay đổi nhiều ngành công nghiệp.",
+  "Kỹ sư đang thiết kế xe sử dụng ít năng lượng hơn.",
+  "Bản cập nhật phần mềm đã khắc phục nhiều vấn đề bảo mật.",
+  "Mật khẩu mạnh bảo vệ tài khoản của bạn khỏi các cuộc tấn công.",
+  "Máy in ở tầng ba lại hết giấy.",
+  "Kết nối internet của chúng tôi chậm trong cơn bão.",
+  "Sân bay đông nghịt khách du lịch trong dịp lễ.",
+  "Chuyến bay bị hoãn do sương mù.",
+  "Phòng khách sạn có tầm nhìn tuyệt đẹp ra hồ.",
+  "Chúng tôi thuê một chiếc thuyền nhỏ và đi dọc theo bờ biển.",
+  "Ngọn hải đăng hướng dẫn tàu thuyền an toàn vào cảng.",
+  "Những ngư dân trở về bến tàu với một lượng cá lớn.",
+  "Bầu trời phủ đầy tuyết và đường phố yên tĩnh.",
+  "Các em bé đã xây một con người tuyết trước trường học.",
+  "Lá mùa thu chuyển sang màu đỏ, cam và vàng.",
+  "Bức bình minh trên biển vô cùng tuyệt đẹp."
+ ],
+ "exchanges": [
+  [
+   "Bạn đã đọc xong chương này chưa?",
+   "Vâng, tôi đã đọc nó vào tối qua, nhưng phần sau khó."
+  ],
+  [
+   "Bạn nghĩ gì về bài giảng sáng nay?",
+   "Nó rất thú vị, đặc biệt là phần về dữ liệu huấn luyện."
+  ],
+  [
+   "Bạn có đến buổi nhóm học tối nay không?",
+   "Tôi muốn, nhưng tôi phải làm việc đến muộn."
+  ],
+  [
+   "Chúng ta nên gặp nhau ở đâu trước kỳ thi?",
+   "Hãy gặp nhau ở trước thư viện sớm một chút."
+  ],
+  [
+   "Bạn có hiểu cách cross validation hoạt động không?",
+   "Tôi nghĩ vậy. Bạn kiểm tra mô hình trên dữ liệu mà nó chưa thấy."
+  ],
+  [
+   "Tại sao mô hình lại hoạt động kém trên dữ liệu mới?",
+   "Vì nó đã ghi nhớ các ví dụ huấn luyện thay vì học các mẫu."
+  ],
+  [
+   "Việc làm bài tập này mất bao lâu?",
+   "Phần lớn buổi chiều, vì tôi đã mắc lỗi ở đầu."
+  ],
+  [
+   "Bạn có thể giải thích lại ví dụ cuối được không?",
+   "Chắc chắn. Chúng tôi chia dữ liệu và so sánh kết quả."
+  ],
+  [
+   "Giáo sư có nghiêm khắc về thời hạn không?",
+   "Rất nghiêm khắc, vì vậy vui lòng không nộp bất cứ thứ gì trễ."
+  ],
+  [
+   "Bạn đã thấy lịch mới cho tuần tới chưa?",
+   "Vâng, cuộc họp đã được chuyển sang buổi chiều."
+  ],
+  [
+   "Thời tiết bên ngoài như thế nào?",
+   "Trời lạnh và gió, vì vậy hãy mang theo áo ấm."
+  ],
+  [
+   "Có mưa vào cuối tuần không?",
+   "Dự báo có mưa nhỏ vào Chủ nhật."
+  ],
+  [
+   "Bạn đã đi nghỉ hè ở đâu?",
+   "Chúng tôi đã đến thăm một ngôi làng yên tĩnh gần núi."
+  ],
+  [
+   "Cuộc đi biển có gì vui không?",
+   "Đẹp quá. Chúng tôi đi dạo dọc bờ biển mỗi buổi tối."
+  ],
+  [
+   "Bạn đi tàu hay xe buýt?",
+   "Tàu, vì nó nhanh hơn và thoải mái hơn."
+  ],
+  [
+   "Bảo tàng có mở vào ngày thứ Hai không?",
+   "Không, bảo tàng đóng vào ngày thứ Hai nhưng mở vào những ngày khác."
+  ],
+  [
+   "Bạn muốn ăn gì tối nay?",
+   "Một món đơn giản, có lẽ là súp và bánh mì tươi."
+  ],
+  [
+   "Bạn có thể gợi ý một nhà hàng ngon gần đây không?",
+   "Quán nhỏ ở góc phố phục vụ mì rất ngon."
+  ],
+  [
+   "Bạn có thường xuyên nấu ăn tại nhà không?",
+   "Gần như mỗi ngày. Nó tốt cho sức khỏe và rẻ hơn."
+  ],
+  [
+   "Ai đã dạy bạn làm bánh?",
+   "Bà tôi đã dạy tôi khi tôi còn nhỏ."
+  ],
+  [
+   "Chúng ta có nên mua trái cây ở chợ không?",
+   "Có, trái cây ở đó tươi hơn so với siêu thị."
+  ],
+  [
+   "Bạn uống bao nhiêu nước mỗi ngày?",
+   "Không đủ, tôi thực sự nên uống nhiều hơn."
+  ],
+  [
+   "Bạn tập thể dục trước hay sau khi làm việc?",
+   "Thường là vào buổi sáng, trước khi văn phòng mở cửa."
+  ],
+  [
+   "Bạn đã ngủ ngon vào tối qua không?",
+   "Không ngon. Các hàng xóm đang chơi nhạc ồn."
+  ],
+  [
+   "Bạn cảm thấy tốt hơn ngày hôm nay chứ?",
+   "Tốt hơn nhiều, cảm ơn. Những điều đó thực sự đã giúp."
+  ],
+  [
+   "Bác sĩ đã cho bạn bất kỳ lời khuyên nào không?",
+   "Bà ấy đã nói với tôi nên nghỉ ngơi và uống nhiều nước."
+  ],
+  [
+   "Bạn đã từng thử học một ngôn ngữ thứ hai chưa?",
+   "Có, tôi luyện tập một chút mỗi ngày với một ứng dụng."
+  ],
+  [
+   "Phần khó nhất khi học một ngôn ngữ là gì?",
+   "Nói một cách tự tin, đặc biệt là trên điện thoại."
+  ],
+  [
+   "Bạn thích đọc sách hay xem phim hơn?",
+   "Sách, vì tôi có thể tự tưởng tượng câu chuyện."
+  ],
+  [
+   "Bạn thích loại nhạc nào?",
+   "Chủ yếu là nhạc nhẹ giúp tôi thư giãn."
+  ],
+  [
+   "Bạn có thích buổi hòa nhạc tối qua không?",
+   "Rất nhiều. Đoàn nhạc thật tuyệt vời."
+  ],
+  [
+   "Bạn đã đến thăm phòng trưng bày nghệ thuật mới chưa?",
+   "Chưa, nhưng tôi nghe nói các bức tranh rất ấn tượng."
+  ],
+  [
+   "Máy tính của bạn đã hoạt động trở lại chưa?",
+   "Có, bản cập nhật đã giải quyết vấn đề."
+  ],
+  [
+   "Bạn đã sao lưu các tệp của mình chưa?",
+   "Chắc chắn rồi, tôi luôn giữ một bản sao trên ổ cứng khác."
+  ],
+  [
+   "Tại sao internet lại chậm như vậy hôm nay?",
+   "Bão đã làm hỏng một số dây cáp ở khu vực đó."
+  ],
+  [
+   "Bạn có thể giúp tôi với chương trình này không?",
+   "Vâng. Hãy cho tôi xem thông báo lỗi trước."
+  ],
+  [
+   "Thông báo lỗi này có nghĩa là gì?",
+   "Nó có nghĩa là tệp không thể tìm thấy."
+  ],
+  [
+   "Tôi có nên sử dụng mật khẩu mạnh hơn không?",
+   "Chắc chắn. Hãy sử dụng một cụm từ dài mà bạn dễ nhớ."
+  ],
+  [
+   "Các tấm pin mặt trời tạo ra điện bằng cách nào?",
+   "Chúng chuyển trực tiếp ánh sáng mặt trời thành năng lượng điện."
+  ],
+  [
+   "Việc tái chế có thực sự đáng để nỗ lực không?",
+   "Có, nó giảm thiểu chất thải và tiết kiệm tài nguyên thiên nhiên."
+  ],
+  [
+   "Tại sao ong lại quan trọng đến vậy?",
+   "Chúng thụ phấn cho các loại cây cho chúng ta trái cây và rau."
+  ],
+  [
+   "Điều gì gây ra thủy triều trên biển?",
+   "Chủ yếu là lực hấp dẫn của mặt trăng lên nước."
+  ],
+  [
+   "Bạn đã từng thấy cá voi hoang dã chưa?",
+   "Một lần, từ một chiếc thuyền ở rất xa trên biển."
+  ],
+  [
+   "Đường bộ trên núi có mở vào mùa đông không?",
+   "Không, chúng thường đóng cửa vì tuyết."
+  ],
+  [
+   "Chúng ta nên chuẩn bị gì cho chuyến đi bộ đường dài?",
+   "Nước, thức ăn, bản đồ và một lớp quần áo ấm."
+  ],
+  [
+   "Hồ cách đây bao xa?",
+   "Khoảng một giờ đi bộ qua khu rừng."
+  ],
+  [
+   "Đội của bạn đã thắng trận vào thứ Bảy chưa?",
+   "Có, chúng tôi đã thắng trong những phút cuối cùng."
+  ],
+  [
+   "Đội tập luyện bao nhiêu lần một tuần?",
+   "Hai lần một tuần, và nhiều hơn trước các trận đấu quan trọng."
+  ],
+  [
+   "Bạn muốn chơi bóng đá trong công viên không?",
+   "Có lẽ sau, khi không quá nóng."
+  ],
+  [
+   "Xe buýt tiếp theo sẽ đi khi nào?",
+   "Sau mười phút, từ điểm dừng ở phía đối diện."
+  ],
+  [
+   "Sân bay cách trung tâm thành phố đến bao xa?",
+   "Không thực sự, tàu hỏa mất khoảng nửa giờ."
+  ],
+  [
+   "Tại sao chuyến bay bị hoãn?",
+   "Có sương mù dày vào buổi sáng sớm."
+  ],
+  [
+   "Bạn đã đặt phòng ở khách sạn chưa?",
+   "Có, một phòng có tầm nhìn ra hồ."
+  ],
+  [
+   "Ngày đầu tiên của bạn tại công việc mới như thế nào?",
+   "Bận rộn, nhưng đồng nghiệp của tôi rất thân thiện."
+  ],
+  [
+   "Bạn thích điều gì nhất trong công việc của mình?",
+   "Làm việc với một nhóm có khả năng giao tiếp tốt."
+  ],
+  [
+   "Bạn có lo lắng về buổi thuyết trình không?",
+   "Một chút, nhưng tôi đã thực hành nó nhiều lần."
+  ],
+  [
+   "Ai là người dẫn đầu dự án năm nay?",
+   "Người quản lý từ bộ phận thiết kế."
+  ],
+  [
+   "Báo cáo cần nộp vào lúc nào?",
+   "Vào cuối tuần, trước cuộc họp."
+  ],
+  [
+   "Chúng ta có thể chuyển cuộc họp sang buổi chiều không?",
+   "Điều đó phù hợp với tôi. Tôi sẽ thông báo cho những người khác."
+  ],
+  [
+   "Bạn đã đọc tin tức sáng nay chưa?",
+   "Chỉ là tiêu đề. Có thông báo gì quan trọng không?"
+  ],
+  [
+   "Chính phủ đã thông báo điều gì?",
+   "Một kế hoạch mới để cải thiện đường ở vùng nông thôn."
+  ],
+  [
+   "Giao thông công cộng có rẻ hơn không?",
+   "Thường thì, và nó cũng tốt hơn cho môi trường."
+  ],
+  [
+   "Bạn có đi xe đạp đến công việc không?",
+   "Khi thời tiết tốt, có."
+  ],
+  [
+   "Tại sao giá rau lại tăng?",
+   "Mùa hè rất khô, nên mùa vụ không tốt."
+  ],
+  [
+   "Bạn quản lý tiền như thế nào?",
+   "Tôi dành một chút tiền mỗi tuần."
+  ],
+  [
+   "Bạn có muốn mua một căn nhà vào một ngày nào đó không?",
+   "Có thể, nhưng hiện tại thuê nhà dễ hơn."
+  ],
+  [
+   "Các em đang làm gì vào buổi chiều?",
+   "Chúng đang xây một con người tuyết trước trường."
+  ],
+  [
+   "Chó của bạn có thích đi dạo không?",
+   "Nó rất thích, đặc biệt là gần sông."
+  ],
+  [
+   "Bạn đã nhận nuôi mèo ở đâu?",
+   "Từ trung tâm cứu trợ động vật ở ngoại ô."
+  ],
+  [
+   "Bạn đã trồng bất cứ thứ gì trong vườn chưa?",
+   "Một số loại rau và cà chua trên ban công."
+  ],
+  [
+   "Mùa nào là mùa yêu thích của bạn?",
+   "Mùa thu, khi lá đổi màu."
+  ],
+  [
+   "Bạn có thấy cảnh hoàng hôn ngày hôm qua không?",
+   "Có, toàn bộ bầu trời chuyển sang màu cam và hồng."
+  ],
+  [
+   "Bạn có thể giới thiệu một cuốn sách hay không?",
+   "Tôi vừa đọc một cuốn tiểu thuyết về một gia đình chuyển đến nước ngoài."
+  ],
+  [
+   "Nhà văn có nói chuyện tại hiệu sách không?",
+   "Có, vào tối thứ Năm, và cô ấy sẽ ký tặng."
+  ],
+  [
+   "Bạn nhớ lại những gì bạn đã đọc như thế nào?",
+   "Tôi viết một bản tóm tắt ngắn sau mỗi chương."
+  ],
+  [
+   "Tại sao bạn lại nghỉ ngơi nhiều khi học?",
+   "Nghỉ ngơi ngắn giúp tôi tập trung lâu hơn."
+  ],
+  [
+   "Bài kiểm tra cuối kỳ sẽ bao gồm những gì?",
+   "Tất cả những gì chúng ta đã học trong học kỳ này."
+  ],
+  [
+   "Chúng tôi có được phép sử dụng ghi chú trong kỳ thi không?",
+   "Không, và điện thoại phải tắt."
+  ],
+  [
+   "Bạn có tham gia dọn dẹp bãi biển không?",
+   "Có, chúng tôi đã thu gom rất nhiều túi rác."
+  ],
+  [
+   "Lễ hội có đáng để tham quan không?",
+   "Tuyệt đối. Mọi người đến từ nhiều quốc gia."
+  ],
+  [
+   "Ai đã xây dựng lâu đài cũ trên đồi?",
+   "Không ai biết chắc chắn, nhưng nó rất cũ."
+  ],
+  [
+   "Tại sao các thành phố cổ lại được xây dựng gần sông?",
+   "Sông cung cấp nước, thức ăn và phương tiện vận chuyển."
+  ],
+  [
+   "Bạn đã học được gì tại hội chợ khoa học?",
+   "Cách robot có thể sắp xếp hàng hóa rất nhanh chóng."
+  ],
+  [
+   "Trí tuệ nhân tạo có thay thế nhiều công việc không?",
+   "Một số công việc sẽ thay đổi, và những công việc mới sẽ xuất hiện."
+  ],
+  [
+   "Kỹ sư có thể làm cho xe sử dụng ít năng lượng như thế nào?",
+   "Bằng cách làm chúng nhẹ hơn và hiệu quả hơn."
+  ],
+  [
+   "Tại sao giao tiếp tốt lại quan trọng đến vậy?",
+   "Bởi vì sự hiểu lầm có thể phá hủy một dự án."
+  ],
+  [
+   "Có khó khăn khi làm việc trong một nhóm lớn không?",
+   "Đôi khi, nhưng vai trò rõ ràng giúp dễ dàng hơn."
+  ],
+  [
+   "Chúng ta có nên xem lại các điểm chính trước khi kết thúc không?",
+   "Ý tưởng hay. Hãy đi qua từng cái một."
+  ],
+  [
+   "Bạn có câu hỏi nào trước khi kết thúc không?",
+   "Chỉ một: buổi học tiếp theo là khi nào?"
+  ],
+  [
+   "Cảm ơn bạn đã giúp đỡ hôm nay.",
+   "Không có gì. Hẹn gặp lại vào tuần tới."
+  ]
+ ],
+ "reactions": [
+  "Điều đó có lý.",
+  "",
+  "Thật sao? Tôi không biết điều đó.",
+  "Đó là một điểm quan trọng.",
+  "Tôi cũng có trải nghiệm tương tự.",
+  "Thú vị, hãy cho tôi biết thêm.",
+  "Tôi không chắc chắn về điều đó.",
+  "Chính xác là những gì tôi đang nghĩ.",
+  "Điều đó nghe thật tuyệt vời.",
+  "Rất tốt, cảm ơn.",
+  "",
+  "Tương tự ở đây."
+ ]
+}
