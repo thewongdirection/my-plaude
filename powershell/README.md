@@ -130,8 +130,8 @@ download or `-NoProvision` to just error out.
 
 ## End-to-end regression suite
 
-The multilingual regression suite in `tests/regression/` (600 files across 73
-languages, clean + damaged, monologues + multi-speaker conversations) runs
+The multilingual regression suite in `tests/regression/` (600 files across 21
+languages, mostly Asian, clean + damaged, monologues + multi-speaker conversations) runs
 **this script and the Python tool on the same corpus with the same flags** and
 scores both identically - see the main [README](../README.md#multilingual-end-to-end-regression-suite).
 

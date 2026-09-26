@@ -1,6 +1,6 @@
 """Multilingual end-to-end regression suite for BOTH implementations.
 
-Runs corpus files (300 clean + 300 damaged across 73 languages, monologues
+Runs corpus files (300 clean + 300 damaged across 21 languages - mostly Asian - monologues
 and multi-speaker conversations - see generate_corpus.py) through the real tool - Python (``python -m plaude_local``) and/or PowerShell
 (``powershell/Plaude-Local.ps1``) - transcribing and translating to English
 via the HTML dashboard's split outputs, then scores each run:

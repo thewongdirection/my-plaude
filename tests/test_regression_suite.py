@@ -265,11 +265,18 @@ class TestNoGpuTranslation(unittest.TestCase):
 
 class TestLanguages(unittest.TestCase):
     def test_codes_unique_and_tiers_valid(self):
-        codes = [l["code"] for l in languages.LANGUAGES]
+        codes = [l["code"] for l in languages.ALL_LANGUAGES]
         self.assertEqual(len(codes), len(set(codes)))
-        for l in languages.LANGUAGES:
+        for l in languages.ALL_LANGUAGES:
             self.assertIn(l["tier"], languages.THRESHOLDS)
             self.assertTrue(l["locales"])
+
+    def test_corpus_focuses_on_asian_languages(self):
+        codes = [l["code"] for l in languages.LANGUAGES]
+        self.assertEqual(len(codes), 21)
+        self.assertEqual(len(set(codes)), 21)
+        self.assertLessEqual(set(codes), set(languages.BY_CODE))
+        self.assertEqual(set(codes[-5:]), {"en", "es", "fr", "de", "ru"})
 
     def test_accepted_codes_include_related_languages(self):
         self.assertEqual(languages.accepted_codes("de"), {"de"})

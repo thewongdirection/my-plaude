@@ -3,8 +3,9 @@
 The corpus has 300 clean recordings plus a damaged twin of each (600 files):
 
 * 150 single-speaker monologues and 150 multi-speaker conversations (2-3
-  voices taking turns), spread round-robin over the 73 languages in
-  ``languages.py`` (every language that both Whisper and edge-tts support);
+  voices taking turns), spread round-robin over the 21 corpus languages in
+  ``languages.py`` (16 Asian languages plus English, Spanish, French, German
+  and Russian);
 * each clean file is 2-10 minutes long (seeded, skewed towards shorter files)
   with seeded random content: a shuffled selection of ``sentences.py`` lines
   (monologue) or ``dialogues.py`` exchanges (conversation);

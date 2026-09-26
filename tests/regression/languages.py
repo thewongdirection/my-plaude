@@ -1,5 +1,10 @@
-"""Languages in the regression corpus: every language that both Whisper
-(large-v3) and the edge-tts neural voices support - 73 languages.
+"""Languages for the regression corpus.
+
+``ALL_LANGUAGES`` lists every language that both Whisper (large-v3) and the
+edge-tts neural voices support (73). The corpus itself focuses on
+``CORPUS_CODES``: 16 Asian languages plus a few European ones (21 in total);
+``LANGUAGES`` is that subset, in corpus order. To widen the corpus, add codes
+to ``CORPUS_CODES`` and rerun ``generate_corpus.py``.
 
 Fields:
 
@@ -16,7 +21,7 @@ Fields:
                 Whisper is known to confuse (e.g. Malay/Indonesian).
 """
 
-LANGUAGES = [
+ALL_LANGUAGES = [
     {"code": "af", "name": "Afrikaans", "locales": ["af-ZA"], "script": "LATIN", "tier": "B"},
     {"code": "am", "name": "Amharic", "locales": ["am-ET"], "script": "ETHIOPIC", "tier": "C"},
     {"code": "ar", "name": "Arabic (Modern Standard)", "locales": ["ar-SA", "ar-EG", "ar-AE", "ar-JO"], "script": "ARABIC", "tier": "A"},
@@ -92,7 +97,17 @@ LANGUAGES = [
     {"code": "yue", "name": "Cantonese (Traditional Chinese characters, spoken Cantonese)", "locales": ["zh-HK"], "script": "CJK", "tier": "B", "alt": ["zh"]},
 ]
 
-BY_CODE = {lang["code"]: lang for lang in LANGUAGES}
+BY_CODE = {lang["code"]: lang for lang in ALL_LANGUAGES}
+
+# The corpus: Asian languages first (East, Southeast, South Asia - including a
+# few low-resource ones), then a handful of European languages.
+CORPUS_CODES = [
+    "zh", "yue", "ja", "ko",                          # East Asia
+    "vi", "th", "id", "ms", "tl", "km", "my",         # Southeast Asia
+    "hi", "bn", "ta", "te", "ur",                     # South Asia
+    "en", "es", "fr", "de", "ru",                     # Europe
+]
+LANGUAGES = [BY_CODE[code] for code in CORPUS_CODES]
 
 # Scripts written without spaces between words: lines are joined with no
 # separator and scored on characters only.

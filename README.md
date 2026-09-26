@@ -586,8 +586,11 @@ UTF-8 output, and orchestration).
 through **both** implementations for real (transcribe + translate to English):
 
 - **600 files**: 300 clean recordings plus a *damaged twin* of each, across
-  **73 languages** (every language both Whisper and the edge-tts neural voices
-  support). Half are single-speaker monologues, half are **multi-speaker
+  **21 languages**: 16 Asian (Mandarin, Cantonese, Japanese, Korean, Vietnamese,
+  Thai, Indonesian, Malay, Filipino, Khmer, Burmese, Hindi, Bengali, Tamil,
+  Telugu, Urdu) plus English, Spanish, French, German and Russian - about 14
+  recordings per language. (`languages.py` also lists all 73 languages both
+  Whisper and edge-tts support; add codes to `CORPUS_CODES` to widen it.) Half are single-speaker monologues, half are **multi-speaker
   conversations** (2-3 voices taking turns, with speaker-turn timings recorded
   for future diarization tests). Every file is 2-10 minutes of seeded random
   content, mono Opus 16 kb/s.
