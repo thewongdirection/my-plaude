@@ -353,6 +353,50 @@ class TestNoGpuTranslation(unittest.TestCase):
         self.assertTrue((folder / "de.partial.json").exists())
         self.assertFalse((folder / "de.json").exists())
 
+    def test_garbled_partial_is_redone_in_batches(self):
+        from unittest import mock
+        from plaude_local import summarize
+
+        folder = self._in_temp_translations()
+        src = gen.english_lines()
+        lang = {"code": "de", "name": "German", "script": "LATIN"}
+        gen.write_json_atomic(folder / "de.partial.json",
+                              {"source_sha1": gen.source_sha1(), "lines": list(src)})
+        good = ["Guten Morgen, liebe Leute, willkommen hier."] * len(src)
+        with mock.patch.object(summarize, "translate_lines", return_value=good) as batch:
+            data = gen.translate_language(lang, call=lambda p: "", model="big")
+        batch.assert_called_once()
+        self.assertEqual(data["model"], "big")
+
+    def test_fallback_model_redoes_a_failed_language(self):
+        from unittest import mock
+        from plaude_local import summarize
+
+        folder = self._in_temp_translations()
+        src = gen.english_lines()
+        good = ["Guten Morgen, liebe Leute, willkommen hier."] * len(src)
+
+        def batch(lines, call, target_language):
+            return call("batch")
+
+        made = {}
+
+        def fake_calls(name, url, *, cpu, capabilities, temperature=0.0, **kw):
+            reply = list(src) if name == "small" else good  # small echoes English
+            return lambda prompt: reply
+
+        with mock.patch.object(gen, "model_capabilities", return_value=[]), \
+             mock.patch.object(gen, "make_ollama_call", side_effect=fake_calls), \
+             mock.patch.object(summarize, "translate_lines", side_effect=batch), \
+             mock.patch.object(summarize, "translate_text", side_effect=lambda t, c, **k: t):
+            rc = gen.main(["--phase", "translate", "--languages", "de",
+                           "--model", "small", "--fallback-model", "big"])
+        self.assertEqual(rc, 0)
+        data = gen.load_translation("de")
+        self.assertEqual(data["sentences"][0], good[0])
+        self.assertEqual(data["model"], "small + big")
+        self.assertFalse((folder / "de.partial.json").exists())
+
     def test_english_needs_no_model(self):
         folder = self._in_temp_translations()
         data = gen.translate_language({"code": "en", "name": "English", "script": "LATIN"},

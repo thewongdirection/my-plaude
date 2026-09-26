@@ -24,7 +24,10 @@ Two phases (``--phase``; the default runs both, overlapped):
   ``dialogues.py`` is re-translated. Progress is kept in
   ``<code>.partial.json`` so an interrupted or partly-failed language resumes
   without redoing the lines that already passed. To re-translate a language,
-  delete its ``translations/<code>.json``.
+  delete its ``translations/<code>.json``. With ``--fallback-model``, a
+  language the main model cannot translate well enough (small models garble
+  low-resource scripts such as Burmese or Khmer) is redone with the bigger
+  fallback model.
 * ``audio`` - needs no LLM and no GPU: synthesize each line with a Microsoft
   neural voice (``edge-tts``, a cloud service; cached per voice+line) and
   assemble files line by line - with natural pauses and exact speaker-turn
@@ -42,7 +45,8 @@ clips; delete that folder to re-synthesize). Requirements: FFmpeg on PATH and
 model (translate phase only).
 
     python tests/regression/generate_corpus.py                    # both phases
-    python tests/regression/generate_corpus.py --phase translate --model translategemma:4b
+    python tests/regression/generate_corpus.py --phase translate \
+        --model translategemma:4b --fallback-model translategemma:12b
     python tests/regression/generate_corpus.py --phase audio      # no LLM at all
     python tests/regression/generate_corpus.py --languages de,ja --force
 """
@@ -302,9 +306,14 @@ def translate_language(lang: dict, call, model: str = "", retry_call=None) -> di
         out = list(src)
     else:
         partial = _read_matching(partial_path(code))
-        if partial and len(partial.get("lines", [])) == len(src):
+        reuse = partial and len(partial.get("lines", [])) == len(src)
+        if reuse:
             out = partial["lines"]
-        else:
+            # Mostly-garbled progress (e.g. from a weaker model before a
+            # fallback): cheaper to redo the batches than retry line by line.
+            n_bad = sum(not translation_ok(a, b, lang["script"]) for a, b in zip(src, out))
+            reuse = n_bad <= len(src) // 2
+        if not reuse:
             out = [clean_reply(line) for line in
                    summarize.translate_lines(src, call, target_language=lang["name"])]
             write_json_atomic(partial_path(code), {"source_sha1": source_sha1(), "lines": out})
@@ -531,6 +540,9 @@ def main(argv=None) -> int:
     p.add_argument("--model", default=None,
                    help="Ollama model for translation (default: the most recently "
                         "installed one - pass it explicitly for reproducible runs)")
+    p.add_argument("--fallback-model", default=None,
+                   help="bigger Ollama model to redo a language with when --model's "
+                        "translations fail validation (e.g. translategemma:12b)")
     p.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     p.add_argument("--ollama-device", choices=["cpu", "auto"], default="cpu",
                    help="cpu (default): keep the model off the GPU (num_gpu 0); "
@@ -543,19 +555,37 @@ def main(argv=None) -> int:
         p.error(f"not corpus languages: {', '.join(sorted(unknown))} "
                 f"(see CORPUS_CODES in languages.py)")
     model, call, retry_call = args.model or "", None, None
+    fallback = None
+
+    def calls_for(name):
+        cpu = args.ollama_device == "cpu"
+        caps = model_capabilities(name, args.ollama_url)
+        return (make_ollama_call(name, args.ollama_url, cpu=cpu, capabilities=caps),
+                make_ollama_call(name, args.ollama_url, cpu=cpu, capabilities=caps,
+                                 temperature=0.7))
 
     def translator():
+        nonlocal fallback
         from plaude_local import summarize
         name = args.model or summarize.default_ollama_model(args.ollama_url)
         if not name:
             p.error(f"no Ollama model at {args.ollama_url}; start Ollama / pass --model")
-        cpu = args.ollama_device == "cpu"
-        caps = model_capabilities(name, args.ollama_url)
         print(f"translating with Ollama model {name!r} on "
-              f"{'the CPU' if cpu else 'any device'}", flush=True)
-        return (name, make_ollama_call(name, args.ollama_url, cpu=cpu, capabilities=caps),
-                make_ollama_call(name, args.ollama_url, cpu=cpu, capabilities=caps,
-                                 temperature=0.7))
+              f"{'the CPU' if args.ollama_device == 'cpu' else 'any device'}"
+              + (f", falling back to {args.fallback_model!r}" if args.fallback_model else ""),
+              flush=True)
+        if args.fallback_model:
+            fallback = (args.fallback_model, *calls_for(args.fallback_model))
+        return (name, *calls_for(name))
+
+    def translate_with_fallback(lang):
+        try:
+            return translate_language(lang, call, model, retry_call)
+        except RuntimeError as exc:
+            if not fallback:
+                raise
+            print(f"{lang['code']}: {exc} - retrying with {fallback[0]!r}", flush=True)
+            return translate_language(lang, fallback[1], f"{model} + {fallback[0]}", fallback[2])
 
     def needs_llm(langs_):
         return any(l["code"] != "en" and not load_translation(l["code"]) for l in langs_)
@@ -570,7 +600,7 @@ def main(argv=None) -> int:
                 continue
             t0 = time.time()
             try:
-                translate_language(lang, call, model, retry_call)
+                translate_with_fallback(lang)
                 print(f"{lang['code']}: translated ({time.time() - t0:.0f}s)", flush=True)
             except Exception as exc:
                 failed.append(lang["code"])
@@ -621,7 +651,7 @@ def main(argv=None) -> int:
             return bank
         if call is None and lang["code"] != "en":
             raise RuntimeError("no translations/%s.json - run --phase translate first" % lang["code"])
-        return translate_language(lang, call, model, retry_call)
+        return translate_with_fallback(lang)
 
     pool = ThreadPoolExecutor(max_workers=1)
     try:

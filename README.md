@@ -625,14 +625,16 @@ resumable) in two phases, **neither of which needs a GPU**:
 # 1. translate the English source text into every language with Ollama, forced
 #    onto the CPU (num_gpu 0; ~5 s/line with a 12B model, ~30 min/language).
 #    Writes tests/regression/translations/<code>.json - commit these.
-python tests/regression/generate_corpus.py --phase translate
+python tests/regression/generate_corpus.py --phase translate \n    --model translategemma:4b --fallback-model translategemma:12b
 # 2. synthesize + assemble the audio: edge-tts (cloud TTS) + FFmpeg, no LLM.
 python tests/regression/generate_corpus.py --phase audio
 ```
 
 Pass `--model` to pick the translation model (recommended, e.g.
 `--model translategemma:4b`; each file records it), `--ollama-device auto` to
-let Ollama use a GPU, `--ollama-url` for a non-default server, and
+let Ollama use a GPU, `--ollama-url` for a non-default server, `--fallback-model` to redo a
+language the main model garbles (a 4B model manages Thai or German but not
+Burmese or Khmer; the 12B does), and
 `--languages de,ja` to limit either phase. Only transient Ollama errors
 (connection refused, HTTP 5xx) are retried. Each translation file stores a hash
 of the English source lines, so editing `sentences.py` / `dialogues.py` makes
