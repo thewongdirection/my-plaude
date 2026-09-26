@@ -22,7 +22,7 @@ reference, voices, turns and damage recipe.
 This is a one-off, networked, multi-hour step (edge-tts calls Microsoft's TTS
 service); the result is committed so regression runs are reproducible
 offline. It resumes where it left off (translations and TTS clips are cached
-outside the repo, so ``--force`` rebuilds files from the same cached material;
+outside the repo in ``~/.cache/plaude-local/regression``, so ``--force`` rebuilds files from the same cached material;
 delete the cache folder to re-translate / re-synthesize). Requirements:
 ``pip install edge-tts``, FFmpeg on PATH, and an Ollama server with a
 translation model.
@@ -68,8 +68,11 @@ TTS_RATE = 24000
 OPUS = ["-ac", "1", "-c:a", "libopus", "-b:a", "16k"]
 PITCHES = ["+0Hz", "-45Hz", "+40Hz"]  # tell same-voice speakers apart
 TTS_CONCURRENCY = 6
+# Not under %LOCALAPPDATA%: Microsoft Store Python silently redirects writes
+# there into its package sandbox, so FFmpeg (a normal process) would not see
+# the folders Python created.
 CACHE = Path(os.environ.get("PLAUDE_TTS_CACHE")
-             or Path(os.environ.get("LOCALAPPDATA", Path.home())) / "plaude-local" / "regression-cache")
+             or Path.home() / ".cache" / "plaude-local" / "regression")
 
 
 # --------------------------------------------------------------------------- #

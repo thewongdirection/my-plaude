@@ -34,3 +34,6 @@ functional_test_report.md
 
 # Regression-suite run outputs (the corpus itself IS committed)
 tests/regression/results/
+
+# Corpus generator progress log
+tests/regression/generate.log
