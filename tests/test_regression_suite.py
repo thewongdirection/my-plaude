@@ -603,6 +603,9 @@ class TestNoGpuTranslation(unittest.TestCase):
             usable = [l for l in lines if l]
             self.assertGreaterEqual(len(usable), 0.95 * len(lines), f.name)
             script = by_code[f.stem]["script"]
+            if f.stem == "en":  # the English source itself: nothing to translate
+                self.assertEqual(lines, gen.english_lines())
+                continue
             for en, line in zip(gen.english_lines(), lines):
                 if line:  # every committed line must pass the quality rule
                     self.assertIsNone(gen.quality_problem(en, line, script), (f.name, en, line))

@@ -1,0 +1,513 @@
+{
+ "language": "en",
+ "model": null,
+ "source_sha1": "fba76066ed28099b550acc310984f2a97d35ed64",
+ "sentences": [
+  "Good morning everyone, and welcome to today's lecture.",
+  "Today we are going to talk about how machines learn from examples.",
+  "A model learns patterns from the training data it is given.",
+  "If the model memorizes the training data, it performs poorly on new data.",
+  "This problem is called overfitting, and it is very common.",
+  "One way to reduce overfitting is to collect more training data.",
+  "Another way is to keep the model simple.",
+  "Cross validation helps us estimate how well a model will generalize.",
+  "Please write down the main ideas in your notebook.",
+  "The homework for next week is to evaluate a simple classification model.",
+  "The library is open every day until late in the evening.",
+  "Many students prefer to study together in small groups.",
+  "Reading the chapter before class makes the lecture much easier to follow.",
+  "If you have a question, please raise your hand at any time.",
+  "The weather today is cold and windy, so bring a warm coat.",
+  "It rained heavily last night, and some streets were flooded.",
+  "Spring is my favorite season because the flowers begin to bloom.",
+  "The train to the city leaves from the main station every morning.",
+  "My grandmother taught me how to cook soup with fresh vegetables.",
+  "We visited a small village near the mountains during the summer holiday.",
+  "The market sells fruit, bread, cheese and fresh fish.",
+  "Drinking enough water every day is important for your health.",
+  "Regular exercise improves both the body and the mind.",
+  "Doctors recommend sleeping well before an important exam.",
+  "The museum has a large collection of old paintings and sculptures.",
+  "Music can help people relax after a long and stressful day.",
+  "The children played football in the park until the sun went down.",
+  "Our neighbors adopted a friendly dog from the animal shelter.",
+  "The river flows slowly through the valley toward the sea.",
+  "Forests provide homes for many animals and clean the air we breathe.",
+  "Climate change affects farmers, cities and wildlife around the world.",
+  "Solar panels turn sunlight into electricity for homes and schools.",
+  "Recycling paper and plastic reduces the amount of waste we produce.",
+  "The new bridge will make travel between the two towns much faster.",
+  "Engineers must test every design carefully before it is built.",
+  "A good scientist always questions the results of an experiment.",
+  "The telescope allows us to see distant stars and planets.",
+  "The moon has a strong influence on the tides of the ocean.",
+  "History teaches us how people lived and worked in the past.",
+  "Ancient cities were often built next to rivers for fresh water.",
+  "Learning a second language opens the door to new cultures.",
+  "Practice speaking a little every day, even when it feels difficult.",
+  "The teacher explained the grammar rule with several clear examples.",
+  "Writing a short summary helps you remember what you have read.",
+  "Computers follow instructions that are written by programmers.",
+  "A small mistake in the code can cause the whole program to fail.",
+  "Always save a backup copy of your important files.",
+  "The internet has changed the way we communicate with each other.",
+  "Please turn off your phone during the examination.",
+  "The meeting has been moved to the large room on the second floor.",
+  "Our company is looking for people who enjoy working in a team.",
+  "Good communication is the key to a successful project.",
+  "The restaurant on the corner serves delicious noodles and rice.",
+  "We should leave early to avoid the heavy traffic in the morning.",
+  "The hospital is building a new wing for children.",
+  "Volunteers cleaned the beach and collected many bags of rubbish.",
+  "The festival attracts visitors from many different countries.",
+  "Thank you for listening, and see you all next week.",
+  "Before we finish, let us review the most important points.",
+  "Remember that learning takes time, patience and curiosity.",
+  "The bakery opens very early so that people can buy bread on their way to work.",
+  "She keeps a small garden on her balcony with herbs and tomatoes.",
+  "The bus was late this morning because of an accident on the highway.",
+  "He always reads the newspaper while drinking his coffee.",
+  "The city council decided to plant more trees along the main avenue.",
+  "Our school organizes a science fair at the end of every year.",
+  "The students presented their projects to parents and teachers.",
+  "A strong wind knocked down several branches in the park.",
+  "The farmers are hoping for rain after a long and dry summer.",
+  "The old castle on the hill attracts many tourists.",
+  "Please remember to bring your identity card to the office.",
+  "The pharmacy is next to the post office, across from the bank.",
+  "My brother is learning to play the guitar in the evenings.",
+  "The concert was cancelled because the singer was sick.",
+  "We watched a documentary about the animals of the rainforest.",
+  "The ocean covers most of the surface of our planet.",
+  "Whales communicate with each other using long and complex songs.",
+  "Bees play an important role in growing fruit and vegetables.",
+  "The mountain road is closed in winter because of the snow.",
+  "Hikers should always carry water, food and a map.",
+  "The team celebrated their victory with a big dinner.",
+  "The coach reminded the players to rest before the final match.",
+  "Our grandparents often tell stories about their childhood.",
+  "The village holds a market in the square every weekend.",
+  "The chef uses fresh ingredients from local farms.",
+  "Please wash your hands before preparing food.",
+  "The kitchen smells wonderful when my mother bakes a cake.",
+  "The price of vegetables has risen sharply this month.",
+  "Saving a little money every week can make a big difference.",
+  "The bank offers advice to people who want to buy a house.",
+  "The factory hired new workers to meet the growing demand.",
+  "Public transport helps reduce pollution in large cities.",
+  "More and more people ride bicycles to work.",
+  "The government announced a plan to improve rural roads.",
+  "Newspapers and websites reported the news within minutes.",
+  "The scientist explained her discovery in simple words.",
+  "The laboratory needs new equipment for its experiments.",
+  "Vaccines have protected millions of people from serious diseases.",
+  "The nurse checked the patient's temperature every hour.",
+  "A balanced diet includes fruit, vegetables and whole grains.",
+  "Walking in nature can reduce stress and improve your mood.",
+  "The artist painted the portrait using bright colors.",
+  "The theater is presenting a new play this season.",
+  "The author signed copies of her latest book at the bookstore.",
+  "Poetry often expresses feelings that are difficult to describe.",
+  "The photographer waited for hours to capture the sunrise.",
+  "The film tells the story of a family that moves to a new country.",
+  "Children learn quickly when they are curious and encouraged.",
+  "The teacher asked the class to work in pairs.",
+  "The final exam will cover everything we have studied this term.",
+  "Please submit your essay before the end of the week.",
+  "The professor answered questions after the lecture.",
+  "Taking regular breaks helps you concentrate for longer.",
+  "The robot can sort packages faster than a human worker.",
+  "Artificial intelligence is changing many industries.",
+  "Engineers are designing cars that use less energy.",
+  "The software update fixed several security problems.",
+  "Strong passwords protect your accounts from attackers.",
+  "The printer on the third floor is out of paper again.",
+  "Our internet connection was slow during the storm.",
+  "The airport was crowded with travelers during the holidays.",
+  "The flight was delayed because of fog.",
+  "The hotel room had a beautiful view of the lake.",
+  "We rented a small boat and sailed along the coast.",
+  "The lighthouse guided ships safely into the harbor.",
+  "The fishermen returned to the port with a large catch.",
+  "Snow covered the rooftops and the streets were quiet.",
+  "The children built a snowman in front of the school.",
+  "Autumn leaves turn red, orange and yellow.",
+  "The sunset over the sea was absolutely beautiful."
+ ],
+ "exchanges": [
+  [
+   "Did you finish reading the chapter for today?",
+   "Yes, I read it last night, but the second half was difficult."
+  ],
+  [
+   "What did you think of the lecture this morning?",
+   "It was interesting, especially the part about training data."
+  ],
+  [
+   "Are you coming to the study group this evening?",
+   "I would like to, but I have to work until late."
+  ],
+  [
+   "Where should we meet before the exam?",
+   "Let us meet in front of the library a little early."
+  ],
+  [
+   "Do you understand how cross validation works?",
+   "I think so. You test the model on data it has not seen."
+  ],
+  [
+   "Why does the model perform badly on new data?",
+   "Because it memorized the training examples instead of learning patterns."
+  ],
+  [
+   "How long did the homework take you?",
+   "Most of the afternoon, because I made a mistake at the start."
+  ],
+  [
+   "Could you explain the last example again?",
+   "Of course. We split the data and compare the results."
+  ],
+  [
+   "Is the professor strict about deadlines?",
+   "Very strict, so please do not submit anything late."
+  ],
+  [
+   "Have you seen the new schedule for next week?",
+   "Yes, the meeting was moved to the afternoon."
+  ],
+  [
+   "What is the weather like outside?",
+   "It is cold and windy, so bring a warm jacket."
+  ],
+  [
+   "Will it rain this weekend?",
+   "The forecast says there will be light rain on Sunday."
+  ],
+  [
+   "Where did you go on your summer holiday?",
+   "We visited a quiet village near the mountains."
+  ],
+  [
+   "How was the trip to the coast?",
+   "Beautiful. We walked along the beach every evening."
+  ],
+  [
+   "Did you take the train or the bus?",
+   "The train, because it is faster and more comfortable."
+  ],
+  [
+   "Is the museum open on Mondays?",
+   "No, it is closed on Mondays but open the rest of the week."
+  ],
+  [
+   "What would you like to eat tonight?",
+   "Something simple, maybe soup and fresh bread."
+  ],
+  [
+   "Can you recommend a good restaurant nearby?",
+   "The small place on the corner serves excellent noodles."
+  ],
+  [
+   "Do you cook at home very often?",
+   "Almost every day. It is healthier and cheaper."
+  ],
+  [
+   "Who taught you how to bake bread?",
+   "My grandmother taught me when I was a child."
+  ],
+  [
+   "Should we buy fruit at the market?",
+   "Yes, the fruit there is fresher than in the supermarket."
+  ],
+  [
+   "How much water do you drink every day?",
+   "Not enough, I should really drink more."
+  ],
+  [
+   "Do you exercise before or after work?",
+   "Usually in the morning, before the office opens."
+  ],
+  [
+   "How did you sleep last night?",
+   "Badly. The neighbors were playing loud music."
+  ],
+  [
+   "Are you feeling better today?",
+   "Much better, thank you. The rest really helped."
+  ],
+  [
+   "Did the doctor give you any advice?",
+   "She told me to rest and drink plenty of water."
+  ],
+  [
+   "Have you ever tried learning a second language?",
+   "Yes, I practice a little every day with an app."
+  ],
+  [
+   "What is the hardest part of learning a language?",
+   "Speaking with confidence, especially on the phone."
+  ],
+  [
+   "Do you prefer reading books or watching films?",
+   "Books, because I can imagine the story myself."
+  ],
+  [
+   "What kind of music do you enjoy?",
+   "Mostly calm music that helps me relax."
+  ],
+  [
+   "Did you enjoy the concert last night?",
+   "Very much. The orchestra was wonderful."
+  ],
+  [
+   "Have you visited the new art gallery?",
+   "Not yet, but I heard the paintings are impressive."
+  ],
+  [
+   "Is your computer working again?",
+   "Yes, the update fixed the problem."
+  ],
+  [
+   "Did you save a backup of your files?",
+   "Of course, I always keep a copy on another drive."
+  ],
+  [
+   "Why is the internet so slow today?",
+   "The storm damaged some of the cables in the area."
+  ],
+  [
+   "Can you help me with this program?",
+   "Sure. Show me the error message first."
+  ],
+  [
+   "What does this error message mean?",
+   "It means the file could not be found."
+  ],
+  [
+   "Should I use a stronger password?",
+   "Definitely. Use a long phrase that is easy for you to remember."
+  ],
+  [
+   "How do solar panels produce electricity?",
+   "They turn sunlight directly into electrical energy."
+  ],
+  [
+   "Is recycling really worth the effort?",
+   "Yes, it reduces waste and saves natural resources."
+  ],
+  [
+   "Why are bees so important?",
+   "They pollinate the plants that give us fruit and vegetables."
+  ],
+  [
+   "What causes the tides in the ocean?",
+   "Mainly the pull of the moon on the water."
+  ],
+  [
+   "Have you ever seen a whale in the wild?",
+   "Once, from a boat far out at sea."
+  ],
+  [
+   "Are the mountain roads open in winter?",
+   "No, they are usually closed because of the snow."
+  ],
+  [
+   "What should we pack for the hike?",
+   "Water, food, a map and a warm layer."
+  ],
+  [
+   "How far is the lake from here?",
+   "About an hour on foot through the forest."
+  ],
+  [
+   "Did your team win the match on Saturday?",
+   "Yes, we won in the last few minutes."
+  ],
+  [
+   "How often does the team practice?",
+   "Twice a week, and more before important games."
+  ],
+  [
+   "Do you want to play football in the park?",
+   "Maybe later, when it is not so hot."
+  ],
+  [
+   "When does the next bus leave?",
+   "In ten minutes, from the stop across the street."
+  ],
+  [
+   "Is the airport far from the city center?",
+   "Not really, the train takes about half an hour."
+  ],
+  [
+   "Why was the flight delayed?",
+   "There was thick fog early in the morning."
+  ],
+  [
+   "Did you book a room at the hotel?",
+   "Yes, a room with a view of the lake."
+  ],
+  [
+   "How was your first day at the new job?",
+   "Busy, but my colleagues were very friendly."
+  ],
+  [
+   "What do you like most about your work?",
+   "Working with a team that communicates well."
+  ],
+  [
+   "Are you nervous about the presentation?",
+   "A little, but I have practiced it several times."
+  ],
+  [
+   "Who is leading the project this year?",
+   "The manager from the design department."
+  ],
+  [
+   "When is the report due?",
+   "At the end of the week, before the meeting."
+  ],
+  [
+   "Can we move the meeting to the afternoon?",
+   "That works for me. I will tell the others."
+  ],
+  [
+   "Did you read the news this morning?",
+   "Only the headlines. Was something important announced?"
+  ],
+  [
+   "What did the government announce?",
+   "A new plan to improve roads in rural areas."
+  ],
+  [
+   "Is public transport cheaper than driving?",
+   "Usually, and it is better for the environment too."
+  ],
+  [
+   "Do you ride your bicycle to work?",
+   "When the weather is good, yes."
+  ],
+  [
+   "Why did the price of vegetables go up?",
+   "The summer was very dry, so the harvest was small."
+  ],
+  [
+   "How do you manage to save money?",
+   "I put aside a little every week."
+  ],
+  [
+   "Would you like to buy a house one day?",
+   "Maybe, but for now renting is easier."
+  ],
+  [
+   "What are the children doing this afternoon?",
+   "They are building a snowman in front of the school."
+  ],
+  [
+   "Does your dog like going for walks?",
+   "He loves it, especially near the river."
+  ],
+  [
+   "Where did you adopt your cat?",
+   "From the animal shelter on the edge of town."
+  ],
+  [
+   "Have you planted anything in the garden?",
+   "Some herbs and tomatoes on the balcony."
+  ],
+  [
+   "What is your favorite season?",
+   "Autumn, when the leaves change color."
+  ],
+  [
+   "Did you see the sunset yesterday?",
+   "Yes, the whole sky turned orange and pink."
+  ],
+  [
+   "Can you recommend a good book?",
+   "I just finished a novel about a family moving abroad."
+  ],
+  [
+   "Is the author giving a talk at the bookstore?",
+   "Yes, on Thursday evening, and she will sign copies."
+  ],
+  [
+   "How do you remember what you read?",
+   "I write a short summary after each chapter."
+  ],
+  [
+   "Why do you take so many breaks while studying?",
+   "Short breaks help me concentrate for longer."
+  ],
+  [
+   "What will the final exam cover?",
+   "Everything we have studied this term."
+  ],
+  [
+   "Are we allowed to use notes during the exam?",
+   "No, and phones must be switched off."
+  ],
+  [
+   "Did you volunteer at the beach cleanup?",
+   "Yes, we collected many bags of rubbish."
+  ],
+  [
+   "Is the festival worth visiting?",
+   "Absolutely. People come from many countries."
+  ],
+  [
+   "Who built the old castle on the hill?",
+   "Nobody knows for sure, but it is very old."
+  ],
+  [
+   "Why were ancient cities built near rivers?",
+   "Rivers provided water, food and transport."
+  ],
+  [
+   "What did you learn at the science fair?",
+   "How robots can sort packages very quickly."
+  ],
+  [
+   "Will artificial intelligence replace many jobs?",
+   "Some jobs will change, and new ones will appear."
+  ],
+  [
+   "How can engineers make cars use less energy?",
+   "By making them lighter and more efficient."
+  ],
+  [
+   "Why is good communication so important?",
+   "Because misunderstandings can ruin a project."
+  ],
+  [
+   "Is it difficult to work in a large team?",
+   "Sometimes, but clear roles make it easier."
+  ],
+  [
+   "Shall we review the main points before we finish?",
+   "Good idea. Let us go through them one by one."
+  ],
+  [
+   "Do you have any questions before we end?",
+   "Just one: when is the next session?"
+  ],
+  [
+   "Thank you for your help today.",
+   "You are welcome. See you next week."
+  ]
+ ],
+ "reactions": [
+  "That makes sense.",
+  "I agree with that.",
+  "Really? I did not know that.",
+  "That is a good point.",
+  "I had the same experience.",
+  "Interesting, tell me more.",
+  "I am not so sure about that.",
+  "Exactly what I was thinking.",
+  "That sounds wonderful.",
+  "Good to know, thank you.",
+  "I will remember that.",
+  "Same here."
+ ]
+}

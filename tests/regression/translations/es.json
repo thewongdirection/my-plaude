@@ -1,0 +1,513 @@
+{
+ "language": "es",
+ "model": "translategemma:4b + translategemma:12b",
+ "source_sha1": "fba76066ed28099b550acc310984f2a97d35ed64",
+ "sentences": [
+  "Buenos días a todos, y bienvenidos a la conferencia de hoy.",
+  "Hoy vamos a hablar sobre cómo las máquinas aprenden de ejemplos.",
+  "Un modelo aprende patrones de los datos de entrenamiento que se le dan.",
+  "Si el modelo memoriza los datos de entrenamiento, tiene un mal rendimiento con nuevos datos.",
+  "Este problema se llama sobreajuste, y es muy común.",
+  "Una forma de reducir el sobreajuste es recopilar más datos de entrenamiento.",
+  "Otra forma es mantener el modelo simple.",
+  "La validación cruzada nos ayuda a estimar qué tan bien generalizará un modelo.",
+  "Por favor, anote las ideas principales en su cuaderno.",
+  "La tarea para la próxima semana es evaluar un modelo de clasificación simple.",
+  "La biblioteca está abierta todos los días hasta tarde en la noche.",
+  "Muchos estudiantes prefieren estudiar juntos en pequeños grupos.",
+  "Leer el capítulo antes de la clase hace que la conferencia sea mucho más fácil de seguir.",
+  "Si tiene alguna pregunta, por favor, levante la mano en cualquier momento.",
+  "El clima de hoy es frío y ventoso, así que lleve un abrigo cálido.",
+  "Llovió mucho anoche, y algunas calles se inundaron.",
+  "La primavera es mi estación favorita porque las flores comienzan a florecer.",
+  "El tren a la ciudad sale de la estación principal todas las mañanas.",
+  "Mi abuela me enseñó a cocinar sopa con verduras frescas.",
+  "Visitamos un pequeño pueblo cerca de las montañas durante las vacaciones de verano.",
+  "El mercado vende fruta, pan, queso y pescado fresco.",
+  "Beber suficiente agua todos los días es importante para su salud.",
+  "El ejercicio regular mejora tanto el cuerpo como la mente.",
+  "Los médicos recomiendan dormir bien antes de un examen importante.",
+  "El museo tiene una gran colección de pinturas y esculturas antiguas.",
+  "La música puede ayudar a las personas a relajarse después de un largo y estresante día.",
+  "Los niños jugaron al fútbol en el parque hasta que se fue el sol.",
+  "Nuestros vecinos adoptaron un perro amigable del refugio de animales.",
+  "El río fluye lentamente a través del valle hacia el mar.",
+  "Los bosques proporcionan hogares para muchos animales y limpian el aire que respiramos.",
+  "El cambio climático afecta a los agricultores, las ciudades y la vida silvestre de todo el mundo.",
+  "Los paneles solares convierten la luz solar en electricidad para hogares y escuelas.",
+  "Reciclar papel y plástico reduce la cantidad de residuos que producimos.",
+  "El nuevo puente hará que los viajes entre las dos ciudades sean mucho más rápidos.",
+  "Los ingenieros deben probar cuidadosamente cada diseño antes de construirlo.",
+  "Un buen científico siempre cuestiona los resultados de un experimento.",
+  "El telescopio nos permite ver estrellas y planetas distantes.",
+  "La luna tiene una fuerte influencia en las mareas del océano.",
+  "La historia nos enseña cómo vivían y trabajaban las personas en el pasado.",
+  "Las ciudades antiguas a menudo se construían junto a los ríos para obtener agua fresca.",
+  "Aprender un segundo idioma abre las puertas a nuevas culturas.",
+  "Practica hablar un poco cada día, incluso cuando te resulte difícil.",
+  "El profesor explicó la regla gramatical con varios ejemplos claros.",
+  "Escribir un breve resumen te ayuda a recordar lo que has leído.",
+  "Las computadoras siguen instrucciones que son escritas por programadores.",
+  "Un pequeño error en el código puede causar que todo el programa falle.",
+  "Guarda siempre una copia de respaldo de tus archivos importantes.",
+  "Internet ha cambiado la forma en que nos comunicamos entre nosotros.",
+  "Por favor, apaga tu teléfono durante el examen.",
+  "La reunión se ha trasladado a la gran sala del segundo piso.",
+  "Nuestra empresa busca personas que disfruten trabajando en equipo.",
+  "Una buena comunicación es la clave para un proyecto exitoso.",
+  "El restaurante de la esquina sirve fideos y arroz deliciosos.",
+  "Deberíamos salir temprano para evitar el tráfico pesado por la mañana.",
+  "El hospital está construyendo un nuevo ala para niños.",
+  "Los voluntarios limpiaron la playa y recogieron muchas bolsas de basura.",
+  "El festival atrae a visitantes de muchos países diferentes.",
+  "Gracias por escuchar, y nos vemos la semana que viene.",
+  "Antes de terminar, repasemos los puntos más importantes.",
+  "Recuerda que aprender lleva tiempo, paciencia y curiosidad.",
+  "La panadería abre muy temprano para que la gente pueda comprar pan en su camino al trabajo.",
+  "Tiene un pequeño jardín en su balcón con hierbas y tomates.",
+  "El autobús llegó tarde esta mañana debido a un accidente en la autopista.",
+  "Él siempre lee el periódico mientras bebe su café.",
+  "El ayuntamiento decidió plantar más árboles a lo largo de la avenida principal.",
+  "Nuestra escuela organiza una feria de ciencias al final de cada año.",
+  "Los estudiantes presentaron sus proyectos a padres y profesores.",
+  "Un fuerte viento derribó varios árboles en el parque.",
+  "Los agricultores esperan la lluvia después de un verano largo y seco.",
+  "El antiguo castillo en la colina atrae a muchos turistas.",
+  "Por favor, recuerda traer tu identificación a la oficina.",
+  "La farmacia está al lado de la oficina de correos, enfrente del banco.",
+  "Mi hermano está aprendiendo a tocar la guitarra por la noche.",
+  "El concierto fue cancelado porque el cantante estaba enfermo.",
+  "Vimos un documental sobre los animales de la selva tropical.",
+  "El océano cubre la mayor parte de la superficie de nuestro planeta.",
+  "Las ballenas se comunican entre sí utilizando canciones largas y complejas.",
+  "Las abejas desempeñan un papel importante en el crecimiento de frutas y verduras.",
+  "La carretera de montaña está cerrada en invierno debido a la nieve.",
+  "Los excursionistas siempre deben llevar agua, comida y un mapa.",
+  "El equipo celebró su victoria con una gran cena.",
+  "El entrenador recordó a los jugadores que descansaran antes del partido final.",
+  "Nuestros abuelos a menudo cuentan historias sobre su infancia.",
+  "El pueblo organiza un mercado en la plaza todos los fines de semana.",
+  "El chef utiliza ingredientes frescos de granjas locales.",
+  "Por favor, lávese las manos antes de preparar la comida.",
+  "La cocina huele maravillosamente cuando mi madre hornea un pastel.",
+  "El precio de las verduras ha aumentado considerablemente este mes.",
+  "Ahorrar un poco de dinero cada semana puede marcar una gran diferencia.",
+  "El banco ofrece asesoramiento a las personas que quieren comprar una casa.",
+  "La fábrica contrató nuevos trabajadores para satisfacer la creciente demanda.",
+  "El transporte público ayuda a reducir la contaminación en las grandes ciudades.",
+  "Cada vez más personas van al trabajo en bicicleta.",
+  "El gobierno anunció un plan para mejorar las carreteras rurales.",
+  "Los periódicos y las páginas web informaron de las noticias en cuestión de minutos.",
+  "La científica explicó su descubrimiento en palabras sencillas.",
+  "El laboratorio necesita nuevo equipo para sus experimentos.",
+  "Las vacunas han protegido a millones de personas de enfermedades graves.",
+  "La enfermera revisó la temperatura del paciente cada hora.",
+  "Una dieta equilibrada incluye frutas, verduras y cereales integrales.",
+  "Caminar en la naturaleza puede reducir el estrés y mejorar tu estado de ánimo.",
+  "El artista pintó el retrato utilizando colores brillantes.",
+  "El teatro está presentando una nueva obra esta temporada.",
+  "El autor firmó ejemplares de su último libro en la librería.",
+  "La poesía a menudo expresa sentimientos que son difíciles de describir.",
+  "El fotógrafo esperó horas para capturar el amanecer.",
+  "La película cuenta la historia de una familia que se muda a un nuevo país.",
+  "Los niños aprenden rápidamente cuando son curiosos y están animados.",
+  "El profesor pidió a la clase que trabajaran en parejas.",
+  "El examen final cubrirá todo lo que hemos estudiado este semestre.",
+  "Por favor, entregue su ensayo antes de final de semana.",
+  "El profesor respondió a las preguntas después de la conferencia.",
+  "Tomar descansos regulares te ayuda a concentrarte durante más tiempo.",
+  "El robot puede clasificar paquetes más rápido que un trabajador humano.",
+  "La inteligencia artificial está cambiando muchas industrias.",
+  "Los ingenieros están diseñando coches que consumen menos energía.",
+  "La actualización de software solucionó varios problemas de seguridad.",
+  "Las contraseñas fuertes protegen sus cuentas de los atacantes.",
+  "La impresora del tercer piso se ha quedado sin papel de nuevo.",
+  "Nuestra conexión a internet era lenta durante la tormenta.",
+  "El aeropuerto estaba lleno de viajeros durante las vacaciones.",
+  "El vuelo se retrasó debido a la niebla.",
+  "La habitación del hotel tenía una hermosa vista del lago.",
+  "Alquilamos un pequeño bote y navegamos por la costa.",
+  "El faro guiaba a los barcos de forma segura hacia el puerto.",
+  "Los pescadores regresaron al puerto con una gran captura.",
+  "La nieve cubría los tejados y las calles estaban tranquilas.",
+  "Los niños construyeron un muñeco de nieve frente a la escuela.",
+  "Las hojas de otoño se vuelven rojas, naranjas y amarillas.",
+  "El atardecer sobre el mar era absolutamente hermoso."
+ ],
+ "exchanges": [
+  [
+   "¿Has terminado de leer el capítulo para hoy?",
+   "Sí, lo leí la noche anterior, pero la segunda parte fue difícil."
+  ],
+  [
+   "¿Qué te pareció la conferencia de esta mañana?",
+   "Fue interesante, especialmente la parte sobre los datos de entrenamiento."
+  ],
+  [
+   "¿Vienes al grupo de estudio esta noche?",
+   "Me gustaría, pero tengo que trabajar hasta tarde."
+  ],
+  [
+   "¿Dónde deberíamos encontrarnos antes del examen?",
+   "Que nos encontremos frente a la biblioteca un poco antes."
+  ],
+  [
+   "¿Comprendes cómo funciona la validación cruzada?",
+   "Creo que sí. Tú pruebas el modelo con datos que no ha visto."
+  ],
+  [
+   "¿Por qué el modelo funciona mal con nuevos datos?",
+   "Porque memorizó los ejemplos de entrenamiento en lugar de aprender patrones."
+  ],
+  [
+   "¿Cuánto tiempo te tomó la tarea?",
+   "La mayor parte de la tarde, porque cometí un error al principio."
+  ],
+  [
+   "¿Podrías explicar el último ejemplo de nuevo?",
+   "Por supuesto. Dividimos los datos y comparamos los resultados."
+  ],
+  [
+   "¿Es el profesor estricto con los plazos?",
+   "Muy estricto, así que por favor no entregues nada tarde."
+  ],
+  [
+   "¿Has visto el nuevo horario para la próxima semana?",
+   "Sí, la reunión se trasladó a la tarde."
+  ],
+  [
+   "¿Cómo es el tiempo afuera?",
+   "Hace frío y viento, así que trae una chaqueta abrigada."
+  ],
+  [
+   "¿Lloverá este fin de semana?",
+   "El pronóstico dice que habrá lluvia ligera el domingo."
+  ],
+  [
+   "¿Adónde fuiste en tus vacaciones de verano?",
+   "Visitamos un pueblo tranquilo cerca de las montañas."
+  ],
+  [
+   "¿Cómo fue el viaje a la costa?",
+   "Hermoso. Caminamos por la playa todas las noches."
+  ],
+  [
+   "¿Tomaste el tren o el autobús?",
+   "El tren, porque es más rápido y cómodo."
+  ],
+  [
+   "¿Está abierto el museo los lunes?",
+   "No, está cerrado los lunes, pero abierto el resto de la semana."
+  ],
+  [
+   "¿Qué te gustaría comer esta noche?",
+   "Algo sencillo, tal vez sopa y pan fresco."
+  ],
+  [
+   "¿Puedes recomendar un buen restaurante cercano?",
+   "El pequeño restaurante de la esquina sirve fideos excelentes."
+  ],
+  [
+   "¿Cocinas en casa con mucha frecuencia?",
+   "Casi todos los días. Es más saludable y económico."
+  ],
+  [
+   "¿Quién te enseñó a hacer pan?",
+   "Mi abuela me enseñó cuando era niño."
+  ],
+  [
+   "¿Deberíamos comprar fruta en el mercado?",
+   "Sí, la fruta allí es más fresca que en el supermercado."
+  ],
+  [
+   "¿Cuánta agua bebes cada día?",
+   "No lo suficiente, realmente debería beber más."
+  ],
+  [
+   "¿Haces ejercicio antes o después del trabajo?",
+   "Normalmente por la mañana, antes de que abra la oficina."
+  ],
+  [
+   "¿Cómo dormiste anoche?",
+   "Mal. Los vecinos estaban escuchando música fuerte."
+  ],
+  [
+   "¿Te sientes mejor hoy?",
+   "Mucho mejor, gracias. El resto realmente ayudó."
+  ],
+  [
+   "¿El médico te dio algún consejo?",
+   "Me dijo que descansara y bebiera mucha agua."
+  ],
+  [
+   "¿Alguna vez has intentado aprender un segundo idioma?",
+   "Sí, practico un poco todos los días con una aplicación."
+  ],
+  [
+   "¿Cuál es la parte más difícil de aprender un idioma?",
+   "Hablar con confianza, especialmente por teléfono."
+  ],
+  [
+   "¿Prefieres leer libros o ver películas?",
+   "Libros, porque puedo imaginar la historia yo mismo."
+  ],
+  [
+   "¿Qué tipo de música disfrutas?",
+   "Principalmente música tranquila que me ayuda a relajarme."
+  ],
+  [
+   "¿Disfrutaste del concierto anoche?",
+   "Mucho. La orquesta era maravillosa."
+  ],
+  [
+   "¿Has visitado la nueva galería de arte?",
+   ""
+  ],
+  [
+   "¿Tu ordenador funciona de nuevo?",
+   "Sí, la actualización solucionó el problema."
+  ],
+  [
+   "¿Has guardado una copia de seguridad de tus archivos?",
+   "Por supuesto, siempre tengo una copia en otro disco."
+  ],
+  [
+   "¿Por qué internet es tan lento hoy?",
+   "La tormenta dañó algunos cables en la zona."
+  ],
+  [
+   "¿Puedes ayudarme con este programa?",
+   "Sí. Muéstrame primero el mensaje de error."
+  ],
+  [
+   "¿Qué significa este mensaje de error?",
+   "Significa que el archivo no se pudo encontrar."
+  ],
+  [
+   "¿Debería usar una contraseña más fuerte?",
+   "Definitivamente. Usa una frase larga que sea fácil de recordar."
+  ],
+  [
+   "¿Cómo producen la energía eléctrica los paneles solares?",
+   "Los convierten directamente en energía eléctrica."
+  ],
+  [
+   "¿Vale realmente la pena el esfuerzo de reciclar?",
+   "Sí, reduce los residuos y ahorra recursos naturales."
+  ],
+  [
+   "¿Por qué son tan importantes las abejas?",
+   "Polinizan las plantas que nos dan fruta y verduras."
+  ],
+  [
+   "¿Qué causa las mareas en el océano?",
+   "Principalmente la atracción de la luna sobre el agua."
+  ],
+  [
+   "¿Alguna vez has visto una ballena en la naturaleza?",
+   "Una vez, desde un barco lejos en el mar."
+  ],
+  [
+   "¿Están abiertas las carreteras de montaña en invierno?",
+   "No, normalmente están cerradas debido a la nieve."
+  ],
+  [
+   "¿Qué deberíamos llevar para la excursión?",
+   "Agua, comida, un mapa y una prenda abrigada."
+  ],
+  [
+   "¿A qué distancia está el lago de aquí?",
+   "Aproximadamente una hora a pie por el bosque."
+  ],
+  [
+   "¿Ganó su equipo el partido el sábado?",
+   "Sí, ganamos en los últimos minutos."
+  ],
+  [
+   "¿Con qué frecuencia practica el equipo?",
+   "Dos veces por semana, y más antes de partidos importantes."
+  ],
+  [
+   "¿Quieres jugar al fútbol en el parque?",
+   "Quizás más tarde, cuando no haga tanto calor."
+  ],
+  [
+   "¿A qué hora sale el próximo autobús?",
+   "En diez minutos, desde la parada de enfrente."
+  ],
+  [
+   "¿Está el aeropuerto lejos del centro de la ciudad?",
+   "No, el tren tarda aproximadamente media hora."
+  ],
+  [
+   "¿Por qué se retrasó el vuelo?",
+   "Había mucha niebla temprano en la mañana."
+  ],
+  [
+   "¿Reservaste una habitación en el hotel?",
+   "Sí, una habitación con vistas al lago."
+  ],
+  [
+   "¿Cómo fue tu primer día en el nuevo trabajo?",
+   "Estresante, pero mis compañeros fueron muy amables."
+  ],
+  [
+   "¿Qué es lo que más te gusta de tu trabajo?",
+   "Trabajar en equipo que se comunica bien."
+  ],
+  [
+   "¿Estás nervioso por la presentación?",
+   "Un poco, pero he practicado varias veces."
+  ],
+  [
+   "¿Quién está liderando el proyecto este año?",
+   "El gerente del departamento de diseño."
+  ],
+  [
+   "¿Cuándo es la fecha límite del informe?",
+   "Al final de la semana, antes de la reunión."
+  ],
+  [
+   "¿Podemos trasladar la reunión a la tarde?",
+   "Eso me funciona. Lo haré saber a los demás."
+  ],
+  [
+   "¿Leyó las noticias esta mañana?",
+   "Solo los titulares. ¿Se anunció algo importante?"
+  ],
+  [
+   "¿Qué anunció el gobierno?",
+   "Un nuevo plan para mejorar las carreteras en zonas rurales."
+  ],
+  [
+   "¿El transporte público es más barato que conducir?",
+   "Normalmente, y también es mejor para el medio ambiente."
+  ],
+  [
+   "¿Sacas en bicicleta al trabajo?",
+   "Cuando hace buen tiempo, sí."
+  ],
+  [
+   "¿Por qué subió el precio de las verduras?",
+   "El verano fue muy seco, así que la cosecha fue pequeña."
+  ],
+  [
+   "¿Cómo logras ahorrar dinero?",
+   "Aparto un poco cada semana."
+  ],
+  [
+   "¿Te gustaría comprar una casa algún día?",
+   "Quizás, pero por ahora alquilar es más fácil."
+  ],
+  [
+   "¿Qué están haciendo los niños esta tarde?",
+   "Están construyendo un muñeco de nieve frente a la escuela."
+  ],
+  [
+   "¿A tu perro le gusta dar paseos?",
+   "Le encanta, especialmente cerca del río."
+  ],
+  [
+   "¿Dónde adoptaste a tu gato?",
+   "Del refugio de animales en las afueras de la ciudad."
+  ],
+  [
+   "¿Has plantado algo en el jardín?",
+   "Algunas hierbas y tomates en el balcón."
+  ],
+  [
+   "¿Cuál es tu estación favorita?",
+   "Otoño, cuando cambian los colores de las hojas."
+  ],
+  [
+   "¿Viste el atardecer ayer?",
+   "Sí, todo el cielo se volvió naranja y rosa."
+  ],
+  [
+   "¿Puedes recomendar un buen libro?",
+   "Acabo de terminar una novela sobre una familia que se muda al extranjero."
+  ],
+  [
+   "¿El autor está dando una charla en la librería?",
+   "Sí, el jueves por la noche, y firmará copias."
+  ],
+  [
+   "¿Cómo recuerdas lo que lees?",
+   "Escribo un breve resumen después de cada capítulo."
+  ],
+  [
+   "¿Por qué tomas tantas pausas mientras estudias?",
+   "Las pausas cortas me ayudan a concentrarme durante más tiempo."
+  ],
+  [
+   "¿Qué cubrirá el examen final?",
+   "Todo lo que hemos estudiado este semestre."
+  ],
+  [
+   "¿Se nos permite usar notas durante el examen?",
+   "No, y los teléfonos deben estar apagados."
+  ],
+  [
+   "¿Participaste en la limpieza de la playa?",
+   "Sí, recogimos muchas bolsas de basura."
+  ],
+  [
+   "¿Vale la pena visitar el festival?",
+   "Absolutamente. La gente viene de muchos países."
+  ],
+  [
+   "¿Quién construyó el castillo antiguo en la colina?",
+   "Nadie lo sabe con certeza, pero es muy antiguo."
+  ],
+  [
+   "¿Por qué se construyeron ciudades antiguas cerca de los ríos?",
+   "Los ríos proporcionaban agua, comida y transporte."
+  ],
+  [
+   "¿Qué aprendiste en la feria de ciencias?",
+   "¿Cómo los robots pueden clasificar paquetes muy rápidamente?"
+  ],
+  [
+   "¿La inteligencia artificial reemplazará muchos trabajos?",
+   "Algunos trabajos cambiarán, y aparecerán nuevos."
+  ],
+  [
+   "¿Cómo pueden los ingenieros hacer que los coches consuman menos energía?",
+   "Haciéndolos más ligeros y eficientes."
+  ],
+  [
+   "¿Por qué la buena comunicación es tan importante?",
+   "Porque los malentendidos pueden arruinar un proyecto."
+  ],
+  [
+   "¿Es difícil trabajar en un gran equipo?",
+   "A veces, pero los roles claros lo hacen más fácil."
+  ],
+  [
+   "¿Vamos a repasar los puntos principales antes de terminar?",
+   "Buena idea. Vamos a revisarlos uno por uno."
+  ],
+  [
+   "¿Tienes alguna pregunta antes de terminar?",
+   "Solo una: ¿cuándo es la próxima sesión?"
+  ],
+  [
+   "Gracias por tu ayuda hoy.",
+   "De nada. Nos vemos la semana que viene."
+  ]
+ ],
+ "reactions": [
+  "Eso tiene sentido.",
+  "Estoy de acuerdo con eso.",
+  "¿En serio? Yo tampoco lo sabía.",
+  "Ese es un buen punto.",
+  "Yo también tuve la misma experiencia.",
+  "Interesante, cuéntame más.",
+  "No estoy tan seguro de eso.",
+  "Exactamente lo que estaba pensando.",
+  "Suena maravilloso.",
+  "Bien, gracias.",
+  "Lo recordaré.",
+  "Aquí también."
+ ]
+}
