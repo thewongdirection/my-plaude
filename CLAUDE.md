@@ -81,6 +81,22 @@ Invoke-Pester -Path ./powershell
 
 Keep both suites green when changing either implementation.
 
+## Regression corpus translations (rule)
+
+The multilingual regression corpus (`tests/regression/`) is translated from the
+English banks by a local LLM on the CPU. **Use the 12B model whenever
+translation quality looks poor**: always generate with
+`--model translategemma:4b --fallback-model translategemma:12b` (or the 12B
+alone). Any line that fails the quality checks (`quality_problem` in
+`generate_corpus.py`: wrong/mixed script, English echo or paraphrase,
+markup/junk, implausible length, repetition loop) after the 4B's own retry is
+redone with the 12B; a language the 4B garbles wholesale is redone entirely
+with the 12B; existing translation files are re-checked and their poor lines
+repaired the same way. Never commit a translation file with lines that fail
+these checks - `tests/test_regression_suite.py` enforces it. When you tighten
+the checks, rerun `generate_corpus.py --phase translate` with the fallback so
+committed files are repaired.
+
 ## Conventions
 
 - Keep the CLI usable without optional deps installed (`--help`, `--check` must

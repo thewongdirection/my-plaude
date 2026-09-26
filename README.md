@@ -632,9 +632,13 @@ python tests/regression/generate_corpus.py --phase audio
 
 Pass `--model` to pick the translation model (recommended, e.g.
 `--model translategemma:4b`; each file records it), `--ollama-device auto` to
-let Ollama use a GPU, `--ollama-url` for a non-default server, `--fallback-model` to redo a
-language the main model garbles (a 4B model manages Thai or German but not
-Burmese or Khmer; the 12B does), and
+let Ollama use a GPU, `--ollama-url` for a non-default server, `--fallback-model` for the bigger
+model that takes over **whenever translation quality looks poor** - every
+line is checked (wrong or mixed script, English echoes, junk/markup,
+implausible length, repetition loops); lines that still fail after the main
+model's retry, whole languages it garbles (a 4B model manages Thai or German
+but not Burmese or Khmer), and poor lines in existing files are redone with
+the fallback (the 12B), and
 `--languages de,ja` to limit either phase. Only transient Ollama errors
 (connection refused, HTTP 5xx) are retried. Each translation file stores a hash
 of the English source lines, so editing `sentences.py` / `dialogues.py` makes

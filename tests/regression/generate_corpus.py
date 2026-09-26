@@ -24,10 +24,16 @@ Two phases (``--phase``; the default runs both, overlapped):
   ``dialogues.py`` is re-translated. Progress is kept in
   ``<code>.partial.json`` so an interrupted or partly-failed language resumes
   without redoing the lines that already passed. To re-translate a language,
-  delete its ``translations/<code>.json``. With ``--fallback-model``, a
-  language the main model cannot translate well enough (small models garble
-  low-resource scripts such as Burmese or Khmer) is redone with the bigger
-  fallback model.
+  delete its ``translations/<code>.json``.
+
+  Quality rule: with ``--fallback-model`` (translategemma:12b), the bigger
+  model is used WHENEVER translation quality looks poor - any line that fails
+  the quality checks (``translation_ok``: wrong or mixed scripts, English
+  echoes, junk/markup, implausible length, repetition loops) after the main
+  model's own retry is redone by the fallback model; a language the main model
+  garbles wholesale (e.g. Burmese, Khmer with a 4B model) is redone entirely by
+  it; and existing translation files are re-checked and their poor lines
+  repaired the same way.
 * ``audio`` - needs no LLM and no GPU: synthesize each line with a Microsoft
   neural voice (``edge-tts``, a cloud service; cached per voice+line) and
   assemble files line by line - with natural pauses and exact speaker-turn
@@ -147,15 +153,44 @@ def clean_reply(text: str) -> str:
     return lines[0].strip(" \"'\u201c\u201d\u00ab\u00bb") if lines else ""
 
 
-def translation_ok(src_en: str, text: str, script: str) -> bool:
-    """A usable translation: non-empty, right script, and not (mostly) English."""
+# Scripts that pack a sentence into few characters (expected length vs English).
+_DENSE_SCRIPTS = {"CJK", "HANGUL"}
+# Other scripts a line may legitimately contain besides its own.
+_ALSO_ALLOWED = {"HANGUL": ("CJK",)}
+_JUNK = re.compile(r"[\[\]{}<>|\\]|&#|\\u[0-9a-f]{4}", re.I)
+_LOOP = re.compile(r"(.{1,8}?)\1{4,}", re.S)
+
+
+def foreign_letters(text: str, script: str) -> int:
+    """Letters from a script that has no business in a ``script`` line (Latin
+    loanwords are allowed) - e.g. Greek or Han characters inside Burmese."""
+    allowed = {"CJK": ("CJK", "HIRAGANA", "KATAKANA")}.get(script, (script,))
+    allowed = allowed + _ALSO_ALLOWED.get(script, ()) + ("LATIN", "FULLWIDTH")
+    return sum(1 for c in text if unicodedata.category(c).startswith("L")
+               and not unicodedata.name(c, "").startswith(allowed))
+
+
+def quality_problem(src_en: str, text: str, script: str):
+    """Why ``text`` looks like a poor translation of ``src_en`` (None if fine)."""
     text = (text or "").strip()
-    if not text or script_ratio(text, script) < 0.6:
-        return False
+    if not text:
+        return "empty"
+    if script_ratio(text, script) < 0.6:
+        return "wrong script"
+    if foreign_letters(text, script) > 1:
+        return "mixed-in foreign script"
+    if _JUNK.search(text):
+        return "markup / junk characters"
+    if _LOOP.search(text):
+        return "repetition loop"
+    ratio = len(text) / max(1, len(src_en.strip()))
+    lo, hi = (0.12, 1.3) if script in _DENSE_SCRIPTS else (0.35, 3.5)
+    if not lo <= ratio <= hi:
+        return f"implausible length ({ratio:.2f}x the English)"
     if script != "LATIN":
-        return True
+        return None
     if _PREAMBLE.match(text) or text.casefold().strip(".!? ") == src_en.casefold().strip(".!? "):
-        return False
+        return "English echo"
     # An English echo keeps (nearly) all of the source's content words. A real
     # translation keeps a few cognates / loanwords - Filipino and Malay often
     # borrow "backup", "files", "manager" - so only flag near-total overlap on
@@ -163,12 +198,19 @@ def translation_ok(src_en: str, text: str, script: str) -> bool:
     src = content_words(src_en)
     shared = src & content_words(text)
     if len(src) >= 4 and len(shared) >= 0.8 * len(src):
-        return False
+        return "English echo"
     # An English paraphrase is full of English function words ("the", "has",
     # "been", "to"); translations - even loanword-heavy ones - are not.
     words = re.findall(r"[a-z]+", text.lower())
     english = sum(w in STOPWORDS for w in words)
-    return not (len(words) >= 5 and english >= 0.3 * len(words))
+    if len(words) >= 5 and english >= 0.3 * len(words):
+        return "English paraphrase"
+    return None
+
+
+def translation_ok(src_en: str, text: str, script: str) -> bool:
+    """A usable translation: passes every check in ``quality_problem``."""
+    return quality_problem(src_en, text, script) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -286,7 +328,27 @@ def load_translation(code: str):
     return _read_matching(translation_path(code))
 
 
-def translate_language(lang: dict, call, model: str = "", retry_call=None) -> dict:
+def _flatten(data: dict) -> list:
+    return (list(data["sentences"]) + [l for ex in data["exchanges"] for l in ex]
+            + list(data["reactions"]))
+
+
+def _bad_lines(src: list, out: list, script: str) -> list:
+    return [i for i in range(len(src)) if not translation_ok(src[i], out[i], script)]
+
+
+def _retry_lines(lines: list, src: list, bad: list, call, lang: dict) -> None:
+    from plaude_local import summarize
+    for i in bad:
+        try:
+            lines[i] = clean_reply(summarize.translate_text(
+                src[i], call, target_language=lang["name"]))
+        except summarize.SummarizeError as exc:
+            print(f"{lang['code']}: line {i} retry failed ({exc})", flush=True)
+
+
+def translate_language(lang: dict, call, model: str = "", retry_call=None,
+                       fallback_call=None, fallback_name: str = "") -> dict:
     """Translated sentence / exchange / reaction banks for ``lang``.
 
     Reuses ``translations/<code>.json`` when it matches the current English
@@ -294,14 +356,33 @@ def translate_language(lang: dict, call, model: str = "", retry_call=None) -> di
     Batch output is saved to ``<code>.partial.json`` first, so a rerun after a
     failure only re-translates the lines that did not pass validation; those
     are retried with ``retry_call`` (a non-zero temperature), since repeating
-    the same prompt at temperature 0 gives the same answer."""
+    the same prompt at temperature 0 gives the same answer.
+
+    Quality rule: any line still failing the quality checks afterwards is
+    redone with ``fallback_call`` (the bigger model) when one is given - and
+    so are poor lines found in an existing translation file."""
     from plaude_local import summarize
 
-    existing = load_translation(lang["code"])
-    if existing:
-        return existing
-    src = english_lines()
     code = lang["code"]
+    src = english_lines()
+    existing = load_translation(code)
+    if existing:
+        if fallback_call is None or code == "en":
+            return existing
+        out = _flatten(existing)
+        bad = _bad_lines(src, out, lang["script"])
+        if not bad:
+            return existing
+        print(f"{code}: {len(bad)} poor line(s) in {translation_path(code).name} - "
+              f"redoing them with {fallback_name!r}", flush=True)
+        _retry_lines(out, src, bad, fallback_call, lang)
+        still = _bad_lines(src, out, lang["script"])
+        for i in still:
+            out[i] = ""
+        model = existing.get("model") or model
+        if fallback_name and fallback_name not in model:
+            model = f"{model} + {fallback_name}"
+        return _write_translation(code, out, model)
     if code == "en":
         out = list(src)
     else:
@@ -317,22 +398,36 @@ def translate_language(lang: dict, call, model: str = "", retry_call=None) -> di
             out = [clean_reply(line) for line in
                    summarize.translate_lines(src, call, target_language=lang["name"])]
             write_json_atomic(partial_path(code), {"source_sha1": source_sha1(), "lines": out})
-        bad = [i for i in range(len(src)) if not translation_ok(src[i], out[i], lang["script"])]
-        for i in bad:  # one retry per rejected line, sampled differently
-            out[i] = clean_reply(summarize.translate_text(
-                src[i], retry_call or call, target_language=lang["name"]))
+        bad = _bad_lines(src, out, lang["script"])
+        # A language the model garbles wholesale is cheaper to redo in batches
+        # with the fallback than line by line: hand it back to the caller.
+        if fallback_call is not None and len(bad) > len(src) * 0.25:
+            raise RuntimeError(f"{code}: {len(bad)} of {len(src)} lines are poor "
+                               f"{lang['name']} translations")
+        _retry_lines(out, src, bad, retry_call or call, lang)  # sampled differently
         write_json_atomic(partial_path(code), {"source_sha1": source_sha1(), "lines": out})
-        bad = [i for i in range(len(src)) if not translation_ok(src[i], out[i], lang["script"])]
+        bad = _bad_lines(src, out, lang["script"])
+        if bad and fallback_call is not None:  # quality rule: the bigger model redoes them
+            print(f"{code}: redoing {len(bad)} poor line(s) with {fallback_name!r}", flush=True)
+            _retry_lines(out, src, bad, fallback_call, lang)
+            write_json_atomic(partial_path(code), {"source_sha1": source_sha1(), "lines": out})
+            if fallback_name and fallback_name not in model:
+                model = f"{model} + {fallback_name}"
+            bad = _bad_lines(src, out, lang["script"])
         if len(bad) > len(src) * 0.05:
             raise RuntimeError(f"{code}: {len(bad)} of {len(src)} lines are not valid "
                                f"{lang['name']} translations (progress kept in "
                                f"{partial_path(code).name}; rerun to retry them)")
         for i in bad:  # a handful of stubborn lines: drop them from use
             out[i] = ""
+    return _write_translation(code, out, model)
+
+
+def _write_translation(code: str, out: list, model: str) -> dict:
     n_s, n_e = len(SENTENCES), len(EXCHANGES)
     data = {
         "language": code,
-        "model": model if code != "en" else None,
+        "model": (model or None) if code != "en" else None,
         "source_sha1": source_sha1(),
         "sentences": out[:n_s],
         "exchanges": [[out[n_s + 2 * k], out[n_s + 2 * k + 1]] for k in range(n_e)],
@@ -579,16 +674,27 @@ def main(argv=None) -> int:
         return (name, *calls_for(name))
 
     def translate_with_fallback(lang):
+        fb_name, fb_call, fb_retry = fallback or ("", None, None)
         try:
-            return translate_language(lang, call, model, retry_call)
+            return translate_language(lang, call, model, retry_call,
+                                      fallback_call=fb_call, fallback_name=fb_name)
         except RuntimeError as exc:
             if not fallback:
                 raise
-            print(f"{lang['code']}: {exc} - retrying with {fallback[0]!r}", flush=True)
-            return translate_language(lang, fallback[1], f"{model} + {fallback[0]}", fallback[2])
+            print(f"{lang['code']}: {exc} - redoing the language with {fb_name!r}", flush=True)
+            return translate_language(lang, fb_call, f"{model} + {fb_name}", fb_retry)
 
     def needs_llm(langs_):
-        return any(l["code"] != "en" and not load_translation(l["code"]) for l in langs_)
+        """Something to translate - or, with a fallback model, poor lines to repair."""
+        for l in langs_:
+            if l["code"] == "en":
+                continue
+            data = load_translation(l["code"])
+            if not data:
+                return True
+            if args.fallback_model and _bad_lines(english_lines(), _flatten(data), l["script"]):
+                return True
+        return False
 
     if args.phase == "translate":
         selected = [l for l in LANGUAGES if not wanted or l["code"] in wanted]
@@ -596,7 +702,7 @@ def main(argv=None) -> int:
             model, call, retry_call = translator()
         failed = []
         for lang in selected:
-            if load_translation(lang["code"]):
+            if load_translation(lang["code"]) and call is None:
                 continue
             t0 = time.time()
             try:
@@ -647,7 +753,7 @@ def main(argv=None) -> int:
 
     def get_bank(lang):
         bank = load_translation(lang["code"])
-        if bank:
+        if bank and call is None:
             return bank
         if call is None and lang["code"] != "en":
             raise RuntimeError("no translations/%s.json - run --phase translate first" % lang["code"])

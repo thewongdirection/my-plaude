@@ -21,6 +21,15 @@ import run_regression as rr  # noqa: E402
 import scoring  # noqa: E402
 
 
+_SHIFT = str.maketrans("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                       "bcdefghijklmnopqrstuvwxyzaBCDEFGHIJKLMNOPQRSTUVWXYZA")
+
+
+def fake_translation(en: str) -> str:
+    """A stand-in "translation": same length, Latin script, but no English words."""
+    return en.translate(_SHIFT)
+
+
 class TestScoring(unittest.TestCase):
     def test_cer_ignores_case_space_and_punctuation(self):
         self.assertEqual(scoring.cer("Hello, World!", "hello world"), 0.0)
@@ -324,17 +333,17 @@ class TestNoGpuTranslation(unittest.TestCase):
         folder = self._in_temp_translations()
         src = gen.english_lines()
         lang = {"code": "de", "name": "German", "script": "LATIN"}
-        good = ["Guten Morgen, liebe Leute, willkommen hier."] * len(src)
+        good = [fake_translation(x) for x in src]
         lines = list(good)
         lines[0] = src[0]  # an English echo that must be re-translated
         gen.write_json_atomic(folder / "de.partial.json",
                               {"source_sha1": gen.source_sha1(), "lines": lines})
-        retry = mock.Mock(return_value="Guten Morgen zusammen.")
+        retry = mock.Mock(return_value=good[0])
         with mock.patch.object(summarize, "translate_lines") as batch:
             data = gen.translate_language(lang, call=None, model="m", retry_call=retry)
         batch.assert_not_called()          # resumed from the partial file
         self.assertEqual(retry.call_count, 1)  # only the one bad line
-        self.assertEqual(data["sentences"][0], "Guten Morgen zusammen.")
+        self.assertEqual(data["sentences"][0], good[0])
         self.assertEqual(data["source_sha1"], gen.source_sha1())
         self.assertFalse((folder / "de.partial.json").exists())
         self.assertTrue((folder / "de.json").exists())
@@ -362,7 +371,7 @@ class TestNoGpuTranslation(unittest.TestCase):
         lang = {"code": "de", "name": "German", "script": "LATIN"}
         gen.write_json_atomic(folder / "de.partial.json",
                               {"source_sha1": gen.source_sha1(), "lines": list(src)})
-        good = ["Guten Morgen, liebe Leute, willkommen hier."] * len(src)
+        good = [fake_translation(x) for x in src]
         with mock.patch.object(summarize, "translate_lines", return_value=good) as batch:
             data = gen.translate_language(lang, call=lambda p: "", model="big")
         batch.assert_called_once()
@@ -374,7 +383,7 @@ class TestNoGpuTranslation(unittest.TestCase):
 
         folder = self._in_temp_translations()
         src = gen.english_lines()
-        good = ["Guten Morgen, liebe Leute, willkommen hier."] * len(src)
+        good = [fake_translation(x) for x in src]
 
         def batch(lines, call, target_language):
             return call("batch")
@@ -396,6 +405,82 @@ class TestNoGpuTranslation(unittest.TestCase):
         self.assertEqual(data["sentences"][0], good[0])
         self.assertEqual(data["model"], "small + big")
         self.assertFalse((folder / "de.partial.json").exists())
+
+    def test_quality_checks_flag_poor_translations(self):
+        q = gen.quality_problem
+        self.assertIsNone(q("Good morning everyone.", "大家早上好。", "CJK"))
+        self.assertIsNone(q("Did you save a backup of your files?",
+                            "파일 백업을 저장했나요?", "HANGUL"))
+        self.assertIsNone(q("Good morning everyone.", "Selamat pagi semuanya.", "LATIN"))
+        self.assertEqual(q("Good morning.", "", "LATIN"), "empty")
+        self.assertEqual(q("Good morning everyone.",
+                           "မင်္ဂလာနံနက်ခင်းပါ καλ 榄 အားလုံး", "MYANMAR"),
+                         "mixed-in foreign script")
+        self.assertEqual(q("Good morning everyone.", "Selamat pagi [semuanya]", "LATIN"),
+                         "markup / junk characters")
+        self.assertEqual(q("Good morning everyone.", "好好好好好好好好好好", "CJK"),
+                         "repetition loop")
+        self.assertTrue(q("The library is open every day until late in the evening.",
+                          "Ya.", "LATIN").startswith("implausible length"))
+        self.assertTrue(q("Hi.", "Selamat pagi semuanya dan selamat datang di kuliah "
+                                 "hari ini yang sangat panjang sekali.", "LATIN")
+                        .startswith("implausible length"))
+
+    def test_poor_lines_are_redone_with_the_fallback_model(self):
+        from unittest import mock
+        from plaude_local import summarize
+
+        folder = self._in_temp_translations()
+        src = gen.english_lines()
+        lang = {"code": "de", "name": "German", "script": "LATIN"}
+        batch = [fake_translation(x) for x in src]
+        good = batch[3]
+        batch[3] = "[" + good + "]"            # poor: junk characters
+        primary_retry = mock.Mock(return_value="<" + good + ">")  # still poor
+        big = mock.Mock(return_value=good)
+        with mock.patch.object(summarize, "translate_lines", return_value=batch):
+            data = gen.translate_language(lang, call=lambda p: "", model="small",
+                                          retry_call=primary_retry, fallback_call=big,
+                                          fallback_name="big")
+        self.assertEqual(primary_retry.call_count, 1)
+        self.assertEqual(big.call_count, 1)
+        self.assertEqual(gen._flatten(data)[3], good)
+        self.assertEqual(data["model"], "small + big")
+        self.assertTrue((folder / "de.json").exists())
+
+    def test_existing_file_poor_lines_are_repaired(self):
+        from unittest import mock
+
+        folder = self._in_temp_translations()
+        src = gen.english_lines()
+        lang = {"code": "de", "name": "German", "script": "LATIN"}
+        lines = [fake_translation(x) for x in src]
+        good = lines[5]
+        lines[5] = ""                           # dropped earlier
+        gen._write_translation("de", lines, "small")
+        big = mock.Mock(return_value=good)
+        data = gen.translate_language(lang, call=None, model="small",
+                                      fallback_call=big, fallback_name="big")
+        self.assertEqual(big.call_count, 1)
+        self.assertEqual(gen._flatten(data)[5], good)
+        self.assertEqual(gen.load_translation("de")["model"], "small + big")
+        # Without a fallback model an existing file is used as-is.
+        self.assertEqual(gen.translate_language(lang, call=None), gen.load_translation("de"))
+
+    def test_garbled_language_goes_straight_to_the_fallback(self):
+        from unittest import mock
+        from plaude_local import summarize
+
+        self._in_temp_translations()
+        src = gen.english_lines()
+        lang = {"code": "de", "name": "German", "script": "LATIN"}
+        retry = mock.Mock()
+        with mock.patch.object(summarize, "translate_lines", return_value=list(src)):
+            with self.assertRaises(RuntimeError):
+                gen.translate_language(lang, call=lambda p: "", model="small",
+                                       retry_call=retry, fallback_call=mock.Mock(),
+                                       fallback_name="big")
+        retry.assert_not_called()  # no line-by-line retries on a garbled language
 
     def test_english_needs_no_model(self):
         folder = self._in_temp_translations()
@@ -440,8 +525,9 @@ class TestNoGpuTranslation(unittest.TestCase):
             usable = [l for l in lines if l]
             self.assertGreaterEqual(len(usable), 0.95 * len(lines), f.name)
             script = by_code[f.stem]["script"]
-            for line in usable:
-                self.assertGreaterEqual(gen.script_ratio(line, script), 0.6, (f.name, line))
+            for en, line in zip(gen.english_lines(), lines):
+                if line:  # every committed line must pass the quality rule
+                    self.assertIsNone(gen.quality_problem(en, line, script), (f.name, en, line))
 
 
 class TestLanguages(unittest.TestCase):
