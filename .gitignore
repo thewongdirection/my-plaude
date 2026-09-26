@@ -37,3 +37,5 @@ tests/regression/results/
 
 # Corpus generator progress log
 tests/regression/generate.log
+# In-progress translation state (resumable; not committed)
+tests/regression/translations/*.partial.json

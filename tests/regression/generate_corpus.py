@@ -19,24 +19,30 @@ Two phases (``--phase``; the default runs both, overlapped):
   ``translations/<code>.json``. These files are COMMITTED, so this phase runs
   once. It needs no GPU: by default Ollama is told to keep the model on the CPU
   (``--ollama-device cpu`` sends ``num_gpu: 0``); transient server errors are
-  retried with backoff.
+  retried with backoff. Each file records the model and a hash of the English
+  source lines, so a file that no longer matches ``sentences.py`` /
+  ``dialogues.py`` is re-translated. Progress is kept in
+  ``<code>.partial.json`` so an interrupted or partly-failed language resumes
+  without redoing the lines that already passed. To re-translate a language,
+  delete its ``translations/<code>.json``.
 * ``audio`` - needs no LLM and no GPU: synthesize each line with a Microsoft
   neural voice (``edge-tts``, a cloud service; cached per voice+line) and
   assemble files line by line - with natural pauses and exact speaker-turn
-  timings - until the target length is reached, then encode with FFmpeg. Audio is mono Opus 16 kb/s to keep the committed
-corpus small; ``manifest.json`` records every file's source text, exact English
-reference, voices, turns and damage recipe.
+  timings - until the target length is reached, then encode with FFmpeg.
+  Audio is mono Opus 16 kb/s to keep the committed corpus small;
+  ``manifest.json`` records every file's source text, exact English reference,
+  voices, turns and damage recipe.
 
-This is a one-off, networked, multi-hour step (edge-tts calls Microsoft's TTS
+This is a one-off, networked, multi-hour job (edge-tts calls Microsoft's TTS
 service); the result is committed so regression runs are reproducible
-offline. It resumes where it left off (translations and TTS clips are cached
-outside the repo in ``~/.cache/plaude-local/regression``, so ``--force`` rebuilds files from the same cached material;
-delete the cache folder to re-translate / re-synthesize). Requirements:
-``pip install edge-tts``, FFmpeg on PATH, and an Ollama server with a
-translation model.
+offline. It resumes where it left off. TTS clips are cached outside the repo in
+``~/.cache/plaude-local/regression`` (``--force`` rebuilds files from the same
+clips; delete that folder to re-synthesize). Requirements: FFmpeg on PATH and
+``pip install edge-tts`` (audio phase); an Ollama server with a translation
+model (translate phase only).
 
     python tests/regression/generate_corpus.py                    # both phases
-    python tests/regression/generate_corpus.py --phase translate  # CPU Ollama only
+    python tests/regression/generate_corpus.py --phase translate --model translategemma:4b
     python tests/regression/generate_corpus.py --phase audio      # no LLM at all
     python tests/regression/generate_corpus.py --languages de,ja --force
 """
@@ -55,6 +61,7 @@ import tempfile
 import re
 import time
 import unicodedata
+import urllib.error
 import uuid
 import wave
 from concurrent.futures import ThreadPoolExecutor
@@ -67,7 +74,7 @@ sys.path.insert(0, str(HERE.parents[1]))
 from damage import damage_filtergraph, damage_plan  # noqa: E402
 from dialogues import EXCHANGES, REACTIONS  # noqa: E402
 from languages import LANGUAGES, NO_SPACE_SCRIPTS  # noqa: E402
-from scoring import content_words  # noqa: E402
+from scoring import STOPWORDS, content_words  # noqa: E402
 from sentences import SENTENCES  # noqa: E402
 
 DEFAULT_SEED = 2026
@@ -145,11 +152,19 @@ def translation_ok(src_en: str, text: str, script: str) -> bool:
         return True
     if _PREAMBLE.match(text) or text.casefold().strip(".!? ") == src_en.casefold().strip(".!? "):
         return False
-    # An English echo keeps most of the source's content words; a real
-    # translation keeps at most a few cognates (model, internet, museum ...).
+    # An English echo keeps (nearly) all of the source's content words. A real
+    # translation keeps a few cognates / loanwords - Filipino and Malay often
+    # borrow "backup", "files", "manager" - so only flag near-total overlap on
+    # lines with enough content words to tell the difference.
     src = content_words(src_en)
     shared = src & content_words(text)
-    return not (len(src) >= 3 and len(shared) >= 0.6 * len(src))
+    if len(src) >= 4 and len(shared) >= 0.8 * len(src):
+        return False
+    # An English paraphrase is full of English function words ("the", "has",
+    # "been", "to"); translations - even loanword-heavy ones - are not.
+    words = re.findall(r"[a-z]+", text.lower())
+    english = sum(w in STOPWORDS for w in words)
+    return not (len(words) >= 5 and english >= 0.3 * len(words))
 
 
 # --------------------------------------------------------------------------- #
@@ -159,84 +174,163 @@ def english_lines() -> list:
     return (list(SENTENCES) + [line for ex in EXCHANGES for line in ex] + list(REACTIONS))
 
 
+def is_transient(exc: BaseException) -> bool:
+    """Worth retrying: the server is down/restarting (connection error) or
+    answered 5xx (Ollama returns 500 while reloading or out of memory).
+    Not worth it: 4xx (e.g. unknown model), timeouts and empty replies - at
+    temperature 0 the same request would just do the same thing again."""
+    cause = exc.__cause__
+    if isinstance(cause, urllib.error.HTTPError):
+        return cause.code >= 500
+    if isinstance(cause, urllib.error.URLError):
+        return isinstance(cause.reason, ConnectionError)
+    return isinstance(cause, ConnectionError)
+
+
+def model_capabilities(model: str, url: str) -> list:
+    """Ollama's capability list for ``model`` (e.g. ["completion", "thinking"])."""
+    from plaude_local import summarize
+    try:
+        return summarize._post_json(url.rstrip("/") + "/api/show", {"model": model},
+                                    30).get("capabilities") or []
+    except summarize.SummarizeError:
+        return []
+
+
 def make_ollama_call(model: str, url: str, *, cpu: bool = True, timeout: float = 1800,
-                     retries: int = 5, sleep=time.sleep):
+                     retries: int = 5, temperature: float = 0.0, capabilities=None,
+                     sleep=time.sleep):
     """``prompt -> completion`` against Ollama; ``cpu`` keeps the model off the GPU.
 
-    Retries transient failures (Ollama answers HTTP 500 while it reloads or
-    runs out of memory) with exponential backoff before giving up.
+    Retries only transient failures (see ``is_transient``) with exponential
+    backoff. Output is capped (``num_predict``) so a runaway generation can't
+    fill the context for half an hour on a CPU, and a thinking-capable model
+    is told not to think (its reasoning would only cost CPU time).
     """
     from plaude_local import summarize
 
-    options = {"num_ctx": summarize._OLLAMA_NUM_CTX, "temperature": 0}
+    options = {"num_ctx": summarize._OLLAMA_NUM_CTX, "num_predict": 4096,
+               "temperature": temperature}
     if cpu:
         options["num_gpu"] = 0  # offload zero layers: pure CPU inference
+    if capabilities is None:
+        capabilities = model_capabilities(model, url)
+    payload_base = {"model": model, "stream": False, "options": options}
+    if "thinking" in capabilities:
+        payload_base["think"] = False
 
     def call(prompt: str) -> str:
-        payload = {"model": model, "prompt": prompt, "stream": False, "options": options}
+        payload = dict(payload_base, prompt=prompt)
         for attempt in range(retries):
             try:
                 resp = summarize._post_json(url.rstrip("/") + "/api/generate", payload, timeout)
-                text = (resp.get("response") or "").strip()
-                if text:
-                    return text
-                raise summarize.SummarizeError(f"empty response: {resp!r}")
-            except summarize.SummarizeError:
-                if attempt == retries - 1:
+            except summarize.SummarizeError as exc:
+                if attempt == retries - 1 or not is_transient(exc):
                     raise
                 sleep(min(300, 10 * 2 ** attempt))
+                continue
+            text = (resp.get("response") or "").strip()
+            if not text:
+                raise summarize.SummarizeError(f"ollama returned no text: {resp!r}")
+            return text
         return ""  # pragma: no cover
     return call
+
+
+def source_sha1() -> str:
+    """Hash of the English banks: ties a translation file to the exact lines
+    (and order) it was made from."""
+    return hashlib.sha1(json.dumps(english_lines(), ensure_ascii=False)
+                        .encode("utf-8")).hexdigest()
 
 
 def translation_path(code: str) -> Path:
     return TRANSLATIONS / f"{code}.json"
 
 
+def partial_path(code: str) -> Path:
+    return TRANSLATIONS / f"{code}.partial.json"
+
+
+def write_json_atomic(path: Path, data) -> None:
+    """Write via a temp file + rename so an interrupted write never leaves a
+    truncated JSON file behind."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _read_matching(path: Path):
+    """JSON at ``path`` if it exists, parses, and matches the current English
+    source; otherwise None (with a note when a stale/corrupt file is ignored)."""
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        print(f"note: ignoring unreadable {path.name} ({exc})", flush=True)
+        return None
+    if data.get("source_sha1") != source_sha1():
+        print(f"note: ignoring {path.name}: made from different English source lines",
+              flush=True)
+        return None
+    return data
+
+
 def load_translation(code: str):
-    path = translation_path(code)
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    return _read_matching(translation_path(code))
 
 
-def translate_language(lang: dict, call, model: str = "") -> dict:
+def translate_language(lang: dict, call, model: str = "", retry_call=None) -> dict:
     """Translated sentence / exchange / reaction banks for ``lang``.
 
-    Reuses ``translations/<code>.json`` when present; otherwise translates
-    with ``call`` and writes that file (commit it)."""
+    Reuses ``translations/<code>.json`` when it matches the current English
+    source; otherwise translates with ``call`` and writes that file (commit it).
+    Batch output is saved to ``<code>.partial.json`` first, so a rerun after a
+    failure only re-translates the lines that did not pass validation; those
+    are retried with ``retry_call`` (a non-zero temperature), since repeating
+    the same prompt at temperature 0 gives the same answer."""
     from plaude_local import summarize
 
     existing = load_translation(lang["code"])
     if existing:
         return existing
     src = english_lines()
-    if lang["code"] == "en":
+    code = lang["code"]
+    if code == "en":
         out = list(src)
     else:
-        out = [clean_reply(line) for line in
-               summarize.translate_lines(src, call, target_language=lang["name"])]
-        for i, line in enumerate(out):  # retry lines the batched reply got wrong
-            for _ in range(2):
-                if translation_ok(src[i], out[i], lang["script"]):
-                    break
-                out[i] = clean_reply(summarize.translate_text(
-                    src[i], call, target_language=lang["name"]))
-        bad = [i for i, line in enumerate(out) if not translation_ok(src[i], line, lang["script"])]
+        partial = _read_matching(partial_path(code))
+        if partial and len(partial.get("lines", [])) == len(src):
+            out = partial["lines"]
+        else:
+            out = [clean_reply(line) for line in
+                   summarize.translate_lines(src, call, target_language=lang["name"])]
+            write_json_atomic(partial_path(code), {"source_sha1": source_sha1(), "lines": out})
+        bad = [i for i in range(len(src)) if not translation_ok(src[i], out[i], lang["script"])]
+        for i in bad:  # one retry per rejected line, sampled differently
+            out[i] = clean_reply(summarize.translate_text(
+                src[i], retry_call or call, target_language=lang["name"]))
+        write_json_atomic(partial_path(code), {"source_sha1": source_sha1(), "lines": out})
+        bad = [i for i in range(len(src)) if not translation_ok(src[i], out[i], lang["script"])]
         if len(bad) > len(src) * 0.05:
-            raise RuntimeError(f"{lang['code']}: {len(bad)} of {len(src)} lines are not "
-                               f"valid {lang['name']} translations")
+            raise RuntimeError(f"{code}: {len(bad)} of {len(src)} lines are not valid "
+                               f"{lang['name']} translations (progress kept in "
+                               f"{partial_path(code).name}; rerun to retry them)")
         for i in bad:  # a handful of stubborn lines: drop them from use
             out[i] = ""
     n_s, n_e = len(SENTENCES), len(EXCHANGES)
     data = {
-        "language": lang["code"],
-        "model": model if lang["code"] != "en" else None,
+        "language": code,
+        "model": model if code != "en" else None,
+        "source_sha1": source_sha1(),
         "sentences": out[:n_s],
         "exchanges": [[out[n_s + 2 * k], out[n_s + 2 * k + 1]] for k in range(n_e)],
         "reactions": out[n_s + 2 * n_e:],
     }
-    path = translation_path(lang["code"])
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    write_json_atomic(translation_path(code), data)
+    partial_path(code).unlink(missing_ok=True)
     return data
 
 
@@ -435,7 +529,8 @@ def main(argv=None) -> int:
                    help="translate (Ollama -> translations/*.json), audio (edge-tts + "
                         "FFmpeg; no LLM), or all (default)")
     p.add_argument("--model", default=None,
-                   help="Ollama model for translation (default: first installed)")
+                   help="Ollama model for translation (default: the most recently "
+                        "installed one - pass it explicitly for reproducible runs)")
     p.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     p.add_argument("--ollama-device", choices=["cpu", "auto"], default="cpu",
                    help="cpu (default): keep the model off the GPU (num_gpu 0); "
@@ -443,24 +538,39 @@ def main(argv=None) -> int:
     p.add_argument("--force", action="store_true", help="regenerate existing items")
     args = p.parse_args(argv)
     wanted = {c.strip() for c in args.languages.split(",") if c.strip()}
-    model = args.model or ""
+    unknown = wanted - {lang["code"] for lang in LANGUAGES}
+    if unknown:
+        p.error(f"not corpus languages: {', '.join(sorted(unknown))} "
+                f"(see CORPUS_CODES in languages.py)")
+    model, call, retry_call = args.model or "", None, None
 
     def translator():
         from plaude_local import summarize
         name = args.model or summarize.default_ollama_model(args.ollama_url)
         if not name:
             p.error(f"no Ollama model at {args.ollama_url}; start Ollama / pass --model")
-        return name, make_ollama_call(name, args.ollama_url, cpu=args.ollama_device == "cpu")
+        cpu = args.ollama_device == "cpu"
+        caps = model_capabilities(name, args.ollama_url)
+        print(f"translating with Ollama model {name!r} on "
+              f"{'the CPU' if cpu else 'any device'}", flush=True)
+        return (name, make_ollama_call(name, args.ollama_url, cpu=cpu, capabilities=caps),
+                make_ollama_call(name, args.ollama_url, cpu=cpu, capabilities=caps,
+                                 temperature=0.7))
+
+    def needs_llm(langs_):
+        return any(l["code"] != "en" and not load_translation(l["code"]) for l in langs_)
 
     if args.phase == "translate":
-        model, call = translator()
+        selected = [l for l in LANGUAGES if not wanted or l["code"] in wanted]
+        if needs_llm(selected):
+            model, call, retry_call = translator()
         failed = []
-        for lang in LANGUAGES:
-            if (wanted and lang["code"] not in wanted) or load_translation(lang["code"]):
+        for lang in selected:
+            if load_translation(lang["code"]):
                 continue
             t0 = time.time()
             try:
-                translate_language(lang, call, model)
+                translate_language(lang, call, model, retry_call)
                 print(f"{lang['code']}: translated ({time.time() - t0:.0f}s)", flush=True)
             except Exception as exc:
                 failed.append(lang["code"])
@@ -478,7 +588,7 @@ def main(argv=None) -> int:
         p.error(f"the corpus was generated with --seed {manifest['seed']}; "
                 f"pass --force to regenerate it with --seed {args.seed}")
     entries = {e["id"]: e for e in manifest.get("items", [])}
-    voices = list_voices()
+    voices = None  # fetched (network) only once something needs synthesizing
 
     plan = [it for it in plan_corpus(args.seed) if not wanted or it["code"] in wanted]
     langs = [lang for lang in LANGUAGES if any(it["code"] == lang["code"] for it in plan)]
@@ -502,17 +612,16 @@ def main(argv=None) -> int:
     # On any error (or Ctrl+C) cancel the queued translations instead of
     # silently working through every remaining language first.
     need = [lang for lang in langs if any(todo(it) for it in plan if it["code"] == lang["code"])]
-    call = None
-    if args.phase == "all" and any(not load_translation(l["code"]) for l in need):
-        model, call = translator()
+    if args.phase == "all" and needs_llm(need):
+        model, call, retry_call = translator()
 
     def get_bank(lang):
         bank = load_translation(lang["code"])
         if bank:
             return bank
-        if call is None:
+        if call is None and lang["code"] != "en":
             raise RuntimeError("no translations/%s.json - run --phase translate first" % lang["code"])
-        return translate_language(lang, call, model)
+        return translate_language(lang, call, model, retry_call)
 
     pool = ThreadPoolExecutor(max_workers=1)
     try:
@@ -526,6 +635,7 @@ def main(argv=None) -> int:
             except Exception as exc:  # keep going: report the language at the end
                 print(f"{lang['code']}: translation FAILED - {exc}", flush=True)
                 continue
+            voices = voices or list_voices()
             for it in items:
                 entry = assemble(it, lang, bank, voices, corpus, args.seed)
                 entries[it["id"]] = entry
@@ -535,7 +645,8 @@ def main(argv=None) -> int:
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
     missing = [it["id"] for it in plan if it["id"] not in entries
-               or not (corpus / entries[it["id"]]["file"]).exists()]
+               or not (corpus / entries[it["id"]]["file"]).exists()
+               or not (corpus / entries[it["id"]]["damaged_file"]).exists()]
     print(f"done: {len(entries)} items ({2 * len(entries)} files); missing: {missing or 'none'}")
     return 1 if missing else 0
 

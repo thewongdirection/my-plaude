@@ -630,8 +630,15 @@ python tests/regression/generate_corpus.py --phase translate
 python tests/regression/generate_corpus.py --phase audio
 ```
 
-Pass `--ollama-device auto` to let Ollama use a GPU, `--model` to pick the
-translation model, and `--languages de,ja` to limit either phase. Offline unit tests for the
+Pass `--model` to pick the translation model (recommended, e.g.
+`--model translategemma:4b`; each file records it), `--ollama-device auto` to
+let Ollama use a GPU, `--ollama-url` for a non-default server, and
+`--languages de,ja` to limit either phase. Only transient Ollama errors
+(connection refused, HTTP 5xx) are retried. Each translation file stores a hash
+of the English source lines, so editing `sentences.py` / `dialogues.py` makes
+the affected files re-translate; to re-translate a language by hand, delete its
+`translations/<code>.json`. An interrupted language resumes from
+`<code>.partial.json`. Offline unit tests for the
 harness itself run with the normal suite (`tests/test_regression_suite.py`).
 
 ---

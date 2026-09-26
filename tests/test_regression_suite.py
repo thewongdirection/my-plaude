@@ -136,6 +136,16 @@ class TestCorpusPlan(unittest.TestCase):
             src, "The meeting has been moved to the large room upstairs", "LATIN"))
         self.assertTrue(gen.translation_ok(
             src, "La reunión se ha trasladado a la sala grande del segundo piso.", "LATIN"))
+        # Loanword-heavy Filipino / Indonesian is still a translation.
+        for src_en, text in (
+                ("Did you save a backup of your files?", "Nag-save ka ba ng backup ng mga files mo?"),
+                ("The manager from the design department.", "Ang manager mula sa design department."),
+                ("Is the professor strict about deadlines?",
+                 "Mahigpit ba ang professor pagdating sa deadlines?"),
+                ("Did you volunteer at the beach cleanup?", "Nag-volunteer ka ba sa beach cleanup?"),
+                ("Did you save a backup of your files?",
+                 "Apakah kamu sudah menyimpan backup file-file kamu?")):
+            self.assertTrue(gen.translation_ok(src_en, text, "LATIN"), text)
         # Cognates alone don't make a line English.
         self.assertTrue(gen.translation_ok("The museum has a large collection.",
                                            "Das Museum hat eine große Sammlung.", "LATIN"))
@@ -195,7 +205,11 @@ class TestNoGpuTranslation(unittest.TestCase):
         from unittest import mock
         from plaude_local import summarize
 
-        replies = [summarize.SummarizeError("HTTP 500"), {"response": " Hallo "}]
+        import urllib.error
+
+        server_error = summarize.SummarizeError("HTTP 500")
+        server_error.__cause__ = urllib.error.HTTPError("u", 500, "err", {}, None)
+        replies = [server_error, {"response": " Hallo "}]
 
         def fake_post(url, payload, timeout):
             fake_post.payload = payload
@@ -206,7 +220,8 @@ class TestNoGpuTranslation(unittest.TestCase):
 
         slept = []
         with mock.patch.object(summarize, "_post_json", side_effect=fake_post):
-            call = gen.make_ollama_call("m", "http://x:1", cpu=True, sleep=slept.append)
+            call = gen.make_ollama_call("m", "http://x:1", cpu=True, capabilities=[],
+                                        sleep=slept.append)
             self.assertEqual(call("p"), "Hallo")
         self.assertEqual(fake_post.payload["options"]["num_gpu"], 0)
         self.assertEqual(fake_post.payload["model"], "m")
@@ -218,18 +233,137 @@ class TestNoGpuTranslation(unittest.TestCase):
 
         with mock.patch.object(summarize, "_post_json",
                                return_value={"response": "ok"}) as post:
-            gen.make_ollama_call("m", "http://x:1", cpu=False)("p")
+            gen.make_ollama_call("m", "http://x:1", cpu=False, capabilities=[])("p")
         self.assertNotIn("num_gpu", post.call_args.args[1]["options"])
+
+    def _error(self, cause):
+        from plaude_local import summarize
+        err = summarize.SummarizeError("failed")
+        err.__cause__ = cause
+        return err
 
     def test_call_gives_up_after_retries(self):
         from unittest import mock
+        import urllib.error
         from plaude_local import summarize
 
-        with mock.patch.object(summarize, "_post_json",
-                               side_effect=summarize.SummarizeError("down")):
-            call = gen.make_ollama_call("m", "http://x:1", retries=3, sleep=lambda s: None)
+        down = self._error(urllib.error.URLError(ConnectionRefusedError()))
+        slept = []
+        with mock.patch.object(summarize, "_post_json", side_effect=down) as post:
+            call = gen.make_ollama_call("m", "http://x:1", retries=3, capabilities=[],
+                                        sleep=slept.append)
             with self.assertRaises(summarize.SummarizeError):
                 call("p")
+        self.assertEqual(post.call_count, 3)
+        self.assertEqual(len(slept), 2)
+
+    def test_non_transient_errors_fail_fast(self):
+        from unittest import mock
+        import socket
+        import urllib.error
+        from plaude_local import summarize
+
+        for cause in (urllib.error.HTTPError("u", 404, "model not found", {}, None),
+                      socket.timeout("timed out"), None):
+            with mock.patch.object(summarize, "_post_json",
+                                   side_effect=self._error(cause)) as post:
+                call = gen.make_ollama_call("m", "http://x:1", capabilities=[],
+                                            sleep=lambda s: None)
+                with self.assertRaises(summarize.SummarizeError):
+                    call("p")
+            self.assertEqual(post.call_count, 1, repr(cause))
+
+    def test_empty_reply_fails_fast(self):
+        from unittest import mock
+        from plaude_local import summarize
+
+        with mock.patch.object(summarize, "_post_json", return_value={"response": ""}) as post:
+            with self.assertRaises(summarize.SummarizeError):
+                gen.make_ollama_call("m", "http://x:1", capabilities=[])("p")
+        self.assertEqual(post.call_count, 1)
+
+    def test_payload_caps_output_and_disables_thinking(self):
+        from unittest import mock
+        from plaude_local import summarize
+
+        with mock.patch.object(summarize, "_post_json", return_value={"response": "ok"}) as post:
+            gen.make_ollama_call("m", "http://x:1", capabilities=["completion", "thinking"],
+                                 temperature=0.7)("p")
+        payload = post.call_args.args[1]
+        self.assertIs(payload["think"], False)
+        self.assertEqual(payload["options"]["num_predict"], 4096)
+        self.assertEqual(payload["options"]["temperature"], 0.7)
+        with mock.patch.object(summarize, "_post_json", return_value={"response": "ok"}) as post:
+            gen.make_ollama_call("m", "http://x:1", capabilities=["completion"])("p")
+        self.assertNotIn("think", post.call_args.args[1])
+
+    def _in_temp_translations(self):
+        import tempfile
+        from unittest import mock
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        patch = mock.patch.object(gen, "TRANSLATIONS", Path(d.name))
+        patch.start()
+        self.addCleanup(patch.stop)
+        return Path(d.name)
+
+    def test_translation_file_tied_to_english_source(self):
+        folder = self._in_temp_translations()
+        gen.write_json_atomic(folder / "de.json", {"source_sha1": gen.source_sha1(), "x": 1})
+        self.assertEqual(gen.load_translation("de")["x"], 1)
+        gen.write_json_atomic(folder / "de.json", {"source_sha1": "stale", "x": 1})
+        self.assertIsNone(gen.load_translation("de"))
+        (folder / "de.json").write_text("{truncated", encoding="utf-8")
+        self.assertIsNone(gen.load_translation("de"))
+        self.assertEqual([p.name for p in folder.iterdir()], ["de.json"])  # no temp files left
+
+    def test_partial_progress_resumes_and_retries_only_bad_lines(self):
+        from unittest import mock
+        from plaude_local import summarize
+
+        folder = self._in_temp_translations()
+        src = gen.english_lines()
+        lang = {"code": "de", "name": "German", "script": "LATIN"}
+        good = ["Guten Morgen, liebe Leute, willkommen hier."] * len(src)
+        lines = list(good)
+        lines[0] = src[0]  # an English echo that must be re-translated
+        gen.write_json_atomic(folder / "de.partial.json",
+                              {"source_sha1": gen.source_sha1(), "lines": lines})
+        retry = mock.Mock(return_value="Guten Morgen zusammen.")
+        with mock.patch.object(summarize, "translate_lines") as batch:
+            data = gen.translate_language(lang, call=None, model="m", retry_call=retry)
+        batch.assert_not_called()          # resumed from the partial file
+        self.assertEqual(retry.call_count, 1)  # only the one bad line
+        self.assertEqual(data["sentences"][0], "Guten Morgen zusammen.")
+        self.assertEqual(data["source_sha1"], gen.source_sha1())
+        self.assertFalse((folder / "de.partial.json").exists())
+        self.assertTrue((folder / "de.json").exists())
+
+    def test_too_many_bad_lines_keeps_progress(self):
+        from unittest import mock
+        from plaude_local import summarize
+
+        folder = self._in_temp_translations()
+        src = gen.english_lines()
+        lang = {"code": "de", "name": "German", "script": "LATIN"}
+        with mock.patch.object(summarize, "translate_lines", return_value=list(src)), \
+             mock.patch.object(summarize, "translate_text", side_effect=lambda t, c, **k: t):
+            with self.assertRaises(RuntimeError):
+                gen.translate_language(lang, call=lambda p: p, model="m")
+        self.assertTrue((folder / "de.partial.json").exists())
+        self.assertFalse((folder / "de.json").exists())
+
+    def test_english_needs_no_model(self):
+        folder = self._in_temp_translations()
+        data = gen.translate_language({"code": "en", "name": "English", "script": "LATIN"},
+                                      call=None)
+        self.assertEqual(data["sentences"], list(gen.SENTENCES))
+        self.assertIsNone(data["model"])
+        self.assertTrue((folder / "en.json").exists())
+
+    def test_unknown_language_code_is_rejected(self):
+        with self.assertRaises(SystemExit):
+            gen.main(["--phase", "translate", "--languages", "xx"])
 
     def test_audio_phase_refuses_missing_translations(self):
         import tempfile
@@ -245,7 +379,8 @@ class TestNoGpuTranslation(unittest.TestCase):
         assemble.assert_not_called()
 
     def test_committed_translation_files_are_complete(self):
-        files = sorted((REG / "translations").glob("*.json"))
+        files = sorted(f for f in (REG / "translations").glob("*.json")
+                       if not f.name.endswith(".partial.json"))
         if not files:
             self.skipTest("no committed translations yet")
         by_code = languages.BY_CODE
@@ -255,6 +390,8 @@ class TestNoGpuTranslation(unittest.TestCase):
             self.assertEqual(len(data["sentences"]), len(gen.SENTENCES), f.name)
             self.assertEqual(len(data["exchanges"]), len(gen.EXCHANGES), f.name)
             self.assertEqual(len(data["reactions"]), len(gen.REACTIONS), f.name)
+            self.assertEqual(data.get("source_sha1"), gen.source_sha1(),
+                             f"{f.name} was made from different English source lines")
             lines = data["sentences"] + [l for e in data["exchanges"] for l in e] + data["reactions"]
             usable = [l for l in lines if l]
             self.assertGreaterEqual(len(usable), 0.95 * len(lines), f.name)
