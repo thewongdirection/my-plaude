@@ -46,6 +46,7 @@ from typing import Optional
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(REPO))  # plaude_local, when run as a script from anywhere
 
 from languages import THRESHOLDS, accepted_codes  # noqa: E402
 from scoring import cer, content_recall, detected_language  # noqa: E402
