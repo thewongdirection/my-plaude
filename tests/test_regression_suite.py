@@ -199,6 +199,34 @@ class TestCorpusPlan(unittest.TestCase):
         self.assertEqual(futures["c"].result(timeout=5), "C")
         self.assertEqual(seen, [("a", True), ("b", True), ("c", True)])
 
+    def test_refused_tts_line_is_retried_with_whitespace_variant(self):
+        import tempfile
+        from unittest import mock
+        import edge_tts
+
+        spoken = []
+
+        class RefusesExactText:
+            def __init__(self, text, voice, pitch="+0Hz"):
+                self.text = text
+
+            async def save(self, path):
+                spoken.append(self.text)
+                if self.text == "line":
+                    raise edge_tts.exceptions.NoAudioReceived("no audio")
+                Path(path).write_bytes(b"mp3")
+
+        def fake_ffmpeg(cmd, check):
+            Path(cmd[-1]).write_bytes(b"RIFF")
+
+        with tempfile.TemporaryDirectory() as d, \
+             mock.patch.object(gen, "CACHE", Path(d)), \
+             mock.patch.object(edge_tts, "Communicate", RefusesExactText), \
+             mock.patch.object(gen.subprocess, "run", side_effect=fake_ffmpeg):
+            paths = gen.synthesize([("line", "v", "+0Hz")])
+        self.assertIsNotNone(paths[0])
+        self.assertEqual(spoken, ["line", "line "])
+
     def test_refused_tts_line_is_skipped_not_fatal(self):
         import tempfile
         from unittest import mock

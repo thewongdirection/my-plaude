@@ -1,0 +1,513 @@
+{
+ "language": "id",
+ "model": "translategemma:4b",
+ "source_sha1": "fba76066ed28099b550acc310984f2a97d35ed64",
+ "sentences": [
+  "Selamat pagi semuanya, dan selamat datang di kuliah hari ini.",
+  "Hari ini kita akan membahas tentang bagaimana mesin belajar dari contoh.",
+  "Sebuah model belajar pola dari data pelatihan yang diberikan.",
+  "Jika model menghafal data pelatihan, maka model tersebut akan berkinerja buruk pada data baru.",
+  "Masalah ini disebut overfitting, dan ini sangat umum.",
+  "Salah satu cara untuk mengurangi overfitting adalah mengumpulkan lebih banyak data pelatihan.",
+  "Cara lain adalah dengan membuat model sederhana.",
+  "Validasi silang membantu kita memperkirakan seberapa baik sebuah model akan digeneralisasi.",
+  "Mohon catat ide-ide utama dalam buku catatan Anda.",
+  "Tugas untuk minggu depan adalah mengevaluasi model klasifikasi sederhana.",
+  "Perpustakaan buka setiap hari hingga larut malam.",
+  "Banyak siswa lebih suka belajar bersama dalam kelompok kecil.",
+  "Membaca bab sebelum kelas membuat kuliah jauh lebih mudah diikuti.",
+  "Jika Anda memiliki pertanyaan, mohon angkat tangan kapan saja.",
+  "Cuaca hari ini adalah dingin dan berangin, jadi bawa jaket hangat.",
+  "Kemarin malam hujan deras, dan beberapa jalan tergenang.",
+  "Musim semi adalah musim favorit saya karena bunga-bunga mulai bermekaran.",
+  "Kereta ke kota berangkat dari stasiun utama setiap pagi.",
+  "Nenek saya mengajari saya cara membuat sup dengan sayuran segar.",
+  "Kami mengunjungi desa kecil di dekat pegunungan selama liburan musim panas.",
+  "Pasar menjual buah, roti, keju, dan ikan segar.",
+  "Minum air yang cukup setiap hari penting untuk kesehatan Anda.",
+  "Olahraga teratur meningkatkan baik tubuh maupun pikiran.",
+  "Dokter merekomendasikan untuk tidur dengan baik sebelum ujian penting.",
+  "Museum memiliki koleksi besar lukisan dan patung kuno.",
+  "Musik dapat membantu orang untuk rileks setelah hari yang panjang dan menegangkan.",
+  "Anak-anak bermain sepak bola di taman hingga matahari terbenam.",
+  "Tetangga kami mengadopsi seekor anjing ramah dari tempat penampungan hewan.",
+  "Sungai mengalir perlahan melalui lembah menuju laut.",
+  "Hutan menyediakan tempat tinggal bagi banyak hewan dan membersihkan udara yang kita hirup.",
+  "Perubahan iklim memengaruhi petani, kota, dan satwa liar di seluruh dunia.",
+  "Panel surya mengubah sinar matahari menjadi listrik untuk rumah dan sekolah.",
+  "Mendaur ulang kertas dan plastik mengurangi jumlah sampah yang kita hasilkan.",
+  "Jembatan baru akan membuat perjalanan antara kedua kota menjadi jauh lebih cepat.",
+  "Insinyur harus menguji setiap desain dengan cermat sebelum dibangun.",
+  "Seorang ilmuwan yang baik selalu mempertanyakan hasil dari sebuah eksperimen.",
+  "Teleskop memungkinkan kita untuk melihat bintang dan planet yang jauh.",
+  "Bulan memiliki pengaruh yang kuat pada pasang surut laut.",
+  "Sejarah mengajarkan kita tentang bagaimana orang hidup dan bekerja di masa lalu.",
+  "Kota-kota kuno sering dibangun di dekat sungai untuk mendapatkan air bersih.",
+  "Belajar bahasa kedua membuka pintu ke budaya baru.",
+  "Berlatih berbicara sedikit setiap hari, bahkan ketika terasa sulit.",
+  "Guru menjelaskan aturan tata bahasa dengan beberapa contoh yang jelas.",
+  "Menulis ringkasan singkat membantu Anda mengingat apa yang telah Anda baca.",
+  "Komputer mengikuti instruksi yang ditulis oleh programmer.",
+  "Kesalahan kecil dalam kode dapat menyebabkan seluruh program gagal.",
+  "Selalu simpan salinan cadangan untuk file-file penting Anda.",
+  "Internet telah mengubah cara kita berkomunikasi satu sama lain.",
+  "Mohon matikan telepon Anda selama ujian.",
+  "Pertemuan telah dipindahkan ke ruang besar di lantai dua.",
+  "Perusahaan kami mencari orang yang menikmati bekerja dalam tim.",
+  "Komunikasi yang baik adalah kunci untuk proyek yang sukses.",
+  "Restoran di sudut tersebut menyajikan mie dan nasi yang lezat.",
+  "Kita sebaiknya berangkat lebih awal untuk menghindari kemacetan di pagi hari.",
+  "Rumah sakit sedang membangun sayap baru untuk anak-anak.",
+  "Relawan membersihkan pantai dan mengumpulkan banyak tas sampah.",
+  "Festival menarik pengunjung dari banyak negara yang berbeda.",
+  "Terima kasih telah mendengarkan, dan jumpa minggu depan.",
+  "Sebelum kita selesai, mari kita tinjau poin-poin penting.",
+  "Ingatlah bahwa belajar membutuhkan waktu, kesabaran, dan rasa ingin tahu.",
+  "Toko roti buka sangat pagi agar orang dapat membeli roti saat menuju tempat kerja.",
+  "Dia memiliki kebun kecil di balkonnya dengan herba dan tomat.",
+  "Bus terlambat pagi ini karena kecelakaan di jalan raya.",
+  "Dia selalu membaca koran sambil minum kopi.",
+  "Dewan kota memutuskan untuk menanam lebih banyak pohon di sepanjang jalan utama.",
+  "Sekolah kami mengadakan pameran sains di akhir setiap tahun.",
+  "Siswa mempresentasikan proyek mereka kepada orang tua dan guru.",
+  "Angin kencang membuat beberapa cabang pohon tumbang di taman.",
+  "Petani berharap hujan setelah musim panas yang panjang dan kering.",
+  "Kastil tua di bukit menarik banyak wisatawan.",
+  "Mohon ingat untuk membawa kartu identitas Anda ke kantor.",
+  "Apotek berada di sebelah kantor pos, di seberang bank.",
+  "Saudara saya sedang belajar bermain gitar di malam hari.",
+  "Konser dibatalkan karena penyanyi sakit.",
+  "Kami menonton dokumenter tentang hewan-hewan hutan hujan.",
+  "Samudra menutupi sebagian besar permukaan planet kita.",
+  "Paus berkomunikasi satu sama lain menggunakan lagu-lagu yang panjang dan kompleks.",
+  "Lebah memainkan peran penting dalam pertumbuhan buah dan sayuran.",
+  "Jalan pegunungan ditutup di musim dingin karena salju.",
+  "Pendaki harus selalu membawa air, makanan, dan peta.",
+  "Tim merayakan kemenangan mereka dengan makan malam besar.",
+  "Pelatih mengingatkan pemain untuk beristirahat sebelum pertandingan final.",
+  "Kakek dan nenek sering bercerita tentang masa kecil mereka.",
+  "Desa mengadakan pasar di alun-alun setiap akhir pekan.",
+  "Koki menggunakan bahan-bahan segar dari pertanian lokal.",
+  "Mohon cuci tangan sebelum menyiapkan makanan.",
+  "Dapur memiliki aroma yang menyenangkan ketika ibu membuat kue.",
+  "Harga sayuran telah meningkat tajam pada bulan ini.",
+  "Menabung sedikit uang setiap minggu dapat membuat perbedaan besar.",
+  "Bank memberikan saran kepada orang-orang yang ingin membeli rumah.",
+  "Pabrik mempekerjakan pekerja baru untuk memenuhi permintaan yang meningkat.",
+  "Transportasi umum membantu mengurangi polusi di kota-kota besar.",
+  "Semakin banyak orang menggunakan sepeda untuk bekerja.",
+  "Pemerintah mengumumkan rencana untuk memperbaiki jalan-jalan pedesaan.",
+  "Koran dan situs web melaporkan berita dalam beberapa menit.",
+  "Ilmuwan menjelaskan penemuannya dalam kata-kata sederhana.",
+  "Laboratorium membutuhkan peralatan baru untuk eksperimennya.",
+  "Vaksin telah melindungi jutaan orang dari penyakit serius.",
+  "Perawat memeriksa suhu pasien setiap jam.",
+  "Diet seimbang meliputi buah, sayuran, dan biji-bijian utuh.",
+  "Berjalan-jalan di alam dapat mengurangi stres dan meningkatkan suasana hati.",
+  "Seniman melukis potret menggunakan warna-warna cerah.",
+  "Teater menampilkan drama baru pada musim ini.",
+  "Penulis menandatangani salinan buku terbarunya di toko buku.",
+  "Puisi sering mengungkapkan perasaan yang sulit dijelaskan.",
+  "Fotografer menunggu berjam-jam untuk mengabadikan matahari terbit.",
+  "Film ini menceritakan kisah tentang sebuah keluarga yang pindah ke negara baru.",
+  "Anak-anak belajar dengan cepat ketika mereka merasa ingin tahu dan didorong.",
+  "Guru meminta siswa untuk bekerja dalam kelompok.",
+  "Ujian akhir akan mencakup semua yang telah kita pelajari selama semester ini.",
+  "Mohon serahkan esai Anda sebelum akhir minggu.",
+  "Profesor menjawab pertanyaan setelah ceramah.",
+  "Beristirahat secara teratur membantu Anda untuk berkonsentrasi lebih lama.",
+  "Robot dapat mengurutkan paket lebih cepat daripada pekerja manusia.",
+  "Kecerdasan buatan mengubah banyak industri.",
+  "Insinyur merancang mobil yang menggunakan lebih sedikit energi.",
+  "Pembaruan perangkat lunak memperbaiki beberapa masalah keamanan.",
+  "Kata sandi yang kuat melindungi akun Anda dari peretas.",
+  "Printer di lantai tiga kehabisan kertas lagi.",
+  "Koneksi internet kami lambat selama badai.",
+  "Bandara itu ramai dengan wisatawan selama liburan.",
+  "Penerbangan ditunda karena kabut.",
+  "Kamar hotel memiliki pemandangan indah danau.",
+  "Kami menyewa perahu kecil dan berlayar di sepanjang pantai.",
+  "Mercusuar memandu kapal dengan aman ke pelabuhan.",
+  "Para nelayan kembali ke pelabuhan dengan hasil tangkapan yang besar.",
+  "Salju menutupi atap dan jalanan sunyi.",
+  "Anak-anak membuat manusia salju di depan sekolah.",
+  "Daun musim gugur berubah menjadi merah, oranye, dan kuning.",
+  "Matahari terbenam di atas laut sangat indah."
+ ],
+ "exchanges": [
+  [
+   "Apakah Anda sudah membaca bab untuk hari ini?",
+   "Ya, saya membacanya tadi malam, tetapi bagian kedua sulit."
+  ],
+  [
+   "Apa pendapat Anda tentang kuliah pagi ini?",
+   "Itu menarik, terutama bagian tentang data pelatihan."
+  ],
+  [
+   "Apakah Anda akan datang ke kelompok belajar malam ini?",
+   "Saya ingin, tetapi saya harus bekerja hingga larut."
+  ],
+  [
+   "Di mana kita bertemu sebelum ujian?",
+   "Mari bertemu di depan perpustakaan sedikit lebih awal."
+  ],
+  [
+   "Apakah Anda mengerti bagaimana cara kerja validasi silang?",
+   "Saya pikir begitu. Anda menguji model pada data yang belum dilihat."
+  ],
+  [
+   "Mengapa model berkinerja buruk pada data baru?",
+   "Karena model menghafal contoh pelatihan daripada belajar pola."
+  ],
+  [
+   "Berapa lama waktu yang Anda habiskan untuk mengerjakan tugas?",
+   "Sebagian besar sore, karena saya membuat kesalahan di awal."
+  ],
+  [
+   "Bisakah Anda menjelaskan contoh terakhir lagi?",
+   "Tentu. Kami membagi data dan membandingkan hasilnya."
+  ],
+  [
+   "Apakah profesor ketat tentang tenggat waktu?",
+   "Sangat ketat, jadi mohon jangan menyerahkan apa pun terlambat."
+  ],
+  [
+   "Apakah Anda sudah melihat jadwal baru untuk minggu depan?",
+   "Ya, pertemuan telah dipindahkan ke sore hari."
+  ],
+  [
+   "Bagaimana cuaca di luar?",
+   "Dingin dan berangin, jadi bawa jaket hangat."
+  ],
+  [
+   "Apakah akan hujan akhir pekan ini?",
+   "Prakiraan mengatakan akan ada hujan ringan pada hari Minggu."
+  ],
+  [
+   "Ke mana Anda pergi untuk liburan musim panas?",
+   "Kami mengunjungi desa yang tenang dekat pegunungan."
+  ],
+  [
+   "Bagaimana perjalanan ke pantai?",
+   "Indah. Kami berjalan di sepanjang pantai setiap malam."
+  ],
+  [
+   "Apakah Anda naik kereta atau bus?",
+   "Kereta, karena lebih cepat dan lebih nyaman."
+  ],
+  [
+   "Apakah museum buka pada hari Senin?",
+   "Tidak, museum tutup pada hari Senin tetapi buka pada hari-hari lainnya."
+  ],
+  [
+   "Apa yang ingin Anda makan malam ini?",
+   "Sesuatu yang sederhana, mungkin sup dan roti segar."
+  ],
+  [
+   "Bisakah Anda merekomendasikan restoran yang bagus di dekat sini?",
+   "Tempat kecil di pojok menyajikan mie yang sangat enak."
+  ],
+  [
+   "Apakah Anda sering memasak di rumah?",
+   "Hampir setiap hari. Lebih sehat dan lebih murah."
+  ],
+  [
+   "Siapa yang mengajari Anda cara membuat roti?",
+   "Nenek saya mengajari saya ketika saya masih kecil."
+  ],
+  [
+   "Apakah kita sebaiknya membeli buah di pasar?",
+   "Ya, buah di sana lebih segar daripada di supermarket."
+  ],
+  [
+   "Berapa banyak air yang Anda minum setiap hari?",
+   "Tidak cukup, saya seharusnya benar-benar minum lebih banyak."
+  ],
+  [
+   "Apakah Anda berolahraga sebelum atau setelah bekerja?",
+   "Biasanya di pagi hari, sebelum kantor dibuka."
+  ],
+  [
+   "Bagaimana Anda tidur tadi malam?",
+   "Buruk. Tetangga sedang bermain musik dengan keras."
+  ],
+  [
+   "Apakah Anda merasa lebih baik hari ini?",
+   "Jauh lebih baik, terima kasih. Yang lain benar-benar membantu."
+  ],
+  [
+   "Apakah dokter memberi Anda saran?",
+   "Dia menyuruh saya untuk beristirahat dan minum banyak air."
+  ],
+  [
+   "Apakah Anda pernah mencoba belajar bahasa kedua?",
+   "Ya, saya berlatih sedikit setiap hari dengan aplikasi."
+  ],
+  [
+   "Apa bagian tersulit dari belajar bahasa?",
+   "Berbicara dengan percaya diri, terutama di telepon."
+  ],
+  [
+   "Apakah Anda lebih suka membaca buku atau menonton film?",
+   "Buku, karena saya bisa membayangkan ceritanya sendiri."
+  ],
+  [
+   "Jenis musik apa yang Anda sukai?",
+   "Musik yang tenang, yang membantu saya untuk rileks."
+  ],
+  [
+   "Apakah Anda menikmati konser tadi malam?",
+   "Sangat. Orkestra itu sangat bagus."
+  ],
+  [
+   "Apakah Anda pernah mengunjungi galeri seni baru?",
+   "Belum, tetapi saya mendengar lukisannya sangat mengesankan."
+  ],
+  [
+   "Apakah komputer Anda berfungsi lagi?",
+   "Ya, pembaruan memperbaiki masalahnya."
+  ],
+  [
+   "Apakah Anda menyimpan cadangan file Anda?",
+   "Tentu, saya selalu menyimpan salinan di drive lain."
+  ],
+  [
+   "Mengapa internet menjadi sangat lambat hari ini?",
+   "Badai merusak beberapa kabel di daerah tersebut."
+  ],
+  [
+   "Bisakah Anda membantu saya dengan program ini?",
+   "Tentu. Tunjukkan pesan kesalahan terlebih dahulu."
+  ],
+  [
+   "Apa arti pesan kesalahan ini?",
+   "Ini berarti file tidak dapat ditemukan."
+  ],
+  [
+   "Apakah saya harus menggunakan kata sandi yang lebih kuat?",
+   "Tentu. Gunakan frasa yang panjang yang mudah Anda ingat."
+  ],
+  [
+   "Bagaimana panel surya menghasilkan listrik?",
+   "Mereka mengubah sinar matahari langsung menjadi energi listrik."
+  ],
+  [
+   "Apakah daur ulang benar-benar sepadan dengan usaha?",
+   "Ya, ini mengurangi limbah dan menghemat sumber daya alam."
+  ],
+  [
+   "Mengapa lebah sangat penting?",
+   "Mereka mempolinasi tanaman yang memberi kita buah dan sayuran."
+  ],
+  [
+   "Apa yang menyebabkan pasang surut di laut?",
+   "Terutama tarikan bulan pada air."
+  ],
+  [
+   "Apakah Anda pernah melihat paus di alam liar?",
+   "Dulu, dari perahu jauh di laut."
+  ],
+  [
+   "Apakah jalan pegunungan buka di musim dingin?",
+   "Tidak, biasanya tertutup karena salju."
+  ],
+  [
+   "Apa yang harus kita bawa untuk pendakian?",
+   "Air, makanan, peta, dan lapisan hangat."
+  ],
+  [
+   "Seberapa jauh danau dari sini?",
+   "Sekitar satu jam dengan berjalan kaki melalui hutan."
+  ],
+  [
+   "Apakah tim Anda menang dalam pertandingan hari Sabtu?",
+   "Ya, kami menang dalam beberapa menit terakhir."
+  ],
+  [
+   "Seberapa sering tim berlatih?",
+   "Dua kali seminggu, dan lebih sebelum pertandingan penting."
+  ],
+  [
+   "Apakah Anda ingin bermain sepak bola di taman?",
+   "Mungkin nanti, ketika tidak terlalu panas."
+  ],
+  [
+   "Kapan bus berikutnya berangkat?",
+   "Dalam sepuluh menit, dari halte di seberang jalan."
+  ],
+  [
+   "Apakah bandara jauh dari pusat kota?",
+   "Tidak terlalu, kereta membutuhkan waktu sekitar setengah jam."
+  ],
+  [
+   "Mengapa penerbangan tertunda?",
+   "Ada kabut tebal di pagi hari."
+  ],
+  [
+   "Apakah Anda memesan kamar di hotel?",
+   "Ya, kamar dengan pemandangan danau."
+  ],
+  [
+   "Bagaimana hari pertama Anda di pekerjaan baru?",
+   "Sibuk, tetapi rekan kerja saya sangat ramah."
+  ],
+  [
+   "Apa yang paling Anda sukai dari pekerjaan Anda?",
+   "Bekerja dengan tim yang berkomunikasi dengan baik."
+  ],
+  [
+   "Apakah Anda merasa gugup tentang presentasi?",
+   "Sedikit, tetapi saya sudah mempraktikkannya beberapa kali."
+  ],
+  [
+   "Siapa yang memimpin proyek tahun ini?",
+   "Manajer dari departemen desain."
+  ],
+  [
+   "Kapan laporan harus diserahkan?",
+   "Pada akhir minggu, sebelum pertemuan."
+  ],
+  [
+   "Bisakah kita menunda pertemuan ke sore hari?",
+   "Itu cocok untuk saya. Saya akan memberitahu yang lain."
+  ],
+  [
+   "Apakah Anda membaca berita pagi ini?",
+   "Hanya judulnya. Apakah ada pengumuman penting?"
+  ],
+  [
+   "Apa yang diumumkan oleh pemerintah?",
+   "Rencana baru untuk memperbaiki jalan di daerah pedesaan."
+  ],
+  [
+   "Apakah transportasi umum lebih murah daripada berkendara?",
+   "Biasanya, dan juga lebih baik untuk lingkungan."
+  ],
+  [
+   "Apakah Anda bersepeda ke tempat kerja?",
+   "Ketika cuaca bagus, ya."
+  ],
+  [
+   "Mengapa harga sayuran naik?",
+   "Musim panas sangat kering, sehingga panennya kecil."
+  ],
+  [
+   "Bagaimana Anda berhasil menabung uang?",
+   "Saya menyisihkan sedikit setiap minggu."
+  ],
+  [
+   "Apakah Anda ingin membeli rumah suatu hari nanti?",
+   "Mungkin, tetapi untuk saat ini menyewa lebih mudah."
+  ],
+  [
+   "Apa yang sedang dilakukan anak-anak sore ini?",
+   "Mereka sedang membuat manusia salju di depan sekolah."
+  ],
+  [
+   "Apakah anjing Anda suka jalan-jalan?",
+   "Dia menyukainya, terutama dekat sungai."
+  ],
+  [
+   "Di mana Anda mengadopsi kucing Anda?",
+   "Dari tempat penampungan hewan di pinggiran kota."
+  ],
+  [
+   "Apakah Anda menanam apa pun di kebun?",
+   "Beberapa rempah dan tomat di balkon."
+  ],
+  [
+   "Musim apa yang paling Anda sukai?",
+   "Musim gugur, ketika daun berubah warna."
+  ],
+  [
+   "Apakah Anda melihat matahari terbenam kemarin?",
+   "Ya, seluruh langit menjadi oranye dan merah muda."
+  ],
+  [
+   "Bisakah Anda merekomendasikan buku yang bagus?",
+   "Saya baru saja menyelesaikan novel tentang keluarga yang pindah ke luar negeri."
+  ],
+  [
+   "Apakah penulis memberikan ceramah di toko buku?",
+   "Ya, pada hari Kamis malam, dan dia akan menandatangani salinan."
+  ],
+  [
+   "Bagaimana Anda mengingat apa yang Anda baca?",
+   "Saya menulis ringkasan singkat setelah setiap bab."
+  ],
+  [
+   "Mengapa Anda sering mengambil istirahat saat belajar?",
+   "Istirahat singkat membantu saya untuk berkonsentrasi lebih lama."
+  ],
+  [
+   "Apa yang akan tercakup dalam ujian akhir?",
+   "Semua yang telah kami pelajari pada semester ini."
+  ],
+  [
+   "Apakah kami diizinkan menggunakan catatan selama ujian?",
+   "Tidak, dan ponsel harus dimatikan."
+  ],
+  [
+   "Apakah Anda menjadi sukarelawan dalam pembersihan pantai?",
+   "Ya, kami mengumpulkan banyak tas sampah."
+  ],
+  [
+   "Apakah festival ini layak dikunjungi?",
+   "Tentu saja. Orang-orang datang dari banyak negara."
+  ],
+  [
+   "Siapa yang membangun kastil tua di bukit?",
+   "Tidak ada yang tahu pasti, tetapi sangat tua."
+  ],
+  [
+   "Mengapa kota-kota kuno dibangun di dekat sungai?",
+   "Sungai menyediakan air, makanan, dan transportasi."
+  ],
+  [
+   "Apa yang Anda pelajari di pameran sains?",
+   "Bagaimana robot dapat mengurutkan paket dengan sangat cepat."
+  ],
+  [
+   "Apakah kecerdasan buatan akan menggantikan banyak pekerjaan?",
+   "Beberapa pekerjaan akan berubah, dan yang baru akan muncul."
+  ],
+  [
+   "Bagaimana para insinyur dapat membuat mobil menggunakan lebih sedikit energi?",
+   "Dengan membuatnya lebih ringan dan lebih efisien."
+  ],
+  [
+   "Mengapa komunikasi yang baik sangat penting?",
+   "Karena kesalahpahaman dapat merusak sebuah proyek."
+  ],
+  [
+   "Apakah sulit untuk bekerja dalam tim yang besar?",
+   "Terkadang, tetapi peran yang jelas membuatnya lebih mudah."
+  ],
+  [
+   "Apakah kita ingin meninjau poin-poin penting sebelum selesai?",
+   "Ide yang bagus. Mari kita bahas satu per satu."
+  ],
+  [
+   "Apakah Anda memiliki pertanyaan sebelum kita selesai?",
+   "Hanya satu: kapan sesi berikutnya?"
+  ],
+  [
+   "Terima kasih atas bantuannya hari ini.",
+   "Sama-sama. Sampai jumpa minggu depan."
+  ]
+ ],
+ "reactions": [
+  "Itu masuk akal.",
+  "Saya setuju dengan itu.",
+  "Benarkah? Saya tidak tahu itu.",
+  "Itu adalah poin yang bagus.",
+  "Saya juga mengalami hal yang sama.",
+  "Menarik, ceritakan lebih lanjut.",
+  "Saya tidak yakin tentang itu.",
+  "Persis seperti yang saya pikirkan.",
+  "Itu terdengar luar biasa.",
+  "Senang mengetahui, terima kasih.",
+  "Saya akan mengingat itu.",
+  "Sama di sini."
+ ]
+}

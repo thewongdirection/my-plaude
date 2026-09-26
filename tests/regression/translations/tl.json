@@ -1,0 +1,513 @@
+{
+ "language": "tl",
+ "model": "translategemma:4b",
+ "source_sha1": "fba76066ed28099b550acc310984f2a97d35ed64",
+ "sentences": [
+  "Magandang umaga sa lahat, at maligayang pagdating sa araw na ito.",
+  "Ngayon, pag-uusapan natin kung paano natututo ang mga makina mula sa mga halimbawa.",
+  "Natututo ang isang modelo ng mga pattern mula sa datos na ibinigay.",
+  "Kung matandaan ng modelo ang datos na ginamit, hindi ito gumagana nang maayos sa bagong datos.",
+  "Ang problemang ito ay tinatawag na \"overfitting,\" at ito ay napaka-karaniwan.",
+  "Isa sa mga paraan upang mabawasan ang \"overfitting\" ay ang pagkolekta ng mas maraming datos sa pagsasanay.",
+  "Isa pang paraan ay ang panatilihing simple ang modelo.",
+  "Nakakatulong ang \"cross validation\" upang tantiyahin kung gaano kahusay ang isang modelo sa pag-generalize.",
+  "Mangyaring isulat ang mga pangunahing ideya sa iyong notebook.",
+  "Ang takdang-aralin para sa susunod na linggo ay ang pag-evaluate ng isang simpleng modelo ng pag-uuri.",
+  "Bukas ang aklatan araw-araw hanggang sa hapon.",
+  "Maraming estudyante ang mas gusto na mag-aral nang sama-sama sa maliliit na grupo.",
+  "Ang pagbabasa ng kabanata bago ang klase ay nagpapadali sa pag-unawa sa lektura.",
+  "Kung mayroon kang tanong, mangyaring itaas ang iyong kamay anumang oras.",
+  "Ang lagay ng panahon ngayon ay malamig at maaliwalas, kaya magdala ng mainit na jacket.",
+  "Umuulan nang malakas kahapon, at ilang kalye ay nabasa.",
+  "Ang tag-init ang aking paboritong panahon dahil nagsisimulang mamulaklak ang mga bulaklak.",
+  "Ang tren papunta sa lungsod ay umaalis mula sa pangunahing istasyon araw-araw.",
+  "Tinuruan ako ng aking lola kung paano magluto ng sopas gamit ang sariwang gulay.",
+  "Bisitahin namin ang isang maliit na nayon malapit sa bundok sa panahon ng bakasyon.",
+  "Nagbebenta ang palengke ng prutas, tinapay, keso, at sariwang isda.",
+  "Mahalaga ang pag-inom ng sapat na tubig araw-araw para sa iyong kalusugan.",
+  "Nakakatulong ang regular na ehersisyo sa parehong katawan at isipan.",
+  "Inirerekomenda ng mga doktor na matulog nang maayos bago ang isang mahalagang pagsusulit.",
+  "May malaking koleksyon ng mga lumang pinta at iskultura ang museo.",
+  "Nakakatulong ang musika upang makapagpahinga ang mga tao pagkatapos ng mahaba at nakaka-stress na araw.",
+  "Naglaro ang mga bata ng football sa parke hanggang sa lumubog ang araw.",
+  "Ang aming kapitbahay ay nag-adop ng isang palaka mula sa animal shelter.",
+  "Umaagos ang ilog nang dahan-dahan sa kahabaan ng lambak patungo sa dagat.",
+  "Nagbibigay ng tahanan ang mga kagubatan sa maraming hayop at nililinis ang hangin na hinihinga natin.",
+  "Ang pagbabago ng klima ay nakakaapekto sa mga magsasaka, mga lungsod, at mga hayop sa buong mundo.",
+  "Ang mga solar panel ay nagko-convert ng sikat ng araw sa kuryente para sa mga tahanan at paaralan.",
+  "Ang pag-recycle ng papel at plastik ay binabawasan ang dami ng basura na ginagawa natin.",
+  "Ang bagong tulay ay gagawing mas mabilis ang paglalakbay sa pagitan ng dalawang bayan.",
+  "Kailangan ng mga inhinyero na subukan nang maingat ang bawat disenyo bago ito itayo.",
+  "Ang isang magandang siyentipiko ay palaging nagtatanong tungkol sa mga resulta ng isang eksperimento.",
+  "Ang teleskopyo ay nagbibigay-daan sa atin na makita ang mga malalayong bituin at planeta.",
+  "May malakas na impluwensya ang buwan sa mga alon ng karagatan.",
+  "Nagtuturo sa atin ang kasaysayan kung paano nabuhay at nagtrabaho ang mga tao sa nakaraan.",
+  "Kadalasan, itinayo ang mga sinaunang lungsod malapit sa mga ilog para sa malinis na tubig.",
+  "Ang pag-aaral ng pangalawang wika ay nagbubukas ng daan sa mga bagong kultura.",
+  "Magpraktis ng pagsasalita araw-araw, kahit na mahirap.",
+  "Ipinaliwanag ng guro ang panuntunan ng gramatika gamit ang ilang malinaw na halimbawa.",
+  "Ang pagsulat ng maikling buod ay nakakatulong upang maalala ang nabasa.",
+  "Sundin ng mga computer ang mga tagubilin na isinulat ng mga programmer.",
+  "Ang maliit na pagkakamali sa code ay maaaring magdulot ng pagkabigo ng buong programa.",
+  "Palaging i-save ang backup na kopya ng iyong mahahalagang file.",
+  "Binago ng internet ang paraan ng ating pakikipag-ugnayan.",
+  "Mangyaring patayin ang iyong telepono sa panahon ng pagsusulit.",
+  "Ang pagpupulong ay inilipat sa malaking silid sa ikalawang palapag.",
+  "Ang aming kumpanya ay naghahanap ng mga taong gustong magtrabaho sa isang grupo.",
+  "Ang magandang komunikasyon ay susi sa isang matagumpay na proyekto.",
+  "Ang restaurant sa kanto ay naghahain ng masarap na noodles at kanin.",
+  "Dapat tayong umalis nang maaga upang maiwasan ang mabigat na trapiko sa umaga.",
+  "Ang ospital ay nagtatayo ng bagong wing para sa mga bata.",
+  "Ang mga boluntaryo ay naglinis ng beach at nangolekta ng maraming bag ng basura.",
+  "Ang festival ay umaakit ng mga bisita mula sa maraming iba't ibang bansa.",
+  "Salamat sa pakikinig, at makikita kita sa susunod na linggo.",
+  "Bago tayo matapos, ating repasuhin ang pinakamahalagang punto.",
+  "Tandaan na ang pag-aaral ay nangangailangan ng oras, pasensya, at pagiging mausisa.",
+  "Bukas ang panaderya nang maaga upang makabili ng tinapay ang mga tao sa kanilang pagpunta sa trabaho.",
+  "Mayroon siyang maliit na hardin sa kanyang balkonahe na may mga damo at kamatis.",
+  "Naantala ang bus sa umaga dahil sa aksidente sa highway.",
+  "Palagi niyang binabasa ang pahayagan habang umiinom ng kanyang kape.",
+  "Nagdesisyon ang konseho ng lungsod na magtanim ng mas maraming puno sa pangunahing daan.",
+  "Ang aming paaralan ay nag-oorganisa ng science fair sa katapusan ng bawat taon.",
+  "Ipinakita ng mga estudyante ang kanilang mga proyekto sa mga magulang at guro.",
+  "Ang malakas na hangin ay nagbagsak ng ilang sanga sa parke.",
+  "Umaasa ang mga magsasaka sa ulan pagkatapos ng mahabang tag-init.",
+  "Ang lumang kastilyo sa burol ay umaakit ng maraming turista.",
+  "Mangyaring tandaan na dalhin ang iyong ID sa opisina.",
+  "Ang parmasya ay nasa tabi ng post office, sa tapat ng bangko.",
+  "Natututo ang aking kapatid na maglaro ng gitara sa gabi.",
+  "Kinansela ang konsyerto dahil sa sakit ng mang-aawit.",
+  "Nanood kami ng dokumentaryo tungkol sa mga hayop sa rainforest.",
+  "Sakop ng karamihan ng ibabaw ng ating planeta ang karagatan.",
+  "Nakikipag-usap ang mga balyena sa isa't isa gamit ang mahaba at komplikadong mga awit.",
+  "Mahalaga ang papel ng mga bubuyog sa pagtatanim ng prutas at gulay.",
+  "Sarado ang daan patungo sa bundok sa taglamig dahil sa niyebe.",
+  "Dapat laging may tubig, pagkain, at mapa ang mga hiker.",
+  "Nagdiwang ang koponan sa kanilang tagumpay sa pamamagitan ng isang malaking hapunan.",
+  "Paalala ng coach sa mga manlalaro na magpahinga bago ang huling laban.",
+  "Madalas sabihin ng aming mga lolo at lola ang mga kwento tungkol sa kanilang pagkabata.",
+  "Ang baryo ay nagho-host ng pamilihan sa plaza tuwing weekend.",
+  "Gumagamit ang chef ng sariwang sangkap mula sa mga lokal na bukid.",
+  "Mangyaring hugasan ang iyong mga kamay bago maghanda ng pagkain.",
+  "Nakakagana ang amoy ng kusina kapag nagluluto ang aking ina ng cake.",
+  "Tumaas nang husto ang presyo ng mga gulay ngayong buwan.",
+  "Ang pagtitipid ng kaunting pera bawat linggo ay maaaring magdulot ng malaking pagbabago.",
+  "Nagbibigay ng payo ang bangko sa mga taong gustong bumili ng bahay.",
+  "Ang pabrika ay nag-empleyo ng mga bagong manggagawa upang matugunan ang lumalaking pangangailangan.",
+  "Tumutulong ang pampublikong transportasyon na mabawasan ang polusyon sa malalaking lungsod.",
+  "Mas maraming tao ang gumagamit ng bisikleta para magtrabaho.",
+  "Inilabas ng gobyerno ang isang plano upang pagbutihin ang mga kalsada sa rural na lugar.",
+  "Iulat ng mga pahayagan at website ang balita sa loob ng ilang minuto.",
+  "Ipinaliwanag ng siyentipiko ang kanyang natuklasan sa simpleng salita.",
+  "Kailangan ng laboratoryo ang mga bagong kagamitan para sa kanilang mga eksperimento.",
+  "Pinrotektahan ng mga bakuna ang milyon-milyong tao mula sa malubhang sakit.",
+  "Sinuri ng nars ang temperatura ng pasyente kada oras.",
+  "Ang balanseng diyeta ay kinabibilangan ng prutas, gulay, at buong butil.",
+  "Ang paglalakad sa kalikasan ay nakakatulong na mabawasan ang stress at mapabuti ang iyong pakiramdam.",
+  "Iginala ng artist ang retrato gamit ang mga makukulay na kulay.",
+  "Ipinapakita ng teatro ang isang bagong dula ngayong season.",
+  "Nagpirma ang manunulat ng mga kopya ng kanyang pinakabagong aklat sa bookstore.",
+  "Madalas ipahayag ng tula ang mga damdamin na mahirap ipaliwanag.",
+  "Naghintay ang photographer ng ilang oras upang makuha ang pagsikat ng araw.",
+  "Ikinukuwento ng pelikula ang kuwento ng isang pamilya na lumipat sa ibang bansa.",
+  "Mabilis na natututo ang mga bata kapag sila ay mausisa at sinusuportahan.",
+  "Humiling ang guro sa klase na magtrabaho sa mga pares.",
+  "Sakop ng huling pagsusulit ang lahat ng ating pinag-aralan sa term na ito.",
+  "Mangyaring isumite ang iyong sanaysay bago matapos ang linggo.",
+  "Sumagot ang propesor sa mga tanong pagkatapos ng lektura.",
+  "Nakakatulong ang regular na pahinga upang maging mas konsentrado.",
+  "Kayang mag-sort ng robot ang mga package nang mas mabilis kaysa sa isang tao.",
+  "Binabago ng artificial intelligence ang maraming industriya.",
+  "Nagdidisenyo ng mga sasakyan na gumagamit ng mas kaunting enerhiya ang mga inhinyero.",
+  "Ang software update ay nag-ayos ng ilang problema sa seguridad.",
+  "Ang malalakas na password ay nagpoprotekta sa iyong mga account mula sa mga attacker.",
+  "Wala nang papel ang printer sa ikatlong palapag.",
+  "Mabagal ang ating koneksyon sa internet sa panahon ng bagyo.",
+  "Ang paliparan ay puno ng mga pasahero sa panahon ng mga bakasyon.",
+  "Naantala ang paglipad dahil sa fog.",
+  "Ang silid ng hotel ay may magandang tanawin ng lawa.",
+  "Nagrenta kami ng maliit na bangka at naglayag sa baybayin.",
+  "Ang lighthouse ay nagturo sa mga barko upang ligtas na pumasok sa daungan.",
+  "Bumalik ang mga mangingisda sa daungan na may malaking nahuli.",
+  "Natakpan ng niyebe ang mga bubong at tahimik ang mga kalye.",
+  "Gumawa ang mga bata ng snowman sa harap ng paaralan.",
+  "Ang mga dahon ng taglagas ay nagiging pula, orange, at dilaw.",
+  "Ang paglubog ng araw sa dagat ay napakaganda."
+ ],
+ "exchanges": [
+  [
+   "Tapos na ba ninyong basahin ang kaban sa araw na ito?",
+   "Oo, nabasa ko ito kahapon, ngunit mahirap ang ikalawang bahagi."
+  ],
+  [
+   "Ano ang iniisip mo tungkol sa lektura ngayong umaga?",
+   "Nakakainteres, lalo na ang bahagi tungkol sa data ng pagsasanay."
+  ],
+  [
+   "Pupunta ka ba sa grupo ng pag-aaral ngayong gabi?",
+   "Gusto ko, ngunit kailangan kong magtrabaho hanggang huli."
+  ],
+  [
+   "Saan tayo dapat magkita bago ang pagsusulit?",
+   "Magkita tayo sa harap ng aklatan, medyo maaga."
+  ],
+  [
+   "Naiintindihan mo ba kung paano gumagana ang cross validation?",
+   "Sa tingin ko. Sinusubukan mo ang modelo sa data na hindi pa nakikita."
+  ],
+  [
+   "Bakit hindi gumagana nang maayos ang modelo sa bagong data?",
+   "Dahil natandaan nito ang mga halimbawa ng pagsasanay sa halip na matuto ng mga pattern."
+  ],
+  [
+   "Gaano katagal ang ginugol mo sa takdang-aralin?",
+   "Karamihan sa hapon, dahil nagkamali ako sa simula."
+  ],
+  [
+   "Maaari mo bang ipaliwanag muli ang huling halimbawa?",
+   "Syempre. Hinahati natin ang data at ikumpara ang mga resulta."
+  ],
+  [
+   "Mahigpit ba ang propesor sa mga deadline?",
+   "Sobrang mahigpit, kaya mangyaring huwag magsumite ng kahit ano na late."
+  ],
+  [
+   "Nakita mo na ba ang bagong iskedyul para sa susunod na linggo?",
+   "Oo, inilipat ang pagpupulong sa hapon."
+  ],
+  [
+   "Ano ang lagay ng panahon sa labas?",
+   "Malamig at maalon, kaya magdala ng mainit na jacket."
+  ],
+  [
+   "Mag-uulan ba sa weekend?",
+   "Sinasabi ng forecast na may magiging magaan na ulan sa Linggo."
+  ],
+  [
+   "Saan ka pumunta sa iyong bakasyon sa tag-init?",
+   "Binisita namin ang tahimik na nayon malapit sa bundok."
+  ],
+  [
+   "Paano ang biyahe sa baybayin?",
+   "Napakaganda. Naglakad kami sa beach bawat gabi."
+  ],
+  [
+   "Kumaron ka ba ng tren o bus?",
+   "Ang tren, dahil mas mabilis at komportable."
+  ],
+  [
+   "Bukas ba ang museo sa Lunes?",
+   "Hindi, sarado ito sa Lunes ngunit bukas ang natitirang bahagi ng linggo."
+  ],
+  [
+   "Ano ang gusto mong kainin ngayong gabi?",
+   "May simpleng bagay, marahil sopas at sariwang tinapay."
+  ],
+  [
+   "Maaari mo bang irekomenda ang isang magandang restaurant sa malapit?",
+   "Ang maliit na lugar sa sulok ay naghahain ng mahusay na noodles."
+  ],
+  [
+   "Madalas ka bang nagluluto sa bahay?",
+   "Halos araw-araw. Mas malusog at mas mura."
+  ],
+  [
+   "Sino ang nagturo sa iyo kung paano maghurno ng tinapay?",
+   "Tinuruan ako ng aking lola noong bata pa ako."
+  ],
+  [
+   "Dapat ba tayong bumili ng prutas sa palengke?",
+   "Oo, mas sariwa ang prutas doon kaysa sa supermarket."
+  ],
+  [
+   "Ilang tubig ang iniinom mo araw-araw?",
+   "Hindi sapat, dapat talaga akong uminom ng mas marami."
+  ],
+  [
+   "Nag-eehersisyo ka ba bago o pagkatapos ng trabaho?",
+   "Kadalasan sa umaga, bago magbukas ang opisina."
+  ],
+  [
+   "Paano ka natulog kahapon?",
+   "Hindi maganda. Naglalaro ang mga kapitbahay ng malakas na musika."
+  ],
+  [
+   "Mas maganda na ba ang pakiramdam mo ngayon?",
+   "Mas maganda, salamat. Talagang nakatulong ang lahat."
+  ],
+  [
+   "Nagbigay ba ang doktor ng anumang payo?",
+   "Sabi niya, magpahinga at uminom ng maraming tubig."
+  ],
+  [
+   "Nais mo bang matutunan ang pangalawang wika?",
+   "Oo, nagpraktis ako araw-araw gamit ang isang app."
+  ],
+  [
+   "Ano ang pinakamahirap na bahagi ng pag-aaral ng wika?",
+   "Magsalita nang may kumpiyansa, lalo na sa telepono."
+  ],
+  [
+   "Mas gusto mo ba ang pagbabasa ng libro o panonood ng pelikula?",
+   "Libro, dahil kaya kong isipin ang kuwento."
+  ],
+  [
+   "Anong uri ng musika ang gusto mo?",
+   "Karaniwan, tahimik na musika na nakakatulong sa akin na magrelaks."
+  ],
+  [
+   "Nag-enjoy ka ba sa konsyerto kahapon?",
+   "Sobrang saya. Napakaganda ng orkestra."
+  ],
+  [
+   "Nakabisita ka na ba sa bagong art gallery?",
+   "Hindi pa, ngunit narinig ko na ang mga pintura ay kahanga-hanga."
+  ],
+  [
+   "Gumagana na muli ang iyong computer?",
+   "Oo, naayos ng update ang problema."
+  ],
+  [
+   "Nag-save ka ba ng backup ng iyong mga file?",
+   "Syempre, palagi akong may kopya sa ibang drive."
+  ],
+  [
+   "Bakit mabagal ang internet ngayon?",
+   "Nasira ng bagyo ang ilang kable sa lugar."
+  ],
+  [
+   "Maaari mo ba akong tulungan sa programang ito?",
+   "Oo. Ipakita mo muna sa akin ang mensahe ng error."
+  ],
+  [
+   "Ano ang ibig sabihin ng mensaheng ito?",
+   "Ibig sabihin, hindi mahanap ang file."
+  ],
+  [
+   "Dapat ba akong gumamit ng mas malakas na password?",
+   "Oo naman. Gumamit ng mahabang parirala na madaling tandaan."
+  ],
+  [
+   "Paano gumagawa ng kuryente ang mga solar panel?",
+   "Ginagawa nila ang liwanag ng araw na direktang enerhiya."
+  ],
+  [
+   "Talaga bang sulit ang pag-recycle?",
+   "Oo, binabawasan nito ang basura at nakakatipid ng natural na yaman."
+  ],
+  [
+   "Bakit mahalaga ang mga bubuyog?",
+   "Pinapabunga nila ang mga halaman na nagbibigay sa atin ng prutas at gulay."
+  ],
+  [
+   "Ano ang nagdudulot ng mga alon sa karagatan?",
+   "Pangunahin, ang grabidad ng buwan sa tubig."
+  ],
+  [
+   "Nakita mo na ba ang isang balyena sa labas?",
+   "Isang beses, mula sa isang bangka malayo sa dagat."
+  ],
+  [
+   "Bukas ba ang mga kalsada sa bundok sa taglamig?",
+   "Hindi, karaniwang sarado dahil sa niyebe."
+  ],
+  [
+   "Ano ang dapat nating dalhin para sa paglalakad?",
+   "Tubig, pagkain, mapa, at isang mainit na damit."
+  ],
+  [
+   "Gaano kalayo ang lawa mula dito?",
+   "Mga isang oras sa pamamagitan ng paglalakad sa gubat."
+  ],
+  [
+   "Nanalo ba ang iyong team sa laban noong Sabado?",
+   "Oo, nanalo kami sa huling ilang minuto."
+  ],
+  [
+   "Gaano kadalas nag-eensayo ang team?",
+   "Dalawang beses sa isang linggo, at mas madalas bago ang mahalagang mga laro."
+  ],
+  [
+   "Gusto mo bang maglaro ng football sa parke?",
+   "Baka mamaya, kapag hindi masyadong mainit."
+  ],
+  [
+   "Kailan umalis ang susunod na bus?",
+   "Sa loob ng sampung minuto, mula sa bus stop sa kabilang kalye."
+  ],
+  [
+   "Malayo ba ang airport sa sentro ng lungsod?",
+   "Hindi naman, ang tren ay tumatagal ng mga kalahating oras."
+  ],
+  [
+   "Bakit naantala ang flight?",
+   "May makapal na fog sa maagang umaga."
+  ],
+  [
+   "Nag-book ka ba ng kwarto sa hotel?",
+   "Oo, isang kwarto na may tanawin ng lawa."
+  ],
+  [
+   "Paano ang iyong unang araw sa bagong trabaho?",
+   "Abala, ngunit ang aking mga kasamahan ay napaka-friendly."
+  ],
+  [
+   "Ano ang gusto mo sa iyong trabaho?",
+   "Pagtratrabaho sa isang team na nakikipag-usap nang maayos."
+  ],
+  [
+   "Ikaw ba ay kinakabahan tungkol sa presentasyon?",
+   "Medyo, pero sinanay ko na ito ng maraming beses."
+  ],
+  [
+   "Sino ang nangunguna sa proyekto ngayong taon?",
+   "Ang manager mula sa departamento ng disenyo."
+  ],
+  [
+   "Kailan ang takdang oras ng ulat?",
+   "Sa katapusan ng linggo, bago ang pagpupulong."
+  ],
+  [
+   "Maaari ba nating ilipat ang pagpupulong sa hapon?",
+   "Maganda iyon para sa akin. Sasabihin ko sa iba."
+  ],
+  [
+   "Nabasa mo ba ang balita sa umaga?",
+   "Lamang ang mga pamagat. May mahalagang anunsyo ba?"
+  ],
+  [
+   "Ano ang anunsyo ng gobyerno?",
+   "Isang bagong plano upang pagbutihin ang mga kalsada sa mga rural na lugar."
+  ],
+  [
+   "Mas mura ba ang pampublikong transport kaysa sa pagmamaneho?",
+   "Kadalasan, at mas mabuti rin ito para sa kapaligiran."
+  ],
+  [
+   "Nagbibisikleta ka ba papunta sa trabaho?",
+   "Kapag maganda ang panahon, oo."
+  ],
+  [
+   "Bakit tumaas ang presyo ng mga gulay?",
+   "Napakainit ng tag-init, kaya maliit lang ang ani."
+  ],
+  [
+   "Paano mo nasusuyod ang pera?",
+   "Naglalagay ako ng kaunti bawat linggo."
+  ],
+  [
+   "Gusto mo bang bumili ng bahay isang araw?",
+   "Baka, pero sa ngayon mas madali ang pagrenta."
+  ],
+  [
+   "Ano ang ginagawa ng mga bata ngayong hapon?",
+   "Nagtatayo sila ng snowman sa harap ng paaralan."
+  ],
+  [
+   "Gusto ba ng iyong aso ang maglakad?",
+   "Gusto niya, lalo na malapit sa ilog."
+  ],
+  [
+   "Saan mo nakuha ang iyong pusa?",
+   "Mula sa animal shelter sa gilid ng bayan."
+  ],
+  [
+   "May itinanim ka ba sa hardin?",
+   "Ilang damo at kamatis sa balkona."
+  ],
+  [
+   "Ano ang iyong paboritong panahon?",
+   "Taglagas, kapag nagbago ang kulay ng mga dahon."
+  ],
+  [
+   "Nakita mo ba ang paglubog ng araw kahapon?",
+   "Oo, buong kalangitan ay naging orange at pink."
+  ],
+  [
+   "Maaari mo bang irekomenda ang isang magandang libro?",
+   "Kamakailan ko lang natapos ang isang nobela tungkol sa isang pamilya na lumipat sa ibang bansa."
+  ],
+  [
+   "Nagbibigay ba ng talumpati ang may-akda sa bookstore?",
+   "Oo, sa Huwebes ng gabi, at mag-i-sign siya ng mga kopya."
+  ],
+  [
+   "Paano mo maalala ang nabasa mo?",
+   "Sumusulat ako ng maikling buod pagkatapos ng bawat kabanata."
+  ],
+  [
+   "Bakit ka nagkakaroon ng maraming pahinga habang nag-aaral?",
+   "Nakakatulong ang maikling pahinga para mas mag-focus."
+  ],
+  [
+   "Ano ang sakop ng final exam?",
+   "Lahat ng ating pinag-aralan sa term na ito."
+  ],
+  [
+   "Pinapayagan ba tayong gumamit ng notes sa exam?",
+   "Hindi, at dapat patayin ang mga cellphone."
+  ],
+  [
+   "Nagboluntaryo ka ba sa beach cleanup?",
+   "Oo, nakolekta kami ng maraming bag ng basura."
+  ],
+  [
+   "Makakatuwa bang bisitahin ang festival?",
+   "Oo naman. Dumadayo ang mga tao mula sa maraming bansa."
+  ],
+  [
+   "Sino ang nagtayo ng lumang kastilyo sa burol?",
+   "Walang nakakaalam, ngunit ito ay napakaluma."
+  ],
+  [
+   "Bakit itinayo ang mga sinaunang lungsod malapit sa ilog?",
+   "Nagbigay ang ilog ng tubig, pagkain, at transportasyon."
+  ],
+  [
+   "Ano ang natutunan mo sa science fair?",
+   "Paano maaaring pagbuktin ng mga robot ang mga package nang napakabilis."
+  ],
+  [
+   "Mapapalitan ba ng artificial intelligence ang maraming trabaho?",
+   "May mga trabaho na magbabago, at may mga bagong trabaho na lalabas."
+  ],
+  [
+   "Paano maaaring gumawa ng mga inhinyero ng mga sasakyan na gumagamit ng mas kaunting enerhiya?",
+   "Sa pamamagitan ng paggawa ng mga ito na mas magaan at mas mahusay."
+  ],
+  [
+   "Bakit mahalaga ang magandang komunikasyon?",
+   "Dahil ang maling pag-unawa ay maaaring sirain ang isang proyekto."
+  ],
+  [
+   "Mahirap ba magtrabaho sa isang malaking grupo?",
+   "Minsan, ngunit ang malinaw na papel ay nagpapadali."
+  ],
+  [
+   "Gusto nating repasuhin ang mga pangunahing punto bago tayo matapos?",
+   "Magandang ideya. Pag-usapan natin isa-isa."
+  ],
+  [
+   "Mayroon ka bang tanong bago tayo matapos?",
+   "Isa lang: kailan ang susunod na sesyon?"
+  ],
+  [
+   "Salamat sa iyong tulong ngayon.",
+   "Walang anuman. Kita tayo sa susunod na linggo."
+  ]
+ ],
+ "reactions": [
+  "Makatwiran iyan.",
+  "Sumasang-ayon ako doon.",
+  "Talaga? Hindi ko alam iyan.",
+  "Magandang punto iyan.",
+  "Pareho rin ang aking karanasan.",
+  "Nakakainteres, sabihin mo pa.",
+  "Hindi ako sigurado doon.",
+  "Eksakto ang iniisip ko.",
+  "Napakaganda nito.",
+  "Maganda malaman iyan, salamat.",
+  "Magpapaalala ako niyan.",
+  "Ganun din dito."
+ ]
+}

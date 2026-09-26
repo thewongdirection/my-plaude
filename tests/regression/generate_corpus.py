@@ -442,13 +442,17 @@ def _write_translation(code: str, out: list, model: str) -> dict:
 # --------------------------------------------------------------------------- #
 # Speech synthesis (edge-tts, cached per voice + pitch + text)
 # --------------------------------------------------------------------------- #
-async def _tts_one(text: str, voice: str, pitch: str, sem: asyncio.Semaphore):
-    """Cached wav for one line, or None if the TTS service refuses the line.
+# The TTS service deterministically returns no audio for some exact
+# voice+text strings (hundreds of ordinary Thai/Vietnamese lines), yet speaks
+# the same text with trailing/leading whitespace. These variants sound
+# identical, so they are tried in turn before a line is given up on.
+_TTS_VARIANTS = (lambda t: t, lambda t: t + " ", lambda t: " " + t, lambda t: t + "\n")
 
-    The service deterministically returns no audio for a few lines (it
-    appears to filter some content, e.g. a Vietnamese sentence about
-    vaccines); such a line is remembered with a ``.refused`` marker and
-    skipped by the caller instead of aborting the whole corpus run."""
+
+async def _tts_one(text: str, voice: str, pitch: str, sem: asyncio.Semaphore):
+    """Cached wav for one line, or None if the TTS service refuses every
+    whitespace variant of it (remembered with a ``.refused`` marker, and
+    skipped by the caller instead of aborting the whole corpus run)."""
     import edge_tts
 
     wav = tts_path(text, voice, pitch)
@@ -459,32 +463,32 @@ async def _tts_one(text: str, voice: str, pitch: str, sem: asyncio.Semaphore):
         return None
     wav.parent.mkdir(parents=True, exist_ok=True)
     async with sem:
-        for attempt in range(4):
-            if wav.exists():  # another coroutine / run finished it meanwhile
-                return wav
-            try:
-                with tempfile.TemporaryDirectory() as tmp:
-                    mp3 = Path(tmp) / "a.mp3"
-                    await edge_tts.Communicate(text, voice, pitch=pitch).save(str(mp3))
-                    part = wav.with_name(f"{wav.stem}.{uuid.uuid4().hex}.part.wav")
-                    subprocess.run(
-                        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(mp3),
-                         "-ac", "1", "-ar", str(TTS_RATE), "-c:a", "pcm_s16le", str(part)],
-                        check=True)
-                    part.replace(wav)
-                return wav
-            except edge_tts.exceptions.NoAudioReceived:
-                if attempt == 3:
-                    refused.write_text(f"{voice} {pitch}\n{text}\n", encoding="utf-8")
-                    print(f"note: TTS service refused a line ({voice} {pitch}): {text!r} "
-                          f"- skipping it", flush=True)
-                    return None
-                await asyncio.sleep(2 * (attempt + 1))
-            except Exception:
-                if attempt == 3:
-                    raise
-                await asyncio.sleep(2 * (attempt + 1))
-    return wav if wav.exists() else None
+        for variant in _TTS_VARIANTS:
+            for attempt in range(3):  # transient network errors: back off and retry
+                if wav.exists():  # another coroutine / run finished it meanwhile
+                    return wav
+                try:
+                    with tempfile.TemporaryDirectory() as tmp:
+                        mp3 = Path(tmp) / "a.mp3"
+                        await edge_tts.Communicate(variant(text), voice, pitch=pitch).save(str(mp3))
+                        part = wav.with_name(f"{wav.stem}.{uuid.uuid4().hex}.part.wav")
+                        subprocess.run(
+                            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i",
+                             str(mp3), "-ac", "1", "-ar", str(TTS_RATE), "-c:a", "pcm_s16le",
+                             str(part)],
+                            check=True)
+                        part.replace(wav)
+                    return wav
+                except edge_tts.exceptions.NoAudioReceived:
+                    break  # deterministic for this exact string: try the next variant
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    await asyncio.sleep(2 * (attempt + 1))
+    refused.write_text(f"{voice} {pitch}\n{text}\n", encoding="utf-8")
+    print(f"note: TTS service refused a line ({voice} {pitch}): {text!r} - skipping it",
+          flush=True)
+    return None
 
 
 def tts_path(text: str, voice: str, pitch: str) -> Path:
