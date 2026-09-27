@@ -604,6 +604,10 @@ through **both** implementations for real (transcribe + translate to English):
   rate against the source text, and English content-word recall against the
   exact English reference. Thresholds depend on how well Whisper handles the
   language (tier A/B/C in `languages.py`); `baseline.json` catches regressions.
+  When Whisper answers in an accepted related language written in another
+  script (e.g. Urdu detected as Hindi and written in Devanagari), the character
+  comparison is marked not comparable instead of failing - the English recall
+  still checks that the content came through.
 
 > **Cloud for speed, not a requirement.** The regression suite runs on a cloud
 > GPU by default purely for **performance**: ~46 hours of multilingual audio per
@@ -669,6 +673,8 @@ python tests/regression/run_regression.py
 python tests/regression/run_regression.py --impl powershell --languages de,ja
 python tests/regression/run_regression.py --update-baseline
 python tests/regression/run_regression.py --sample 24 --out results/x --resume
+# re-evaluate a finished results.json with the current pass/fail rules (no re-run)
+python tests/regression/run_regression.py --rescore results/x/results.json
 ```
 
 Needs FFmpeg, faster-whisper (Python) / whisper-ctranslate2 (PowerShell), an

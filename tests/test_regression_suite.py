@@ -688,6 +688,40 @@ class TestRunner(unittest.TestCase):
         entry = dict(self.ENTRY, code="ms")
         self.assertEqual(rr.evaluate(self._res(language="id"), entry, "clean", None), [])
 
+    def test_cer_not_compared_across_scripts(self):
+        # Urdu audio detected as Hindi (accepted) comes back in Devanagari: the
+        # transcript can be fine, a char comparison with the Arabic-script
+        # reference is not - don't fail it on CER.
+        entry = dict(self.ENTRY, code="ur", tier="B")
+        r = self._res(language="hi", cer=1.0, recall=0.73)
+        self.assertEqual(rr.evaluate(r, entry, "clean", None), [])
+        self.assertFalse(r["cer_comparable"])
+        # Same script (Traditional/Simplified Chinese are folded) stays compared.
+        self.assertTrue(rr.cer_comparable("yue", "zh"))
+        self.assertTrue(rr.cer_comparable("de", "de"))
+        self.assertFalse(rr.cer_comparable("ur", "hi"))
+        # A wrong language that is NOT accepted still fails.
+        self.assertTrue(rr.evaluate(self._res(language="nl", cer=1.0), self.ENTRY, "clean", None))
+
+    def test_rescore_rewrites_failures(self):
+        import tempfile
+        from unittest import mock
+        entry = {"id": "ur-conv-07", "code": "ur", "kind": "conv", "tier": "B",
+                 "damage": {"hum_hz": None}}
+        run = {"impl": "python", "id": "ur-conv-07", "variant": "clean", "exit_code": 0,
+               "language": "hi", "cer": 1.0, "recall": 0.73, "failures": ["CER 1.000 > 0.6"]}
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "manifest.json").write_text(json.dumps({"items": [entry]}), encoding="utf-8")
+            res = Path(d) / "results.json"
+            res.write_text(json.dumps({"model": "m", "translate_engine": "llm",
+                                       "translate_model": "t", "results": [run]}), encoding="utf-8")
+            with mock.patch.object(rr, "CORPUS", Path(d)), \
+                 mock.patch.object(rr, "BASELINE", Path(d) / "none.json"):
+                self.assertEqual(rr.main(["--rescore", str(res)]), 0)
+            data = json.loads(res.read_text(encoding="utf-8"))
+        self.assertEqual(data["results"][0]["failures"], [])
+        self.assertEqual((data["passed"], data["failed"]), (1, 0))
+
     def test_low_resource_tier_only_checks_exit_and_baseline(self):
         entry = dict(self.ENTRY, code="lo", tier="C")
         bad = self._res(language="th", cer=0.95, recall=0.0)

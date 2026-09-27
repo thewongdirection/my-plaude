@@ -51,7 +51,7 @@ REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(REPO))  # plaude_local, when run as a script from anywhere
 
-from languages import THRESHOLDS, accepted_codes  # noqa: E402
+from languages import BY_CODE, THRESHOLDS, accepted_codes  # noqa: E402
 from scoring import cer, content_recall, detected_language  # noqa: E402
 
 CORPUS = HERE / "corpus"
@@ -108,6 +108,19 @@ def powershell_exe() -> str:
     return "pwsh"
 
 
+def cer_comparable(expected: str, detected: Optional[str]) -> bool:
+    """False when Whisper answered in an accepted related language that is
+    WRITTEN in another script (e.g. Urdu audio detected as Hindi and written
+    in Devanagari instead of Urdu's Arabic script): the transcript can be
+    right while a character comparison against the reference is meaningless.
+    Script variants the scorer folds (Chinese Traditional/Simplified, Serbian)
+    stay comparable."""
+    if not detected or detected == expected:
+        return True
+    a, b = BY_CODE.get(expected), BY_CODE.get(detected)
+    return not (a and b and a["script"] != b["script"])
+
+
 def evaluate(result: dict, entry: dict, variant: str,
              baseline: Optional[dict]) -> list:
     """Return the list of failure reasons for one scored run (empty = pass)."""
@@ -117,8 +130,10 @@ def evaluate(result: dict, entry: dict, variant: str,
     tier = entry.get("tier", "A")
     if tier in ("A", "B") and result["language"] not in accepted_codes(entry["code"]):
         failures.append(f"detected language {result['language']!r} != {entry['code']!r}")
+    comparable = cer_comparable(entry["code"], result["language"])
+    result["cer_comparable"] = comparable
     th = THRESHOLDS[tier][variant]
-    if th["max_cer"] is not None and result["cer"] > th["max_cer"]:
+    if comparable and th["max_cer"] is not None and result["cer"] > th["max_cer"]:
         failures.append(f"CER {result['cer']:.3f} > {th['max_cer']}")
     if th["min_recall"] is not None and result["recall"] < th["min_recall"]:
         failures.append(f"EN recall {result['recall']:.3f} < {th['min_recall']}")
@@ -127,7 +142,7 @@ def evaluate(result: dict, entry: dict, variant: str,
         if result.get("hum_hz") != want:
             failures.append(f"hum detected {result.get('hum_hz')} != injected {want}")
     if baseline:
-        if result["cer"] > baseline["cer"] + TOL_CER:
+        if comparable and result["cer"] > baseline["cer"] + TOL_CER:
             failures.append(f"CER regressed {baseline['cer']:.3f} -> {result['cer']:.3f}")
         if result["recall"] < baseline["recall"] - TOL_RECALL:
             failures.append(f"EN recall regressed {baseline['recall']:.3f} -> "
@@ -277,6 +292,31 @@ def run_one(impl: str, entry: dict, variant: str, out_dir: Path, args) -> dict:
     return result
 
 
+def rescore(results_path: Path) -> int:
+    """Recompute every run's failures in ``results_path`` (thresholds, script
+    comparability, baseline) from the recorded scores; rewrite the file."""
+    data = json.loads(results_path.read_text(encoding="utf-8"))
+    items = {e["id"]: e for e in json.loads(
+        (CORPUS / "manifest.json").read_text(encoding="utf-8"))["items"]}
+    config = {k: data.get(k) for k in ("model", "translate_engine", "translate_model")}
+    base = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
+    base_scores = base.get("results", {}) if base.get("config") == config else {}
+    changed = 0
+    for r in data["results"]:
+        key = f"{r['impl']}/{r['id']}/{r['variant']}"
+        new = evaluate(r, items[r["id"]], r["variant"], base_scores.get(key))
+        if new != r.get("failures"):
+            changed += 1
+            print(f"{key}: {r.get('failures')} -> {new}")
+        r["failures"] = new
+    data["failed"] = sum(bool(r["failures"]) for r in data["results"])
+    data["passed"] = len(data["results"]) - data["failed"]
+    results_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    print(f"rescored {len(data['results'])} run(s), {changed} changed: "
+          f"{data['passed']} passed, {data['failed']} failed")
+    return 1 if data["failed"] else 0
+
+
 def stratified_sample(entries: list, n: int, seed: int = 0) -> list:
     """``n`` items spread across languages and monologue/conversation."""
     import random
@@ -322,6 +362,9 @@ def main(argv=None) -> int:
     p.add_argument("--colab-url", action="store_true",
                    help="print the Google Colab link for this branch's regression notebook "
                         "(the recommended way to run the suite - no local GPU needed) and exit")
+    p.add_argument("--rescore", metavar="RESULTS_JSON", default=None,
+                   help="re-evaluate a finished results.json with the current pass/fail "
+                        "rules (no tools are run) and rewrite it")
     p.add_argument("--impl", choices=["both", "python", "powershell"], default="both")
     p.add_argument("--variants", default="clean,damaged")
     p.add_argument("--languages", default="", help="comma-separated codes (default: all)")
@@ -346,6 +389,8 @@ def main(argv=None) -> int:
     p.add_argument("--update-baseline", action="store_true",
                    help="record this run's scores as the new baseline")
     args = p.parse_args(argv)
+    if args.rescore:
+        return rescore(Path(args.rescore))
     if args.colab_url:
         url, warnings = git_colab_url()
         for w in warnings:
