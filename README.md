@@ -605,29 +605,77 @@ through **both** implementations for real (transcribe + translate to English):
   exact English reference. Thresholds depend on how well Whisper handles the
   language (tier A/B/C in `languages.py`); `baseline.json` catches regressions.
 
+> **Cloud for speed, not a requirement.** The regression suite runs on a cloud
+> GPU by default purely for **performance**: ~46 hours of multilingual audio per
+> implementation needs a strong GPU, and not everyone has one. **The tool itself
+> needs no internet connection**: once the Whisper model and (optionally) a local
+> Ollama model have been downloaded, both implementations transcribe, repair,
+> translate and summarize fully offline, on a GPU or on the CPU. This is verified,
+> not assumed - `tests/regression/verify_offline.py` runs both tools on a corpus
+> recording, on the CPU, with `--offline` / `-Offline` and every HTTP(S) request
+> sent to a dead proxy (only `127.0.0.1` reachable, for a local Ollama) - applied
+> to both network stacks involved (Python's and .NET's, which Windows PowerShell
+> 5.1 uses) and confirmed by control requests first - and checks both produce a
+> transcript and an English translation with no warnings. (For an absolute
+> guarantee, unplug the network and run the tools the same way.)
+>
+> ```bash
+> python tests/regression/verify_offline.py        # both tools, CPU, no internet
+> ```
+
+#### Running it - the default: Google Colab (no local GPU needed)
+
+The suite is meant to be run in the cloud, so anyone can run it without a
+graphics card. `tests/regression/colab_regression.ipynb` does everything:
+
+1. Get the link for your branch and open it:
+   ```bash
+   python tests/regression/run_regression.py --colab-url
+   ```
+   (or in Colab: *File -> Open notebook -> GitHub*, repo
+   `thewongdirection/my-plaude`, your branch, `tests/regression/colab_regression.ipynb`).
+2. *Runtime -> Change runtime type ->* **T4 GPU** (the free tier works; Colab Pro
+   gives longer, more reliable sessions), then *Runtime ->* **Run all** and allow
+   Google Drive access.
+3. The notebook installs FFmpeg, faster-whisper, whisper-ctranslate2, the CUDA
+   libraries, PowerShell 7 and Ollama, pulls `translategemma:12b`, **checks the
+   model is in GPU memory** (it stops otherwise), keeps it loaded for the whole run,
+   runs `--check` for both tools and then the 24-item sample: 96 runs, both tools,
+   Whisper `large-v3`, about 5-6 hours on a T4.
+4. Results are saved to Google Drive (`MyDrive/plaude-regression/sample24/`) after
+   **every** run. Keep the tab open; if your computer or browser crashes, just reopen
+   the notebook - the run keeps going in the cloud (don't press *Run all* while it
+   is still running). If Colab ended the session, *Run all* again: passed runs are
+   kept, failed ones run again (`--resume`). A run killed by the system (e.g. out of
+   memory) is retried once automatically, and the notebook makes a second pass over
+   anything that still failed.
+5. When it finishes, copy `baseline.json` from that Drive folder into
+   `tests/regression/` and commit it.
+
+If the repo is private, add a read-only GitHub token as a Colab secret named
+`GITHUB_TOKEN` (key icon in Colab's sidebar) - never paste it into a cell. Set
+`SAMPLE = 0` in the notebook for the full suite, or `IMPL = "python"` for a
+half-length first pass.
+
+#### Running it locally (alternative: your own NVIDIA GPU)
+
 ```bash
 # quick stratified subset: 24 items spread over languages and monologue/conversation,
 # each run clean + damaged in both implementations (96 runs)
 python tests/regression/run_regression.py --sample 24
 # everything (~46 h of audio per implementation - an overnight+ GPU job)
 python tests/regression/run_regression.py
-# one implementation / some languages; record a new baseline
+# one implementation / some languages; record a new baseline; continue a run
 python tests/regression/run_regression.py --impl powershell --languages de,ja
 python tests/regression/run_regression.py --update-baseline
+python tests/regression/run_regression.py --sample 24 --out results/x --resume
 ```
 
 Needs FFmpeg, faster-whisper (Python) / whisper-ctranslate2 (PowerShell), an
-Ollama server with a translation model, and ideally a CUDA GPU.
-
-**No suitable local GPU?** Run it on Google Colab: open
-`tests/regression/colab_regression.ipynb` in Colab (File -> Open notebook ->
-GitHub, or upload it), pick a GPU runtime and *Run all*. It installs FFmpeg,
-faster-whisper, whisper-ctranslate2, PowerShell 7 and Ollama +
-`translategemma:12b`, runs both tools with Whisper `large-v3`, and saves
-`results.json` (after every run) plus `baseline.json` to Google Drive; after a
-disconnect, *Run all* again resumes (`--resume`). Copy the resulting
-`baseline.json` into `tests/regression/`. The runner uses `pwsh` automatically
-where Windows PowerShell isn't available.
+Ollama server with a translation model and a CUDA GPU with ~12 GB for Whisper
+`large-v3` plus `translategemma:12b` (the runner warns when it only finds a CPU).
+Set Ollama's `OLLAMA_KEEP_ALIVE=-1` so the model isn't unloaded between runs. The
+runner uses `pwsh` automatically where Windows PowerShell isn't available.
 
 The corpus is regenerated with `tests/regression/generate_corpus.py` (seeded and
 resumable) in two phases, **neither of which needs a GPU**:
@@ -636,7 +684,8 @@ resumable) in two phases, **neither of which needs a GPU**:
 # 1. translate the English source text into every language with Ollama, forced
 #    onto the CPU (num_gpu 0; ~5 s/line with a 12B model, ~30 min/language).
 #    Writes tests/regression/translations/<code>.json - commit these.
-python tests/regression/generate_corpus.py --phase translate \n    --model translategemma:4b --fallback-model translategemma:12b
+python tests/regression/generate_corpus.py --phase translate \
+    --model translategemma:4b --fallback-model translategemma:12b
 # 2. synthesize + assemble the audio: edge-tts (cloud TTS) + FFmpeg, no LLM.
 python tests/regression/generate_corpus.py --phase audio
 ```

@@ -199,6 +199,8 @@ class TestCorpusPlan(unittest.TestCase):
         self.assertEqual(futures["c"].result(timeout=5), "C")
         self.assertEqual(seen, [("a", True), ("b", True), ("c", True)])
 
+    @unittest.skipUnless(__import__("importlib").util.find_spec("edge_tts"),
+                         "edge-tts not installed (only needed to generate the corpus)")
     def test_refused_tts_line_is_retried_with_whitespace_variant(self):
         import tempfile
         from unittest import mock
@@ -227,6 +229,8 @@ class TestCorpusPlan(unittest.TestCase):
         self.assertIsNotNone(paths[0])
         self.assertEqual(spoken, ["line", "line "])
 
+    @unittest.skipUnless(__import__("importlib").util.find_spec("edge_tts"),
+                         "edge-tts not installed (only needed to generate the corpus)")
     def test_refused_tts_line_is_skipped_not_fatal(self):
         import tempfile
         from unittest import mock
@@ -534,7 +538,7 @@ class TestNoGpuTranslation(unittest.TestCase):
         lang = {"code": "de", "name": "German", "script": "LATIN"}
         lines = [fake_translation(x) for x in src]
         good = lines[5]
-        lines[5] = ""                           # dropped earlier
+        lines[5] = "[" + good + "]"            # a poor (junk) line left by an older run
         gen._write_translation("de", lines, "small")
         big = mock.Mock(return_value=good)
         data = gen.translate_language(lang, call=None, model="small",
@@ -544,6 +548,34 @@ class TestNoGpuTranslation(unittest.TestCase):
         self.assertEqual(gen.load_translation("de")["model"], "small + big")
         # Without a fallback model an existing file is used as-is.
         self.assertEqual(gen.translate_language(lang, call=None), gen.load_translation("de"))
+
+    def test_deliberately_dropped_lines_are_not_repaired_again(self):
+        from unittest import mock
+        self._in_temp_translations()
+        src = gen.english_lines()
+        lang = {"code": "de", "name": "German", "script": "LATIN"}
+        lines = [fake_translation(x) for x in src]
+        lines[7] = ""                           # dropped on purpose earlier
+        gen._write_translation("de", lines, "small + big")
+        big = mock.Mock()
+        data = gen.translate_language(lang, call=None, fallback_call=big, fallback_name="big")
+        big.assert_not_called()
+        self.assertEqual(gen._flatten(data)[7], "")
+
+    def test_server_errors_do_not_trigger_the_fallback_redo(self):
+        from unittest import mock
+        from plaude_local import summarize
+        self._in_temp_translations()
+        # A SummarizeError is a server/network problem - not a "garbled language".
+        self.assertFalse(issubclass(summarize.SummarizeError, gen.GarbledLanguage))
+        with mock.patch.object(gen, "model_capabilities", return_value=[]), \
+             mock.patch.object(gen, "make_ollama_call", return_value=lambda p: "x"), \
+             mock.patch.object(summarize, "translate_lines",
+                               side_effect=summarize.SummarizeError("HTTP 500")) as batch:
+            rc = gen.main(["--phase", "translate", "--languages", "de",
+                           "--model", "small", "--fallback-model", "big"])
+        self.assertEqual(rc, 1)            # reported as a failed language ...
+        self.assertEqual(batch.call_count, 1)  # ... not redone with the 12B
 
     def test_garbled_language_goes_straight_to_the_fallback(self):
         from unittest import mock
@@ -734,12 +766,73 @@ class TestRunner(unittest.TestCase):
             runs.clear()
             self.assertEqual(rr.main(argv + ["--out", str(out), "--resume"]), 0)
             self.assertEqual(runs, [])  # everything was already recorded
+            # A different config never overwrites earlier results.
+            with self.assertRaises(SystemExit):
+                rr.main(["--impl", "python", "--variants", "clean", "--translate-model", "other",
+                         "--out", str(out), "--resume"])
+            self.assertEqual(json.loads(open(out / "results.json", encoding="utf-8").read()),
+                             saved)
             # A recorded FAILURE is run again on resume (e.g. a transient timeout).
             saved["results"][1]["failures"] = ["EN recall 0.000 < 0.5"]
             (out / "results.json").write_text(json.dumps(saved), encoding="utf-8")
             runs.clear()
             self.assertEqual(rr.main(argv + ["--out", str(out), "--resume"]), 0)
             self.assertEqual(runs, ["de-mono-02"])
+
+    def test_colab_url(self):
+        url = ("https://colab.research.google.com/github/owner/repo/blob/"
+               "feature/x/tests/regression/colab_regression.ipynb")
+        for remote in ("https://github.com/owner/repo.git", "https://www.github.com/owner/repo",
+                       "git@github.com:owner/repo.git"):
+            self.assertEqual(rr.colab_url(remote, "feature/x"), url, remote)
+        self.assertEqual(rr.colab_url("ssh://git@github.com:22/owner/repo.git", "feature/x"), url)
+        self.assertIn("/blob/fix%23123/", rr.colab_url("https://github.com/o/r", "fix#123"))
+        with self.assertRaises(ValueError):
+            rr.colab_url("https://gitlab.com/owner/repo.git", "main")
+        with self.assertRaises(ValueError):
+            rr.colab_url("https://github.com/o/r", "")  # detached HEAD
+
+    def test_notebook_branch_is_readable(self):
+        self.assertTrue(rr.notebook_branch())
+
+    def test_killed_runs_are_retried_once(self):
+        self.assertTrue(rr.killed_by_system(-9))
+        self.assertTrue(rr.killed_by_system(-15))
+        self.assertFalse(rr.killed_by_system(-1))   # our timeout
+        self.assertFalse(rr.killed_by_system(0))
+        self.assertFalse(rr.killed_by_system(6))    # a real tool error
+        from unittest import mock
+        import tempfile
+        entry = {"id": "te-conv-01", "code": "te", "kind": "conv", "tier": "C",
+                 "duration_s": 100.0, "file": "x.opus", "damaged_file": "x.damaged.opus",
+                 "text": "x", "reference_en": "x"}
+        args = mock.Mock(model="m", translate_engine="llm", translate_model="t",
+                         llm_timeout=10, timeout=10)
+        with tempfile.TemporaryDirectory() as d, \
+             mock.patch.object(rr, "run_with_timeout", side_effect=[-9, 0]) as run:
+            r = rr.run_one("python", entry, "clean", Path(d), args)
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(r["exit_code"], 0)
+
+    def test_best_model_must_resolve(self):
+        from unittest import mock
+        from plaude_local import summarize
+        with mock.patch.object(summarize, "list_ollama_models", return_value=[]), \
+             mock.patch.object(rr, "cuda_available", return_value=True):
+            with self.assertRaises(SystemExit):
+                rr.main(["--sample", "1"])
+
+    def test_interrupt_kills_the_tool_tree(self):
+        import tempfile
+        from unittest import mock
+        proc = mock.Mock(pid=1)
+        proc.wait.side_effect = [KeyboardInterrupt(), 0]
+        with tempfile.TemporaryDirectory() as d, \
+             mock.patch.object(rr.subprocess, "Popen", return_value=proc), \
+             mock.patch.object(rr, "kill_tree") as kill:
+            with self.assertRaises(KeyboardInterrupt):
+                rr.run_with_timeout(["x"], Path(d) / "run.log", 10)
+        kill.assert_called_once_with(proc)
 
     def test_best_models_are_preferred(self):
         self.assertEqual(rr.BEST_WHISPER, "large-v3")
@@ -756,6 +849,53 @@ class TestRunner(unittest.TestCase):
         self.assertEqual(len({e["code"] for e in pick}), 6)
         self.assertEqual({e["kind"] for e in pick}, {"mono", "conv"})
         self.assertEqual(len({e["id"] for e in pick}), 12)
+
+
+class TestVerifyOffline(unittest.TestCase):
+    """The offline check must really cut the internet and use offline flags."""
+
+    def test_offline_env_blocks_internet_but_not_localhost(self):
+        import verify_offline as vo
+        env = vo.offline_env({"PATH": "x"})
+        for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+            self.assertEqual(env[var], vo.DEAD_PROXY)
+        self.assertIn("127.0.0.1", env["NO_PROXY"])
+        # The tools' --offline / -Offline flags must do this themselves.
+        self.assertNotIn("HF_HUB_OFFLINE", vo.offline_env({"HF_HUB_OFFLINE": "1"}))
+        self.assertEqual(env["PATH"], "x")
+
+    def test_powershell_gets_the_dotnet_proxy(self):
+        import verify_offline as vo
+        # Windows PowerShell 5.1 ignores HTTP(S)_PROXY: the wrapper sets .NET's proxy.
+        self.assertIn("DefaultWebProxy", vo.PS_WRAPPER)
+        self.assertIn("@args", vo.PS_WRAPPER)  # relayed as-is so -Switch names still bind
+        self.assertIn(vo.DEAD_PROXY, vo.PS_WRAPPER)
+        self.assertIn("DefaultWebProxy", vo.PS_CONTROL)
+        self.assertIn("huggingface.co", vo.PS_CONTROL)
+
+    def test_commands_run_offline_on_cpu_in_both_tools(self):
+        import verify_offline as vo
+        cmds = vo.commands(Path("a.opus"), Path("out"), "large-v3", "translategemma:4b",
+                           Path("wrap.ps1"))
+        py, ps = cmds["python"], cmds["powershell"]
+        self.assertIn("--offline", py)
+        self.assertIn("--no-provision", py)
+        self.assertIn("-NoProvision", ps)
+        self.assertEqual(ps[ps.index("-File") + 1], "wrap.ps1")  # proxy wrapper first
+        self.assertEqual(py[py.index("--device") + 1], "cpu")
+        self.assertIn("-Offline", ps)
+        self.assertEqual(ps[ps.index("-Device") + 1], "cpu")
+        # Output file names the checker reads back.
+        self.assertTrue(any(a.endswith("py.x.txt") for a in py))
+        self.assertTrue(any(a.endswith("ps.x.txt") for a in ps))
+
+    def test_control_check_detects_a_working_internet(self):
+        import verify_offline as vo
+        from unittest import mock
+        with mock.patch.object(vo.subprocess, "run", return_value=mock.Mock(returncode=1)):
+            self.assertFalse(vo.internet_blocked({}))
+        with mock.patch.object(vo.subprocess, "run", return_value=mock.Mock(returncode=0)):
+            self.assertTrue(vo.internet_blocked({}))
 
 
 class TestColabNotebook(unittest.TestCase):

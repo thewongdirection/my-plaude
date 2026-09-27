@@ -24,7 +24,8 @@ stratified subset of N items spread over languages and monologue/conversation;
 each item still runs clean + damaged in every selected implementation
 (``--sample 24`` = 96 runs with ``--impl both``).
 
-    python tests/regression/run_regression.py --sample 24          # quick check
+    python tests/regression/run_regression.py --colab-url          # recommended: cloud GPU
+    python tests/regression/run_regression.py --sample 24          # quick check (local GPU)
     python tests/regression/run_regression.py                      # everything
     python tests/regression/run_regression.py --impl python --languages de,ja
     python tests/regression/run_regression.py --update-baseline
@@ -35,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -147,24 +149,32 @@ def child_env() -> dict:
     return env
 
 
-def run_with_timeout(cmd: list, log_path: Path, timeout: int) -> int:
+def run_with_timeout(cmd: list, log_path: Path, timeout: int, append: bool = False) -> int:
     """Run ``cmd`` with its output in ``log_path``; kill the whole tree on timeout.
 
     Output goes to a file, not a pipe: a grandchild (e.g. whisper-ctranslate2
     started by powershell.exe) inherits pipe handles, so killing only the
-    direct child would leave ``communicate()`` blocked on the grandchild.
+    direct child would leave ``communicate()`` blocked on the grandchild. The
+    tree is also killed when the runner itself is interrupted (Ctrl+C, Colab
+    "Interrupt"), so no tool keeps holding the GPU behind a new run's back.
     """
     flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-    with open(log_path, "w", encoding="utf-8", errors="replace") as log:
+    with open(log_path, "a" if append else "w", encoding="utf-8", errors="replace") as log:
         proc = subprocess.Popen(cmd, cwd=REPO, env=child_env(), stdout=log,
-                                stderr=subprocess.STDOUT, creationflags=flags,
-                                start_new_session=os.name != "nt")
+                                stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                creationflags=flags, start_new_session=os.name != "nt")
         try:
-            return proc.wait(timeout=timeout)
+            code = proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             kill_tree(proc)
             log.write(f"\n[regression] timeout after {timeout}s - process tree killed\n")
             return -1
+        except BaseException:
+            kill_tree(proc)
+            raise
+        if code < 0:  # killed by a signal: take any surviving grandchildren with it
+            kill_tree(proc)
+        return code
 
 
 def kill_tree(proc: subprocess.Popen) -> None:
@@ -173,8 +183,66 @@ def kill_tree(proc: subprocess.Popen) -> None:
                        capture_output=True)
     else:  # pragma: no cover - POSIX
         import signal
-        os.killpg(proc.pid, signal.SIGKILL)
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
     proc.wait()
+
+
+NOTEBOOK = "tests/regression/colab_regression.ipynb"
+
+
+def colab_url(remote: str, branch: str) -> str:
+    """The Colab link that opens this repo's regression notebook on ``branch``."""
+    from urllib.parse import quote
+
+    if not branch:
+        raise ValueError("no branch (detached HEAD?) - check out a pushed branch first")
+    m = re.search(r"github\.com(?::\d+)?[:/]+([^/]+)/([^/]+?)(?:\.git)?/?$", remote.strip())
+    if not m:
+        raise ValueError(f"not a GitHub remote: {remote!r}")
+    return (f"https://colab.research.google.com/github/{m.group(1)}/{m.group(2)}"
+            f"/blob/{quote(branch, safe='/')}/{NOTEBOOK}")
+
+
+def notebook_branch() -> str:
+    """The BRANCH the notebook clones (its first-cell setting)."""
+    nb = json.loads((REPO / NOTEBOOK).read_text(encoding="utf-8"))
+    for cell in nb["cells"]:
+        m = re.search(r'^BRANCH = "([^"]+)"', "".join(cell.get("source", [])), re.M)
+        if m:
+            return m.group(1)
+    return ""
+
+
+def git_colab_url() -> tuple:
+    """(link, [warnings]) for running this branch's code on Colab."""
+    def git(*a):
+        return subprocess.run(["git", *a], cwd=REPO, capture_output=True, text=True,
+                              check=True).stdout.strip()
+    branch = git("branch", "--show-current")
+    url = colab_url(git("remote", "get-url", "origin"), branch)
+    warnings = []
+    if git("status", "--porcelain", "--untracked-files=no"):
+        warnings.append("you have uncommitted changes - Colab tests the PUSHED code")
+    try:
+        if git("rev-list", "--count", "@{u}..HEAD") not in ("", "0"):
+            warnings.append("you have unpushed commits - push first; Colab clones from GitHub")
+    except subprocess.CalledProcessError:
+        warnings.append(f"branch {branch!r} has no upstream - push it first")
+    nb_branch = notebook_branch()
+    if nb_branch and nb_branch != branch:
+        warnings.append(f'the notebook clones BRANCH = "{nb_branch}"; set BRANCH = '
+                        f'"{branch}" in its first cell to test this branch')
+    return url, warnings
+
+
+def killed_by_system(code: int) -> bool:
+    """Exit codes worth one automatic retry: the process was killed by a
+    signal (e.g. -9 from the out-of-memory killer on a busy Colab VM) -
+    not a timeout (-1) and not a tool error (a positive code)."""
+    return code < -1
 
 
 def run_one(impl: str, entry: dict, variant: str, out_dir: Path, args) -> dict:
@@ -186,6 +254,10 @@ def run_one(impl: str, entry: dict, variant: str, out_dir: Path, args) -> dict:
                         llm_timeout=args.llm_timeout)
     t0 = time.time()
     code = run_with_timeout(cmd, work / "run.log", args.timeout)
+    if killed_by_system(code):
+        print(f"      {impl}/{entry['id']}/{variant}: killed by the system (exit {code}); "
+              "retrying once", flush=True)
+        code = run_with_timeout(cmd, work / "run.log", args.timeout, append=True)
 
     transcript = _read(work / "transcription.txt")
     translation = _read(work / "translation.txt")
@@ -247,6 +319,9 @@ def cuda_available() -> bool:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    p.add_argument("--colab-url", action="store_true",
+                   help="print the Google Colab link for this branch's regression notebook "
+                        "(the recommended way to run the suite - no local GPU needed) and exit")
     p.add_argument("--impl", choices=["both", "python", "powershell"], default="both")
     p.add_argument("--variants", default="clean,damaged")
     p.add_argument("--languages", default="", help="comma-separated codes (default: all)")
@@ -271,11 +346,22 @@ def main(argv=None) -> int:
     p.add_argument("--update-baseline", action="store_true",
                    help="record this run's scores as the new baseline")
     args = p.parse_args(argv)
+    if args.colab_url:
+        url, warnings = git_colab_url()
+        for w in warnings:
+            print(f"warning: {w}", file=sys.stderr)
+        print(url)
+        return 0
 
     # Rule: regression runs use the GPU and the best models whenever possible.
     if args.translate_model == "best":
         from plaude_local import summarize
-        args.translate_model = best_translate_model(summarize.list_ollama_models(OLLAMA_URL))
+        installed = summarize.list_ollama_models(OLLAMA_URL)
+        args.translate_model = best_translate_model(installed)
+        if args.translate_engine != "whisper" and not args.translate_model:
+            p.error(f"--translate-model best: no translation model found on Ollama at "
+                    f"{OLLAMA_URL} (installed: {installed or 'none - is Ollama running?'}); "
+                    f"pull one of {', '.join(BEST_TRANSLATORS)} or pass --translate-model")
     gpu = cuda_available()
     print(f"regression config: whisper={args.model} on {'GPU (CUDA)' if gpu else 'CPU'}, "
           f"translate={args.translate_engine}/{args.translate_model or 'tool default'}",
@@ -308,14 +394,23 @@ def main(argv=None) -> int:
     results_path = out_dir / "results.json"
     done = {}
     if args.resume and results_path.exists():
-        previous = json.loads(results_path.read_text(encoding="utf-8"))
-        if {k: previous.get(k) for k in config} == config:
+        try:
+            previous = json.loads(results_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError) as exc:
+            aside = results_path.with_name(f"results.corrupt-{int(time.time())}.json")
+            results_path.replace(aside)
+            print(f"note: unreadable {results_path.name} ({exc}) moved to {aside.name}; "
+                  "starting afresh", flush=True)
+            previous = None
+        if previous is not None:
+            prev_config = {k: previous.get(k) for k in config}
+            if prev_config != config:
+                # Never overwrite results made with another config: stop instead.
+                p.error(f"--resume: {results_path} was made with {prev_config}, this run "
+                        f"is {config}; use another --out or the same settings")
             done = {f"{r['impl']}/{r['id']}/{r['variant']}": r
-                    for r in previous.get("results", []) if not r.get("failures")}
-            print(f"resuming: {len(done)} run(s) already in {results_path}", flush=True)
-        else:
-            print("note: --resume ignored - results.json was made with a different config",
-                  flush=True)
+                    for r in previous.get("results", []) if r.get("failures") == []}
+            print(f"resuming: {len(done)} passed run(s) kept from {results_path}", flush=True)
 
     def save():  # after every run, so a disconnect loses at most the current one
         summary = {**config, "passed": len(results) - failed, "failed": failed,
@@ -353,7 +448,7 @@ def main(argv=None) -> int:
         merged = dict(base.get("results", {})) if same_config else {}
         merged.update({f"{r['impl']}/{r['id']}/{r['variant']}":
                        {"cer": r["cer"], "recall": r["recall"]} for r in results
-                       if r["exit_code"] == 0})
+                       if r["exit_code"] == 0 and r.get("failures") == []})
         BASELINE.write_text(json.dumps({"config": config, "results": dict(sorted(merged.items()))},
                                        indent=2) + "\n", encoding="utf-8")
         print(f"baseline updated -> {BASELINE}")

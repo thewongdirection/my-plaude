@@ -329,6 +329,18 @@ def load_translation(code: str):
     return _read_matching(translation_path(code))
 
 
+class GarbledLanguage(RuntimeError):
+    """The main model garbled (most of) a language: redo it with the fallback.
+    Distinct from SummarizeError (a server/network problem), which must NOT
+    trigger a multi-hour fallback redo."""
+
+
+def _repairable(src: list, out: list, script: str) -> list:
+    """Poor lines in an existing file - excluding lines deliberately left empty
+    (dropped because even the fallback could not translate them)."""
+    return [i for i in _bad_lines(src, out, script) if out[i]]
+
+
 def _flatten(data: dict) -> list:
     return (list(data["sentences"]) + [l for ex in data["exchanges"] for l in ex]
             + list(data["reactions"]))
@@ -371,15 +383,19 @@ def translate_language(lang: dict, call, model: str = "", retry_call=None,
         if fallback_call is None or code == "en":
             return existing
         out = _flatten(existing)
-        bad = _bad_lines(src, out, lang["script"])
+        bad = _repairable(src, out, lang["script"])
         if not bad:
             return existing
         print(f"{code}: {len(bad)} poor line(s) in {translation_path(code).name} - "
               f"redoing them with {fallback_name!r}", flush=True)
         _retry_lines(out, src, bad, fallback_call, lang)
-        still = _bad_lines(src, out, lang["script"])
+        still = [i for i in bad if not translation_ok(src[i], out[i], lang["script"])]
         for i in still:
             out[i] = ""
+        dropped = sum(1 for line in out if not line)
+        if dropped > len(src) * 0.05:
+            raise RuntimeError(f"{code}: {dropped} of {len(src)} lines would be dropped "
+                               f"after repair - not rewriting {translation_path(code).name}")
         model = existing.get("model") or model
         if fallback_name and fallback_name not in model:
             model = f"{model} + {fallback_name}"
@@ -403,8 +419,8 @@ def translate_language(lang: dict, call, model: str = "", retry_call=None,
         # A language the model garbles wholesale is cheaper to redo in batches
         # with the fallback than line by line: hand it back to the caller.
         if fallback_call is not None and len(bad) > len(src) * 0.25:
-            raise RuntimeError(f"{code}: {len(bad)} of {len(src)} lines are poor "
-                               f"{lang['name']} translations")
+            raise GarbledLanguage(f"{code}: {len(bad)} of {len(src)} lines are poor "
+                                  f"{lang['name']} translations")
         _retry_lines(out, src, bad, retry_call or call, lang)  # sampled differently
         write_json_atomic(partial_path(code), {"source_sha1": source_sha1(), "lines": out})
         bad = _bad_lines(src, out, lang["script"])
@@ -416,7 +432,7 @@ def translate_language(lang: dict, call, model: str = "", retry_call=None,
                 model = f"{model} + {fallback_name}"
             bad = _bad_lines(src, out, lang["script"])
         if len(bad) > len(src) * 0.05:
-            raise RuntimeError(f"{code}: {len(bad)} of {len(src)} lines are not valid "
+            raise GarbledLanguage(f"{code}: {len(bad)} of {len(src)} lines are not valid "
                                f"{lang['name']} translations (progress kept in "
                                f"{partial_path(code).name}; rerun to retry them)")
         for i in bad:  # a handful of stubborn lines: drop them from use
@@ -726,8 +742,8 @@ def main(argv=None) -> int:
         try:
             return translate_language(lang, call, model, retry_call,
                                       fallback_call=fb_call, fallback_name=fb_name)
-        except RuntimeError as exc:
-            if not fallback:
+        except GarbledLanguage as exc:  # not a SummarizeError: a server problem
+            if not fallback:                # is reported, not "fixed" by a slow redo
                 raise
             print(f"{lang['code']}: {exc} - redoing the language with {fb_name!r}", flush=True)
             return translate_language(lang, fb_call, f"{model} + {fb_name}", fb_retry)
@@ -740,7 +756,7 @@ def main(argv=None) -> int:
             data = load_translation(l["code"])
             if not data:
                 return True
-            if args.fallback_model and _bad_lines(english_lines(), _flatten(data), l["script"]):
+            if args.fallback_model and _repairable(english_lines(), _flatten(data), l["script"]):
                 return True
         return False
 

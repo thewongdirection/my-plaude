@@ -1499,7 +1499,7 @@ IDS.forEach(x=>document.getElementById("tab-"+x).addEventListener("click",()=>se
     if ($Summary) {
         $sumInner = '<div class="body">' + ((& $enc $Summary) -replace "`n", '<br>') + '</div>'
     } else {
-        $note = if ($SummaryNote) { $SummaryNote } else { 'Summary unavailable (no local LLM server reachable).' }
+        $note = if ($SummaryNote) { $SummaryNote } else { 'Summary unavailable (no local LLM server detected).' }
         $sumInner = '<div class="note">' + (& $enc $note) + '</div>'
     }
     $wc = '{0:N0}' -f $WordCount
@@ -1751,6 +1751,7 @@ function Invoke-Main {
                     } catch { $translationText = ''; $translationEngine = "LLM $sep unavailable"; Write-Warn "translation unavailable: $($_.Exception.Message)" }
                 } else {
                     $translationEngine = "LLM $sep unavailable"
+                    Write-Warn 'translation unavailable: no local LLM server detected. Start Ollama (https://ollama.com/download) or the llama.cpp llama-server.'
                 }
             }
 
@@ -1763,8 +1764,8 @@ function Invoke-Main {
                     Write-Warn "summary unavailable: $($_.Exception.Message)"
                 }
             } else {
-                $summaryNote = 'Summary unavailable (no local LLM server reachable).'
-                Write-Warn 'summary unavailable: no local LLM server reachable'
+                $summaryNote = 'Summary unavailable (no local LLM server detected).'
+                Write-Warn 'summary unavailable: no local LLM server detected. Start Ollama (https://ollama.com/download) or the llama.cpp llama-server.'
             }
 
             $cjk = $srcLang.ToLower() -in @('zh', 'ja', 'ko')

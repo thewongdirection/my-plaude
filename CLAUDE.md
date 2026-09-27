@@ -67,8 +67,10 @@ pytest -q
 # Doctor / prerequisite check
 python -m plaude_local --check
 
-# Multilingual end-to-end regression (real models, BOTH implementations;
-# needs FFmpeg, GPU recommended, Ollama). Quick subset / full / new baseline:
+# Multilingual end-to-end regression (real models, BOTH implementations).
+# Default: run it on Google Colab - print the notebook link for this branch:
+python tests/regression/run_regression.py --colab-url
+# Locally (needs FFmpeg, a ~12 GB CUDA GPU, Ollama). Quick subset / full / new baseline:
 python tests/regression/run_regression.py --sample 24
 python tests/regression/run_regression.py
 python tests/regression/run_regression.py --update-baseline
@@ -83,7 +85,17 @@ Keep both suites green when changing either implementation.
 
 ## Regression test runs (rule)
 
-Run the multilingual regression suite on the **GPU with the best models
+The cloud default is for **performance only** - the tool itself must keep
+working with no internet connection (models cached, `--offline` / `-Offline`, GPU
+or CPU). Never add a runtime dependency on the network; after changes that touch
+model loading, translation or summarization, run
+`python tests/regression/verify_offline.py` (both tools, internet blocked).
+
+The **default way to run the suite is the Colab notebook**
+(`tests/regression/colab_regression.ipynb`; `run_regression.py --colab-url` prints
+the link): it needs no local GPU, keeps results on Google Drive after every run
+and resumes after disconnects. Local runs are the alternative for machines with a
+suitable NVIDIA GPU. Either way, run it on the **GPU with the best models
 available**: Whisper `large-v3` (the runner's default) and the strongest
 installed translation model (`--translate-model best`, the default: prefers
 translategemma 27B > 12B > 4B). Only fall back to the CPU or a smaller model

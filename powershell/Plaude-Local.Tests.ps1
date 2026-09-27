@@ -635,6 +635,11 @@ Describe 'Write-Warn (degraded results are reported even with -Quiet)' {
         $src | Should -Match 'Write-Warn "summary unavailable:'
         $src | Should -Not -Match 'Write-Log "\s*translation unavailable'
     }
+    It 'also warns when no local LLM server is available at all (parity with Python)' {
+        $src = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Plaude-Local.ps1') -Raw
+        $src | Should -Match "Write-Warn 'translation unavailable: no local LLM server detected"
+        $src | Should -Match "Write-Warn 'summary unavailable: no local LLM server detected"
+    }
 }
 
 Describe 'Get-InferenceHint (transcription failure remedy)' {
