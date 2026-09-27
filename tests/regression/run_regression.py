@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import sysconfig
@@ -78,7 +79,7 @@ def build_command(impl: str, audio: Path, work: Path, *, variant: str, model: st
         if variant == "damaged":
             cmd += ["--repair", "--enhance", "strong", "--keep-stages", str(stages)]
         return cmd
-    cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+    cmd = [powershell_exe(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
            str(PS_SCRIPT), str(audio), "-Model", model, "-Format", "html",
            "-Output", str(html), "-TranscriptionFile", str(tfile),
            "-TranslationFile", str(xfile), "-TranslateTo", "en",
@@ -88,6 +89,15 @@ def build_command(impl: str, audio: Path, work: Path, *, variant: str, model: st
     if variant == "damaged":
         cmd += ["-Repair", "-Enhance", "strong", "-KeepStages", str(stages)]
     return cmd
+
+
+def powershell_exe() -> str:
+    """Windows PowerShell where it exists, else PowerShell 7 (``pwsh``; Linux,
+    e.g. Google Colab)."""
+    for name in ("powershell", "pwsh"):
+        if shutil.which(name):
+            return name
+    return "pwsh"
 
 
 def evaluate(result: dict, entry: dict, variant: str,
@@ -245,6 +255,9 @@ def main(argv=None) -> int:
                         f"strongest installed of {', '.join(BEST_TRANSLATORS)}")
     p.add_argument("--out", default=None, help="results folder (default: results/<time>)")
     p.add_argument("--timeout", type=int, default=3600, help="per-file timeout (s)")
+    p.add_argument("--resume", action="store_true",
+                   help="skip runs already recorded in --out's results.json (e.g. after "
+                        "a Colab disconnect) and keep their results")
     p.add_argument("--update-baseline", action="store_true",
                    help="record this run's scores as the new baseline")
     args = p.parse_args(argv)
@@ -282,16 +295,39 @@ def main(argv=None) -> int:
         print(f"note: baseline.json was recorded with {base.get('config')}; "
               f"no baseline comparison for {config}", flush=True)
 
+    results_path = out_dir / "results.json"
+    done = {}
+    if args.resume and results_path.exists():
+        previous = json.loads(results_path.read_text(encoding="utf-8"))
+        if {k: previous.get(k) for k in config} == config:
+            done = {f"{r['impl']}/{r['id']}/{r['variant']}": r
+                    for r in previous.get("results", [])}
+            print(f"resuming: {len(done)} run(s) already in {results_path}", flush=True)
+        else:
+            print("note: --resume ignored - results.json was made with a different config",
+                  flush=True)
+
+    def save():  # after every run, so a disconnect loses at most the current one
+        summary = {**config, "passed": len(results) - failed, "failed": failed,
+                   "results": results}
+        tmp = results_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        tmp.replace(results_path)
+
     results, failed = [], 0
     total = len(impls) * len(entries) * len(variants)
     for impl in impls:
         for entry in entries:
             for variant in variants:
-                r = run_one(impl, entry, variant, out_dir, args)
                 key = f"{impl}/{entry['id']}/{variant}"
-                r["failures"] = evaluate(r, entry, variant, base_scores.get(key))
+                if key in done:
+                    r = done[key]
+                else:
+                    r = run_one(impl, entry, variant, out_dir, args)
+                    r["failures"] = evaluate(r, entry, variant, base_scores.get(key))
                 failed += bool(r["failures"])
                 results.append(r)
+                save()
                 status = "PASS" if not r["failures"] else "FAIL"
                 print(f"[{len(results):3}/{total}] {status} {key:34} lang={r['language']} "
                       f"CER={r['cer']:.3f} EN={r['recall']:.3f} "
@@ -300,9 +336,7 @@ def main(argv=None) -> int:
                       + (f"  <- {'; '.join(r['failures'])}" if r["failures"] else ""),
                       flush=True)
 
-    summary = {**config, "passed": len(results) - failed, "failed": failed,
-               "results": results}
-    (out_dir / "results.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    save()
     print(f"\n{len(results) - failed}/{len(results)} passed - details in {out_dir}")
 
     if args.update_baseline:

@@ -618,6 +618,16 @@ python tests/regression/run_regression.py --update-baseline
 Needs FFmpeg, faster-whisper (Python) / whisper-ctranslate2 (PowerShell), an
 Ollama server with a translation model, and ideally a CUDA GPU.
 
+**No suitable local GPU?** Run it on Google Colab: open
+`tests/regression/colab_regression.ipynb` in Colab (File -> Open notebook ->
+GitHub, or upload it), pick a GPU runtime and *Run all*. It installs FFmpeg,
+faster-whisper, whisper-ctranslate2, PowerShell 7 and Ollama +
+`translategemma:12b`, runs both tools with Whisper `large-v3`, and saves
+`results.json` (after every run) plus `baseline.json` to Google Drive; after a
+disconnect, *Run all* again resumes (`--resume`). Copy the resulting
+`baseline.json` into `tests/regression/`. The runner uses `pwsh` automatically
+where Windows PowerShell isn't available.
+
 The corpus is regenerated with `tests/regression/generate_corpus.py` (seeded and
 resumable) in two phases, **neither of which needs a GPU**:
 

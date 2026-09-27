@@ -693,6 +693,45 @@ class TestRunner(unittest.TestCase):
             self.assertEqual(code, -1)
             self.assertIn("timeout", log.read_text(encoding="utf-8"))
 
+    def test_powershell_executable_falls_back_to_pwsh(self):
+        from unittest import mock
+        with mock.patch.object(rr.shutil, "which", side_effect=lambda n: n == "pwsh"):
+            self.assertEqual(rr.powershell_exe(), "pwsh")
+        with mock.patch.object(rr.shutil, "which", side_effect=lambda n: n == "powershell"):
+            self.assertEqual(rr.powershell_exe(), "powershell")
+
+    def test_resume_skips_recorded_runs_and_saves_after_each(self):
+        import tempfile
+        from unittest import mock
+
+        entries = [{"id": f"de-mono-0{i}", "code": "de", "kind": "mono", "tier": "A",
+                    "duration_s": 130.0, "damage": {"hum_hz": None},
+                    "file": "x.opus", "damaged_file": "x.damaged.opus"} for i in (1, 2)]
+        runs = []
+
+        def fake_run(impl, entry, variant, out_dir, args):
+            runs.append(entry["id"])
+            return {"impl": impl, "id": entry["id"], "code": "de", "kind": "mono",
+                    "tier": "A", "variant": variant, "exit_code": 0, "seconds": 1.0,
+                    "audio_s": 130.0, "language": "de", "cer": 0.01, "recall": 0.9}
+
+        argv = ["--impl", "python", "--variants", "clean", "--translate-model", "m"]
+        with tempfile.TemporaryDirectory() as d, \
+             mock.patch.object(rr, "cuda_available", return_value=True), \
+             mock.patch.object(rr, "run_one", side_effect=fake_run), \
+             mock.patch.object(rr, "BASELINE", Path(d) / "baseline.json"), \
+             mock.patch.object(rr, "CORPUS", Path(d)):
+            (Path(d) / "manifest.json").write_text(json.dumps({"items": entries}),
+                                                   encoding="utf-8")
+            out = Path(d) / "out"
+            self.assertEqual(rr.main(argv + ["--out", str(out)]), 0)
+            self.assertEqual(runs, ["de-mono-01", "de-mono-02"])
+            saved = json.loads(open(out / "results.json", encoding="utf-8").read())
+            self.assertEqual(len(saved["results"]), 2)
+            runs.clear()
+            self.assertEqual(rr.main(argv + ["--out", str(out), "--resume"]), 0)
+            self.assertEqual(runs, [])  # everything was already recorded
+
     def test_best_models_are_preferred(self):
         self.assertEqual(rr.BEST_WHISPER, "large-v3")
         self.assertEqual(rr.best_translate_model(
@@ -708,6 +747,32 @@ class TestRunner(unittest.TestCase):
         self.assertEqual(len({e["code"] for e in pick}), 6)
         self.assertEqual({e["kind"] for e in pick}, {"mono", "conv"})
         self.assertEqual(len({e["id"] for e in pick}), 12)
+
+
+class TestColabNotebook(unittest.TestCase):
+    """The Colab notebook must stay in step with the runner's command line."""
+
+    def test_notebook_uses_existing_runner_flags(self):
+        nb = json.loads((REG / "colab_regression.ipynb").read_text(encoding="utf-8"))
+        source = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
+        help_text = rr_help()
+        for flag in ("--impl", "--out", "--resume", "--update-baseline", "--sample"):
+            self.assertIn(flag, source)
+            self.assertIn(flag, help_text)
+        self.assertIn("translategemma:12b", source)
+        self.assertEqual(nb["metadata"].get("accelerator"), "GPU")
+
+
+def rr_help() -> str:
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        try:
+            rr.main(["--help"])
+        except SystemExit:
+            pass
+    return buf.getvalue()
 
 
 class TestCommittedCorpus(unittest.TestCase):
