@@ -64,8 +64,12 @@ TOL_CER = 0.05       # allowed CER increase vs baseline
 TOL_RECALL = 0.10    # allowed recall drop vs baseline
 
 
+DEFAULT_LLM_TIMEOUT = 900  # s per LLM request: survive an 8 GB model (re)load
+
+
 def build_command(impl: str, audio: Path, work: Path, *, variant: str, model: str,
-                  engine: str, translate_model: Optional[str]) -> list:
+                  engine: str, translate_model: Optional[str],
+                  llm_timeout: int = DEFAULT_LLM_TIMEOUT) -> list:
     """The exact CLI invocation for one run (flag-for-flag parity across impls)."""
     html, tfile, xfile, stages = (work / "dashboard.html", work / "transcription.txt",
                                   work / "translation.txt", work / "stages")
@@ -73,7 +77,8 @@ def build_command(impl: str, audio: Path, work: Path, *, variant: str, model: st
         cmd = [sys.executable, "-m", "plaude_local", str(audio), "-m", model,
                "-f", "html", "-o", str(html), "--transcription-file", str(tfile),
                "--translation-file", str(xfile), "--translate-to", "en",
-               "--translate-engine", engine, "-y", "-q"]
+               "--translate-engine", engine, "--summarize-timeout", str(llm_timeout),
+               "-y", "-q"]
         if translate_model:
             cmd += ["--translate-model", translate_model]
         if variant == "damaged":
@@ -83,7 +88,8 @@ def build_command(impl: str, audio: Path, work: Path, *, variant: str, model: st
            str(PS_SCRIPT), str(audio), "-Model", model, "-Format", "html",
            "-Output", str(html), "-TranscriptionFile", str(tfile),
            "-TranslationFile", str(xfile), "-TranslateTo", "en",
-           "-TranslateEngine", engine, "-Yes", "-Quiet"]
+           "-TranslateEngine", engine, "-SummarizeTimeout", str(llm_timeout),
+           "-Yes", "-Quiet"]
     if translate_model:
         cmd += ["-TranslateModel", translate_model]
     if variant == "damaged":
@@ -176,7 +182,8 @@ def run_one(impl: str, entry: dict, variant: str, out_dir: Path, args) -> dict:
     work = out_dir / impl / f"{entry['id']}.{variant}"
     work.mkdir(parents=True, exist_ok=True)
     cmd = build_command(impl, audio, work, variant=variant, model=args.model,
-                        engine=args.translate_engine, translate_model=args.translate_model)
+                        engine=args.translate_engine, translate_model=args.translate_model,
+                        llm_timeout=args.llm_timeout)
     t0 = time.time()
     code = run_with_timeout(cmd, work / "run.log", args.timeout)
 
@@ -255,9 +262,12 @@ def main(argv=None) -> int:
                         f"strongest installed of {', '.join(BEST_TRANSLATORS)}")
     p.add_argument("--out", default=None, help="results folder (default: results/<time>)")
     p.add_argument("--timeout", type=int, default=3600, help="per-file timeout (s)")
+    p.add_argument("--llm-timeout", type=int, default=DEFAULT_LLM_TIMEOUT,
+                   help="per-request LLM timeout passed to both tools (default "
+                        f"{DEFAULT_LLM_TIMEOUT}s, so a model reload can't blank a translation)")
     p.add_argument("--resume", action="store_true",
-                   help="skip runs already recorded in --out's results.json (e.g. after "
-                        "a Colab disconnect) and keep their results")
+                   help="skip runs that already PASSED in --out's results.json (e.g. after "
+                        "a Colab disconnect); failed runs are run again")
     p.add_argument("--update-baseline", action="store_true",
                    help="record this run's scores as the new baseline")
     args = p.parse_args(argv)
@@ -301,7 +311,7 @@ def main(argv=None) -> int:
         previous = json.loads(results_path.read_text(encoding="utf-8"))
         if {k: previous.get(k) for k in config} == config:
             done = {f"{r['impl']}/{r['id']}/{r['variant']}": r
-                    for r in previous.get("results", [])}
+                    for r in previous.get("results", []) if not r.get("failures")}
             print(f"resuming: {len(done)} run(s) already in {results_path}", flush=True)
         else:
             print("note: --resume ignored - results.json was made with a different config",

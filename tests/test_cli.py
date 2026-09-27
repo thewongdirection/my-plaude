@@ -855,6 +855,22 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn("Summary unavailable", html)
 
+    def test_degraded_summary_and_translation_warn_even_when_quiet(self):
+        # _run passes -q: progress is hidden, but a degraded result must not be.
+        import contextlib
+        import io
+        eng = _DashEngine(
+            [{"start": 0.0, "end": 3.0, "text": "你好世界", "speaker": None}], [], "zh")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+             mock.patch.object(summarize, "translate_segments",
+                               side_effect=summarize.SummarizeError("timed out")):
+            rc, html, _ = self._run(eng, ["--translate-engine", "llm"], summary_error=True)
+        self.assertEqual(rc, 0)
+        self.assertIn("LLM · unavailable", html)
+        self.assertIn("warning: translation unavailable: timed out", err.getvalue())
+        self.assertIn("warning: summary unavailable: no server", err.getvalue())
+
     def test_shows_transcription_and_translation_provenance(self):
         eng = _DashEngine(
             [{"start": 0.0, "end": 3.0, "text": "你好世界", "speaker": None}],

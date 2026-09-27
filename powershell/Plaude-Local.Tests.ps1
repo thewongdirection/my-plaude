@@ -622,6 +622,21 @@ Describe 'Set-Utf8Subprocess' {
     }
 }
 
+Describe 'Write-Warn (degraded results are reported even with -Quiet)' {
+    It 'writes a warning line to stderr regardless of -Quiet' {
+        $Quiet = $true
+        Mock Write-ErrLine {}
+        Write-Warn 'translation unavailable: timed out'
+        Should -Invoke Write-ErrLine -Times 1 -Exactly -ParameterFilter { $Message -eq 'warning: translation unavailable: timed out' }
+    }
+    It 'is used for translation and summary failures (not the -Quiet-silenced Write-Log)' {
+        $src = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Plaude-Local.ps1') -Raw
+        $src | Should -Match 'Write-Warn "translation unavailable:'
+        $src | Should -Match 'Write-Warn "summary unavailable:'
+        $src | Should -Not -Match 'Write-Log "\s*translation unavailable'
+    }
+}
+
 Describe 'Get-InferenceHint (transcription failure remedy)' {
     It 'adds the CUDA-libraries remedy when cuBLAS / cuDNN failed to load' {
         $h = Get-InferenceHint -ToolOutput 'RuntimeError: Library cublas64_12.dll is not found or cannot be loaded'

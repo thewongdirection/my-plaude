@@ -683,6 +683,9 @@ class TestRunner(unittest.TestCase):
             self.assertEqual(sorted(alias.get(norm(f), norm(f)) for f in py_flags),
                              sorted(alias.get(norm(f), norm(f)) for f in ps_flags))
             self.assertEqual("--repair" in py, variant == "damaged")
+            # Both tools get the long LLM timeout (model reloads must not blank output).
+            self.assertEqual(py[py.index("--summarize-timeout") + 1], str(rr.DEFAULT_LLM_TIMEOUT))
+            self.assertEqual(ps[ps.index("-SummarizeTimeout") + 1], str(rr.DEFAULT_LLM_TIMEOUT))
 
     def test_timeout_kills_the_process_tree(self):
         import tempfile
@@ -731,6 +734,12 @@ class TestRunner(unittest.TestCase):
             runs.clear()
             self.assertEqual(rr.main(argv + ["--out", str(out), "--resume"]), 0)
             self.assertEqual(runs, [])  # everything was already recorded
+            # A recorded FAILURE is run again on resume (e.g. a transient timeout).
+            saved["results"][1]["failures"] = ["EN recall 0.000 < 0.5"]
+            (out / "results.json").write_text(json.dumps(saved), encoding="utf-8")
+            runs.clear()
+            self.assertEqual(rr.main(argv + ["--out", str(out), "--resume"]), 0)
+            self.assertEqual(runs, ["de-mono-02"])
 
     def test_best_models_are_preferred(self):
         self.assertEqual(rr.BEST_WHISPER, "large-v3")

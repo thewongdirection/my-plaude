@@ -182,6 +182,13 @@ function Write-ErrLine {
     [Console]::Error.WriteLine($Message)
 }
 
+function Write-Warn {
+    # A degraded result the user must hear about - written even with -Quiet
+    # (quiet hides progress, not problems). Parity with Python cli._warn.
+    param([string]$Message)
+    Write-ErrLine "warning: $Message"
+}
+
 function Test-Command {
     param([string]$Name)
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
@@ -1741,7 +1748,7 @@ function Invoke-Main {
                         for ($i = 0; $i -lt $segTexts.Count; $i++) { $rowList.Add([pscustomobject]@{ O = $segTexts[$i]; X = $translated[$i] }) }
                         $pairs = $rowList.ToArray()
                         $translationEngine = "LLM $sep $(if ($tModel) { $tModel } else { 'default' })"
-                    } catch { $translationText = ''; $translationEngine = "LLM $sep unavailable"; Write-Log "      translation unavailable: $($_.Exception.Message)" }
+                    } catch { $translationText = ''; $translationEngine = "LLM $sep unavailable"; Write-Warn "translation unavailable: $($_.Exception.Message)" }
                 } else {
                     $translationEngine = "LLM $sep unavailable"
                 }
@@ -1751,9 +1758,13 @@ function Invoke-Main {
             Write-Log '      summarizing critical topics ...'
             if ($sBackend) {
                 try { $summaryText = Invoke-Summarize -Text $transcriptText -Backend $sBackend -Model $sModel -Url $sUrl -MaxChars $SummarizeMaxChars -Topics -TimeoutSec $SummarizeTimeout }
-                catch { $summaryNote = "Summary unavailable ($($_.Exception.Message))." }
+                catch {
+                    $summaryNote = "Summary unavailable ($($_.Exception.Message))."
+                    Write-Warn "summary unavailable: $($_.Exception.Message)"
+                }
             } else {
                 $summaryNote = 'Summary unavailable (no local LLM server reachable).'
+                Write-Warn 'summary unavailable: no local LLM server reachable'
             }
 
             $cjk = $srcLang.ToLower() -in @('zh', 'ja', 'ko')

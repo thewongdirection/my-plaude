@@ -250,6 +250,12 @@ def _log(quiet: bool, *msg: object) -> None:
         print(*msg, file=sys.stderr, flush=True)
 
 
+def _warn(msg: str) -> None:
+    """A degraded result the user must hear about - printed even with -q
+    (quiet hides progress, not problems)."""
+    print(f"warning: {msg}", file=sys.stderr, flush=True)
+
+
 DEFAULT_OUTPUT_STEM = "output"
 OVERWRITE_TIMEOUT_SECONDS = 10
 
@@ -470,7 +476,7 @@ def _run_dashboard(args, segments, meta, whisper_translate_segs, translate_engin
         except summ.SummarizeError as exc:
             translation_text = ""
             translation_engine = "LLM · unavailable"
-            _log(args.quiet, f"      translation unavailable: {exc}")
+            _warn(f"translation unavailable: {exc}")
 
     # <=250-word critical-topics summary (graceful when no LLM is reachable).
     summary_text, summary_note = None, None
@@ -483,6 +489,7 @@ def _run_dashboard(args, segments, meta, whisper_translate_segs, translate_engin
             timeout=args.summarize_timeout)
     except summ.SummarizeError as exc:
         summary_note = f"Summary unavailable ({exc})."
+        _warn(f"summary unavailable: {exc}")
 
     speech_s = sum(max(0.0, float(s.get("end", 0)) - float(s.get("start", 0)))
                    for s in segments) or meta.get("duration")

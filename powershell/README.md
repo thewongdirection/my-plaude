@@ -179,6 +179,7 @@ python tests/regression/run_regression.py --impl powershell --sample 24
 | Auto-install ffmpeg | `--install-missing` | `-InstallMissing` |
 | Disable provisioning | `--no-provision` | `-NoProvision` |
 | Doctor | `--check` | `-Check` |
+| Quiet | `-q`/`--quiet`: hides progress, still prints `warning:` lines for degraded output (translation/summary unavailable) | `-Quiet` (same) |
 | Version | `--version` | `-Version` |
 | Exit codes | 2/3/4/5/6/7/8/9/10/11/12 | same meanings (incl. 7 = diarize failure) |
 
