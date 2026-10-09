@@ -9,7 +9,8 @@ Two backends:
 * ``ollama``   - talks to the Ollama HTTP API (default http://127.0.0.1:11434).
                  Requires Ollama running and a pulled model (e.g. ``llama3.1``).
 * ``llamacpp`` - talks to a llama.cpp ``llama-server`` (default
-                 http://127.0.0.1:8080), using its native ``/completion`` API.
+                 http://127.0.0.1:8080), using its OpenAI-compatible
+                 ``/v1/chat/completions`` API (so the model's chat template applies).
 
 The summarization *logic* (chunking a long transcript, map-reduce combine) is
 separated from the *transport* (the HTTP call), so it is unit-tested without a
@@ -163,13 +164,39 @@ def _ollama_call(prompt: str, model: str, url: str, timeout: float) -> str:
     return text.strip()
 
 
+_LEAKED_REASONING = re.compile(
+    r"(?is)<think>.*?</think>|<\|channel\>.*?<channel\|>|<\|channel\>thought\s*"
+)
+_LLAMACPP_MAX_TOKENS = 1024
+
+
+def _clean_llm_text(text: str) -> str:
+    """Drop reasoning markers a model leaked into its visible answer."""
+    return _LEAKED_REASONING.sub("", text).strip()
+
+
 def _llamacpp_call(prompt: str, model: Optional[str], url: str, timeout: float) -> str:
-    payload = {"prompt": prompt, "n_predict": 512, "temperature": 0.2, "stream": False}
-    resp = _post_json(url.rstrip("/") + "/completion", payload, timeout)
-    text = resp.get("content")
+    # Use the OpenAI-compatible chat endpoint, NOT raw ``/completion``: the
+    # server then applies the model's own chat template, so instruct models stop
+    # at end-of-turn instead of rambling/looping and leaking template tokens.
+    # Thinking is turned off (models/servers that ignore the flag are fine) so a
+    # reasoning model doesn't burn the whole token budget before answering.
+    payload = {
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": _LLAMACPP_MAX_TOKENS,
+        "temperature": 0.2,
+        "stream": False,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+    resp = _post_json(url.rstrip("/") + "/v1/chat/completions", payload, timeout)
+    try:
+        text = resp["choices"][0]["message"].get("content")
+    except (KeyError, IndexError, TypeError, AttributeError):
+        text = None
+    text = _clean_llm_text(text) if isinstance(text, str) else ""
     if not text:
         raise SummarizeError(f"llama.cpp returned no text (response: {resp!r})")
-    return text.strip()
+    return text
 
 
 # --------------------------------------------------------------------------- #

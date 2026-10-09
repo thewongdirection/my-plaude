@@ -4,6 +4,11 @@ import unittest
 from unittest import mock
 
 from plaude_local import summarize
+def _chat(content):
+    """A llama.cpp ``/v1/chat/completions`` reply carrying ``content``."""
+    return {"choices": [{"message": {"role": "assistant", "content": content}}]}
+
+
 from plaude_local.summarize import _chunk, summarize_text, build_prompt, SummarizeError
 
 
@@ -80,10 +85,10 @@ class TestBackendCalls(unittest.TestCase):
 
     def test_llamacpp_call_reads_content(self):
         with mock.patch.object(summarize, "_post_json",
-                               return_value={"content": "world"}) as m:
+                               return_value=_chat("world")) as m:
             out = summarize._llamacpp_call("p", None, "http://h:8080", 10)
         self.assertEqual(out, "world")
-        self.assertTrue(m.call_args.args[0].endswith("/completion"))
+        self.assertTrue(m.call_args.args[0].endswith("/v1/chat/completions"))
 
     def test_ollama_empty_raises(self):
         with mock.patch.object(summarize, "_post_json", return_value={}):
@@ -297,6 +302,359 @@ class TestListOllamaModels(unittest.TestCase):
         with mock.patch.object(summarize.urllib.request, "urlopen",
                                side_effect=OSError("down")):
             self.assertEqual(summarize.list_ollama_models(), [])
+
+
+class TestLlamacppRequest(unittest.TestCase):
+    """The llama.cpp ``/v1/chat/completions`` request/response contract (mocked transport)."""
+
+    def test_payload_shape(self):
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("x")) as m:
+            summarize._llamacpp_call("the prompt", None, "http://h:8080", 7)
+        url, payload, timeout = m.call_args.args
+        self.assertEqual(url, "http://h:8080/v1/chat/completions")
+        self.assertEqual(payload["messages"][0]["content"], "the prompt")
+        self.assertIs(payload["stream"], False)
+        self.assertIn("max_tokens", payload)
+        self.assertEqual(payload["chat_template_kwargs"], {"enable_thinking": False})
+        self.assertIn("temperature", payload)
+        self.assertEqual(timeout, 7)
+
+    def test_payload_has_no_ollama_only_fields(self):
+        # llama.cpp binds one model at launch: no model name / num_ctx options.
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("x")) as m:
+            summarize._llamacpp_call("p", "ignored-name", "http://h", 5)
+        payload = m.call_args.args[1]
+        self.assertNotIn("model", payload)
+        self.assertNotIn("options", payload)
+
+    def test_trailing_slash_in_url_is_normalised(self):
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("x")) as m:
+            summarize._llamacpp_call("p", None, "http://h:8080/", 5)
+        self.assertEqual(m.call_args.args[0], "http://h:8080/v1/chat/completions")
+
+    def test_empty_or_missing_content_raises(self):
+        for resp in ({}, _chat(""), _chat(None), {"response": "x"}, {"choices": []},
+                     _chat("<think>only reasoning</think>")):
+            with mock.patch.object(summarize, "_post_json", return_value=resp):
+                with self.assertRaises(SummarizeError) as ctx:
+                    summarize._llamacpp_call("p", None, "http://h", 5)
+            self.assertIn("llama.cpp", str(ctx.exception))
+
+    def test_content_is_stripped(self):
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("\n  - a\n  - b \n")):
+            self.assertEqual(summarize._llamacpp_call("p", None, "http://h", 5),
+                             "- a\n  - b")
+
+
+class TestLlamacppOutputCleaning(unittest.TestCase):
+    """Regression: raw /completion leaked chat-template/reasoning tokens."""
+
+    def test_leaked_channel_markers_removed(self):
+        raw = "Summary:\n- a\n<|channel>thought\n<channel|>Summary:\n- a"
+        with mock.patch.object(summarize, "_post_json", return_value=_chat(raw)):
+            out = summarize._llamacpp_call("p", None, "http://h", 5)
+        self.assertNotIn("<|channel>", out)
+        self.assertNotIn("<channel|>", out)
+        self.assertNotIn("thought", out)
+        self.assertTrue(out.endswith("- a"))
+
+    def test_think_blocks_removed(self):
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("<think>plan\nmore</think>\nAnswer")):
+            self.assertEqual(summarize._llamacpp_call("p", None, "http://h", 5), "Answer")
+
+    def test_clean_helper_leaves_plain_text_alone(self):
+        self.assertEqual(summarize._clean_llm_text("  - a\n  - b  "), "- a\n  - b")
+
+    def test_reasoning_content_is_never_used_as_the_answer(self):
+        # A thinking model that ran out of tokens returns empty content plus
+        # reasoning_content; that must be an error, not the chain of thought.
+        reply = {"choices": [{"message": {"content": "",
+                                          "reasoning_content": "thinking..."}}]}
+        with mock.patch.object(summarize, "_post_json", return_value=reply):
+            with self.assertRaises(SummarizeError):
+                summarize._llamacpp_call("p", None, "http://h", 5)
+
+
+class TestLlamacppAvailability(unittest.TestCase):
+    def test_health_endpoint_probed(self):
+        with mock.patch.object(summarize, "_get_ok", return_value=True) as m:
+            self.assertTrue(summarize.llamacpp_available("http://h:8080/"))
+        self.assertEqual(m.call_args.args[0], "http://h:8080/health")
+
+    def test_default_url_used(self):
+        with mock.patch.object(summarize, "_get_ok", return_value=False) as m:
+            self.assertFalse(summarize.llamacpp_available())
+        self.assertEqual(m.call_args.args[0],
+                         summarize.DEFAULT_LLAMACPP_URL + "/health")
+
+    def test_loading_model_503_counts_as_unavailable(self):
+        # llama-server answers /health with 503 while the model is still loading.
+        import urllib.error
+        err = urllib.error.HTTPError("http://h/health", 503, "Loading model", {}, None)
+        with mock.patch.object(summarize.urllib.request, "urlopen", side_effect=err):
+            self.assertFalse(summarize.llamacpp_available("http://h"))
+
+
+class TestLlamacppResolve(unittest.TestCase):
+    """Backend routing in ``_resolve_call`` for llama.cpp."""
+
+    def test_llamacpp_routes_to_completion_with_default_url(self):
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("ok")) as m:
+            call = summarize._resolve_call("llamacpp", None, None, 9)
+            self.assertEqual(call("p"), "ok")
+        self.assertEqual(m.call_args.args[0],
+                         summarize.DEFAULT_LLAMACPP_URL + "/v1/chat/completions")
+        self.assertEqual(m.call_args.args[2], 9)
+
+    def test_custom_url_is_honoured(self):
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("ok")) as m:
+            summarize._resolve_call("llamacpp", None, "http://gpu-box:9000", 5)("p")
+        self.assertEqual(m.call_args.args[0], "http://gpu-box:9000/v1/chat/completions")
+
+    def test_never_asks_ollama_for_a_model(self):
+        # No Ollama lookups (and no model required) on the llama.cpp path.
+        with mock.patch.object(summarize, "default_ollama_model") as dm, \
+             mock.patch.object(summarize, "_post_json", return_value=_chat("ok")):
+            summarize._resolve_call("llamacpp", None, None, 5)("p")
+        dm.assert_not_called()
+
+    def test_auto_picks_llamacpp_when_only_it_is_up(self):
+        with mock.patch.object(summarize, "ollama_available", return_value=False), \
+             mock.patch.object(summarize, "llamacpp_available", return_value=True), \
+             mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("ok")) as m:
+            summarize._resolve_call("auto", None, None, 5)("p")
+        self.assertTrue(m.call_args.args[0].endswith("/v1/chat/completions"))
+
+    def test_auto_prefers_ollama_when_both_are_up(self):
+        with mock.patch.object(summarize, "ollama_available", return_value=True), \
+             mock.patch.object(summarize, "llamacpp_available", return_value=True), \
+             mock.patch.object(summarize, "default_ollama_model", return_value="m"), \
+             mock.patch.object(summarize, "_post_json",
+                               return_value={"response": "ok"}) as m:
+            summarize._resolve_call("auto", None, None, 5)("p")
+        self.assertTrue(m.call_args.args[0].endswith("/api/generate"))
+
+    def test_auto_failure_message_mentions_llamacpp_remedy(self):
+        with mock.patch.object(summarize, "detect_backend", return_value=None):
+            with self.assertRaises(SummarizeError) as ctx:
+                summarize._resolve_call("auto", None, None, 5)
+        self.assertIn("llama-server", str(ctx.exception))
+
+    def test_backends_constant_lists_llamacpp(self):
+        self.assertIn("llamacpp", summarize.BACKENDS)
+
+
+class TestLlamacppEntryPoints(unittest.TestCase):
+    """summarize()/translate*() end to end over a mocked llama.cpp transport."""
+
+    def test_summarize_end_to_end(self):
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("* point")) as m:
+            out = summarize.summarize("hello transcript", backend="llamacpp")
+        self.assertEqual(out, "* point")
+        self.assertIn("hello transcript", m.call_args.args[1]["messages"][0]["content"])
+
+    def test_summarize_topics_prompt(self):
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("t")) as m:
+            summarize.summarize("x", backend="llamacpp", topics=True, max_words=50)
+        self.assertIn("50 words", m.call_args.args[1]["messages"][0]["content"])
+
+    def test_summarize_map_reduce(self):
+        text = "\n".join(f"sentence number {i} here" for i in range(200))
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("partial")) as m:
+            summarize.summarize(text, backend="llamacpp", max_chars=100)
+        prompts = [c.args[1]["messages"][0]["content"] for c in m.call_args_list]
+        self.assertGreater(len(prompts), 2)
+        self.assertTrue(any("partial summaries" in p.lower() for p in prompts))
+
+    def test_translate_end_to_end(self):
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat(" Hola ")) as m:
+            out = summarize.translate("hello", target_language="Spanish",
+                                      backend="llamacpp")
+        self.assertEqual(out, "Hola")
+        self.assertIn("Spanish", m.call_args.args[1]["messages"][0]["content"])
+
+    def test_translate_segments_stay_aligned(self):
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("1. Hello\n2. World")):
+            out = summarize.translate_segments(["你好", "世界"],
+                                               target_language="English",
+                                               backend="llamacpp")
+        self.assertEqual(out, ["Hello", "World"])
+
+    def test_server_error_surfaces_as_summarize_error(self):
+        with mock.patch.object(summarize, "_post_json",
+                               side_effect=SummarizeError("could not reach")):
+            with self.assertRaises(SummarizeError):
+                summarize.summarize("t", backend="llamacpp")
+
+
+class _FakeLlamaServer:
+    """A minimal in-process stand-in for ``llama-server`` on 127.0.0.1.
+
+    Speaks just enough of the real HTTP contract (``GET /health``,
+    ``POST /v1/chat/completions``) to exercise the actual urllib transport, request
+    encoding and response parsing - offline, no model, no GPU.
+    """
+
+    def __init__(self, *, health_status=200, reply=None):
+        import http.server
+        import json
+        import threading
+
+        outer = self
+        self.requests = []
+        self.health_status = health_status
+        # reply: callable(payload) -> (status, body_bytes)
+        self.reply = reply or (lambda p: (200, json.dumps(_chat("ok")).encode()))
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):  # keep test output quiet
+                pass
+
+            def _send(self, status, body):
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                outer.requests.append(("GET", self.path, None))
+                if self.path == "/health":
+                    self._send(outer.health_status, b'{"status":"ok"}')
+                else:
+                    self._send(404, b"{}")
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                outer.requests.append(("POST", self.path, payload))
+                if self.path != "/v1/chat/completions":
+                    self._send(404, b"{}")
+                    return
+                status, body = outer.reply(payload)
+                self._send(status, body)
+
+        self._httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self._httpd.server_address[1]}"
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def __exit__(self, *a):
+        self._httpd.shutdown()
+        self._httpd.server_close()
+        return False
+
+
+class TestLlamacppFakeServer(unittest.TestCase):
+    """Real HTTP round trips against a fake llama-server (loopback only)."""
+
+    def test_health_ok(self):
+        with _FakeLlamaServer() as srv:
+            self.assertTrue(summarize.llamacpp_available(srv.url))
+        self.assertEqual(srv.requests[0][:2], ("GET", "/health"))
+
+    def test_health_503_while_loading_is_unavailable(self):
+        with _FakeLlamaServer(health_status=503) as srv:
+            self.assertFalse(summarize.llamacpp_available(srv.url))
+
+    def test_nothing_listening_is_unavailable(self):
+        with _FakeLlamaServer() as srv:
+            url = srv.url
+        self.assertFalse(summarize.llamacpp_available(url))
+
+    def test_detect_backend_finds_llamacpp(self):
+        with _FakeLlamaServer() as srv:
+            # Ollama URL points at a closed port; only llama.cpp answers.
+            self.assertEqual(
+                summarize.detect_backend("http://127.0.0.1:9", srv.url), "llamacpp")
+
+    def test_summarize_over_real_http(self):
+        import json
+        with _FakeLlamaServer(
+                reply=lambda p: (200, json.dumps(_chat(" * done ")).encode())
+        ) as srv:
+            out = summarize.summarize("a transcript", backend="llamacpp",
+                                      url=srv.url, timeout=5)
+        self.assertEqual(out, "* done")
+        method, path, payload = srv.requests[-1]
+        self.assertEqual((method, path), ("POST", "/v1/chat/completions"))
+        self.assertIn("a transcript", payload["messages"][0]["content"])
+        self.assertIs(payload["stream"], False)
+
+    def test_non_ascii_round_trips_as_utf8(self):
+        import json
+        seen = []
+
+        def reply(p):
+            seen.append(p["messages"][0]["content"])
+            return 200, json.dumps(_chat("你好，世界 ✓"), ensure_ascii=False).encode("utf-8")
+
+        with _FakeLlamaServer(reply=reply) as srv:
+            out = summarize.summarize("こんにちは 世界 Привет", backend="llamacpp",
+                                      url=srv.url, timeout=5)
+        self.assertEqual(out, "你好，世界 ✓")
+        self.assertIn("こんにちは 世界 Привет", seen[0])
+
+    def test_map_reduce_over_real_http(self):
+        import json
+        text = "\n".join(f"sentence number {i} here" for i in range(200))
+        with _FakeLlamaServer(
+                reply=lambda p: (200, json.dumps(_chat("partial")).encode())
+        ) as srv:
+            summarize.summarize(text, backend="llamacpp", url=srv.url,
+                                max_chars=100, timeout=5)
+        posts = [r for r in srv.requests if r[0] == "POST"]
+        self.assertGreater(len(posts), 2)
+        self.assertIn("partial summaries", posts[-1][2]["messages"][0]["content"].lower())
+
+    def test_translate_segments_over_real_http(self):
+        import json
+
+        def reply(p):
+            n = len([ln for ln in p["messages"][0]["content"].splitlines() if ln[:1].isdigit()])
+            return 200, json.dumps(
+                _chat("\n".join(f"{i + 1}. t{i}" for i in range(n)))).encode()
+
+        with _FakeLlamaServer(reply=reply) as srv:
+            out = summarize.translate_segments(
+                ["a", "b", "c"], target_language="English", backend="llamacpp",
+                url=srv.url, timeout=5)
+        self.assertEqual(out, ["t0", "t1", "t2"])
+
+    def test_http_500_surfaces_as_summarize_error(self):
+        with _FakeLlamaServer(reply=lambda p: (500, b'{"error":"oom"}')) as srv:
+            with self.assertRaises(SummarizeError) as ctx:
+                summarize.summarize("t", backend="llamacpp", url=srv.url, timeout=5)
+        self.assertIn("could not reach", str(ctx.exception).lower())
+
+    def test_non_json_body_surfaces_as_summarize_error(self):
+        with _FakeLlamaServer(reply=lambda p: (200, b"<html>proxy</html>")) as srv:
+            with self.assertRaises(SummarizeError):
+                summarize.summarize("t", backend="llamacpp", url=srv.url, timeout=5)
+
+    def test_empty_completion_surfaces_as_summarize_error(self):
+        import json
+        with _FakeLlamaServer(
+                reply=lambda p: (200, json.dumps(_chat("")).encode())) as srv:
+            with self.assertRaises(SummarizeError) as ctx:
+                summarize.summarize("t", backend="llamacpp", url=srv.url, timeout=5)
+        self.assertIn("llama.cpp returned no text", str(ctx.exception))
 
 
 if __name__ == "__main__":

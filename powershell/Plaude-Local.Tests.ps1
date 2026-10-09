@@ -19,6 +19,8 @@ BeforeAll {
     $NoVad = $false
     $Summarize = $false
     $Format = 'txt'
+    # A llama.cpp /v1/chat/completions reply carrying the given text.
+    function New-ChatReply { param([string]$Text) [pscustomobject]@{ choices = @([pscustomobject]@{ message = [pscustomobject]@{ role = 'assistant'; content = $Text } }) } }
 }
 
 Describe 'Get-DefaultOutput' {
@@ -132,6 +134,226 @@ Describe 'Invoke-Summarize (map-reduce)' {
     It 'throws on empty transcript (parity with Python)' {
         { Invoke-Summarize -Text '   ' -Backend 'ollama' -Model 'm' -Url 'http://x' -MaxChars 100 } |
             Should -Throw
+    }
+}
+
+Describe 'llama.cpp backend: Invoke-LlmCall (parity with test_summarize.py)' {
+    It 'POSTs to /v1/chat/completions with the llama.cpp payload and returns trimmed content' {
+        $rec = @{ uri = $null; body = $null; method = $null }
+        Mock Invoke-RestMethod {
+            $rec.uri = $Uri; $rec.method = $Method
+            $rec.body = [System.Text.Encoding]::UTF8.GetString($Body)
+            (New-ChatReply "  - a`n  - b  ")
+        }
+        $out = Invoke-LlmCall -Prompt 'the prompt' -Backend 'llamacpp' -Model $null -Url 'http://h:8080/' -TimeoutSec 7
+        $out | Should -Be "- a`n  - b"
+        $rec.uri | Should -Be 'http://h:8080/v1/chat/completions'
+        $rec.method | Should -Be 'Post'
+        $p = $rec.body | ConvertFrom-Json
+        $p.messages[0].content | Should -Be 'the prompt'
+        $p.stream | Should -BeFalse
+        $p.max_tokens | Should -Not -BeNullOrEmpty
+        $p.chat_template_kwargs.enable_thinking | Should -BeFalse
+        $p.temperature | Should -Not -BeNullOrEmpty
+    }
+    It 'sends no Ollama-only fields (model / options)' {
+        $rec = @{ body = $null }
+        Mock Invoke-RestMethod {
+            $rec.body = [System.Text.Encoding]::UTF8.GetString($Body)
+            (New-ChatReply 'x')
+        }
+        Invoke-LlmCall -Prompt 'p' -Backend 'llamacpp' -Model 'ignored-name' -Url 'http://h' | Out-Null
+        $p = $rec.body | ConvertFrom-Json
+        $p.PSObject.Properties.Name | Should -Not -Contain 'model'
+        $p.PSObject.Properties.Name | Should -Not -Contain 'options'
+    }
+    It 'throws a llama.cpp error on empty or missing content' {
+        foreach ($resp in @(
+                [pscustomobject]@{},
+                (New-ChatReply ''),
+                [pscustomobject]@{ choices = @() },
+                (New-ChatReply '<think>only reasoning</think>'),
+                [pscustomobject]@{ response = 'x' })) {
+            $script:fakeResp = $resp
+            Mock Invoke-RestMethod { $script:fakeResp }
+            { Invoke-LlmCall -Prompt 'p' -Backend 'llamacpp' -Url 'http://h' } |
+                Should -Throw '*llama.cpp returned no text*'
+        }
+    }
+    It 'sends non-Latin text as UTF-8' {
+        $rec = @{ body = $null }
+        Mock Invoke-RestMethod {
+            $rec.body = [System.Text.Encoding]::UTF8.GetString($Body)
+            (New-ChatReply 'ok')
+        }
+        Invoke-LlmCall -Prompt 'こんにちは 世界 Привет' -Backend 'llamacpp' -Url 'http://h' | Out-Null
+        ($rec.body | ConvertFrom-Json).messages[0].content | Should -Be 'こんにちは 世界 Привет'
+    }
+}
+
+Describe 'llama.cpp backend: output cleaning (leaked template and reasoning tokens)' {
+    It 'removes leaked channel markers' {
+        Mock Invoke-RestMethod { New-ChatReply "Summary:`n- a`n<|channel>thought`n<channel|>Summary:`n- a" }
+        $out = Invoke-LlmCall -Prompt 'p' -Backend 'llamacpp' -Url 'http://h'
+        $out | Should -Not -Match '<\|channel>|<channel\|>|thought'
+        $out | Should -Match '- a$'
+    }
+    It 'removes think blocks' {
+        Mock Invoke-RestMethod { New-ChatReply "<think>plan`nmore</think>`nAnswer" }
+        Invoke-LlmCall -Prompt 'p' -Backend 'llamacpp' -Url 'http://h' | Should -Be 'Answer'
+    }
+    It 'leaves plain text alone (only trims)' {
+        Remove-LeakedReasoning "  - a`n  - b  " | Should -Be "- a`n  - b"
+    }
+    It 'never uses reasoning_content as the answer' {
+        Mock Invoke-RestMethod {
+            [pscustomobject]@{ choices = @([pscustomobject]@{ message = [pscustomobject]@{ content = ''; reasoning_content = 'thinking...' } }) }
+        }
+        { Invoke-LlmCall -Prompt 'p' -Backend 'llamacpp' -Url 'http://h' } |
+            Should -Throw '*llama.cpp returned no text*'
+    }
+}
+
+Describe 'llama.cpp backend: availability and detection' {
+    It 'Test-LlamacppUp probes /health' {
+        $rec = @{ uri = $null }
+        Mock Invoke-RestMethod { $rec.uri = $Uri; [pscustomobject]@{ status = 'ok' } }
+        Test-LlamacppUp 'http://h:8080/' | Should -BeTrue
+        $rec.uri | Should -Be 'http://h:8080/health'
+    }
+    It 'Test-LlamacppUp is false when the server errors (e.g. 503 while loading)' {
+        Mock Invoke-RestMethod { throw 'Service Unavailable (503)' }
+        Test-LlamacppUp 'http://h:8080' | Should -BeFalse
+    }
+    It 'Get-SummBackend falls back to llamacpp when only it is up' {
+        Mock Test-OllamaUp { $false }
+        Mock Test-LlamacppUp { $true }
+        Get-SummBackend -OllamaUrl 'http://o' -LlamacppUrl 'http://l' | Should -Be 'llamacpp'
+    }
+    It 'Get-SummBackend prefers ollama when both are up' {
+        Mock Test-OllamaUp { $true }
+        Mock Test-LlamacppUp { $true }
+        Get-SummBackend -OllamaUrl 'http://o' -LlamacppUrl 'http://l' | Should -Be 'ollama'
+    }
+    It 'Get-SummBackend returns nothing when neither is up' {
+        Mock Test-OllamaUp { $false }
+        Mock Test-LlamacppUp { $false }
+        Get-SummBackend -OllamaUrl 'http://o' -LlamacppUrl 'http://l' | Should -BeNullOrEmpty
+    }
+    It 'defaults to the IPv4 llama.cpp URL (not localhost)' {
+        $Script:DefaultLlamacppUrl | Should -Be 'http://127.0.0.1:8080'
+    }
+}
+
+Describe 'llama.cpp backend: summarize / translate flow' {
+    It 'passes the llamacpp backend and URL through Invoke-Summarize' {
+        $rec = @{ backend = $null; url = $null; model = 'unset' }
+        Mock Invoke-LlmCall { $rec.backend = $Backend; $rec.url = $Url; $rec.model = $Model; 'summary' }
+        $out = Invoke-Summarize -Text 'a short transcript' -Backend 'llamacpp' -Url 'http://l:8080' -MaxChars 1000
+        $out | Should -Be 'summary'
+        $rec.backend | Should -Be 'llamacpp'
+        $rec.url | Should -Be 'http://l:8080'
+        $rec.model | Should -BeNullOrEmpty          # llama.cpp binds its model at launch
+    }
+    It 'map-reduces long text over llamacpp' {
+        $rec = @{ count = 0; combined = $false }
+        Mock Invoke-LlmCall {
+            $rec.count++
+            if ($Prompt -match 'partial summaries') { $rec.combined = $true }
+            'partial'
+        }
+        $long = (1..200 | ForEach-Object { "sentence number $_ here" }) -join "`n"
+        Invoke-Summarize -Text $long -Backend 'llamacpp' -Url 'http://l' -MaxChars 100 | Out-Null
+        $rec.count | Should -BeGreaterThan 2
+        $rec.combined | Should -BeTrue
+    }
+    It 'translates text over llamacpp' {
+        $rec = @{ prompt = $null }
+        Mock Invoke-LlmCall { $rec.prompt = $Prompt; 'Hola' }
+        $out = Invoke-TranslateText -Text 'hello' -TargetLanguage 'Spanish' -Backend 'llamacpp' -Url 'http://l' -MaxChars 1000
+        $out | Should -Be 'Hola'
+        $rec.prompt | Should -Match 'Spanish'
+    }
+}
+
+Describe 'llama.cpp backend: real HTTP round trip (loopback fake llama-server)' {
+    BeforeAll {
+        # A tiny in-process stand-in for llama-server so the REAL
+        # Invoke-RestMethod / UTF-8 / JSON path is exercised, offline. It runs
+        # in a background runspace; the port is picked by probing a free one.
+        function Start-FakeLlamaServer {
+            param([int]$HealthStatus = 200, [string]$Content = 'ok', [int]$CompletionStatus = 200)
+            $port = $null
+            $listener = $null
+            foreach ($try in (Get-Random -Minimum 20000 -Maximum 60000), (Get-Random -Minimum 20000 -Maximum 60000), (Get-Random -Minimum 20000 -Maximum 60000)) {
+                $l = New-Object System.Net.HttpListener
+                $l.Prefixes.Add("http://127.0.0.1:$try/")
+                try { $l.Start(); $listener = $l; $port = $try; break } catch { }
+            }
+            if (-not $listener) { throw 'could not bind a loopback port for the fake llama-server' }
+            $state = [hashtable]::Synchronized(@{ requests = (New-Object System.Collections.ArrayList) })
+            $rs = [runspacefactory]::CreateRunspace(); $rs.Open()
+            $ps = [powershell]::Create(); $ps.Runspace = $rs
+            [void]$ps.AddScript({
+                param($listener, $state, $healthStatus, $content, $completionStatus)
+                while ($listener.IsListening) {
+                    try { $ctx = $listener.GetContext() } catch { break }
+                    $req = $ctx.Request; $res = $ctx.Response
+                    $body = ''
+                    if ($req.HasEntityBody) {
+                        $sr = New-Object System.IO.StreamReader($req.InputStream, [System.Text.Encoding]::UTF8)
+                        $body = $sr.ReadToEnd()
+                    }
+                    [void]$state.requests.Add(@{ method = $req.HttpMethod; path = $req.Url.AbsolutePath; body = $body })
+                    if ($req.Url.AbsolutePath -eq '/health') {
+                        $res.StatusCode = $healthStatus; $out = '{"status":"ok"}'
+                    } elseif ($req.Url.AbsolutePath -eq '/v1/chat/completions') {
+                        $res.StatusCode = $completionStatus
+                        $out = (@{ choices = @(@{ message = @{ role = 'assistant'; content = $content } }) } | ConvertTo-Json -Depth 6 -Compress)
+                    } else { $res.StatusCode = 404; $out = '{}' }
+                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($out)
+                    $res.ContentType = 'application/json; charset=utf-8'
+                    $res.ContentLength64 = $bytes.Length
+                    $res.OutputStream.Write($bytes, 0, $bytes.Length)
+                    $res.OutputStream.Close()
+                }
+            }).AddArgument($listener).AddArgument($state).AddArgument($HealthStatus).AddArgument($Content).AddArgument($CompletionStatus)
+            [void]$ps.BeginInvoke()
+            [pscustomobject]@{ Url = "http://127.0.0.1:$port"; State = $state; Listener = $listener; Ps = $ps; Rs = $rs }
+        }
+        function Stop-FakeLlamaServer {
+            param($Server)
+            try { $Server.Listener.Stop(); $Server.Listener.Close() } catch { }
+            try { $Server.Ps.Stop(); $Server.Ps.Dispose(); $Server.Rs.Dispose() } catch { }
+        }
+    }
+
+    It 'detects the server via /health and summarizes over real HTTP (UTF-8 intact)' {
+        $srv = Start-FakeLlamaServer -Content '你好，世界 ✓'
+        try {
+            Test-LlamacppUp $srv.Url | Should -BeTrue
+            $out = Invoke-Summarize -Text 'こんにちは 世界 Привет' -Backend 'llamacpp' -Url $srv.Url -MaxChars 1000 -TimeoutSec 10
+            $out | Should -Be '你好，世界 ✓'
+            $post = @($srv.State.requests | Where-Object { $_.path -eq '/v1/chat/completions' })[-1]
+            $post.method | Should -Be 'POST'
+            ($post.body | ConvertFrom-Json).messages[0].content | Should -Match 'こんにちは 世界 Привет'
+        } finally { Stop-FakeLlamaServer $srv }
+    }
+    It 'treats a 503 /health (model still loading) as unavailable' {
+        $srv = Start-FakeLlamaServer -HealthStatus 503
+        try { Test-LlamacppUp $srv.Url | Should -BeFalse } finally { Stop-FakeLlamaServer $srv }
+    }
+    It 'surfaces an HTTP 500 from /v1/chat/completions as an error' {
+        $srv = Start-FakeLlamaServer -CompletionStatus 500
+        try {
+            { Invoke-LlmCall -Prompt 'p' -Backend 'llamacpp' -Url $srv.Url -TimeoutSec 10 } | Should -Throw
+        } finally { Stop-FakeLlamaServer $srv }
+    }
+    It 'reports nothing listening as unavailable' {
+        $srv = Start-FakeLlamaServer
+        $url = $srv.Url
+        Stop-FakeLlamaServer $srv
+        Test-LlamacppUp $url | Should -BeFalse
     }
 }
 

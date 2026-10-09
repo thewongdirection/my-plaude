@@ -1033,6 +1033,15 @@ function Split-IntoChunks {
     return , $chunks.ToArray()
 }
 
+$Script:LlamacppMaxTokens = 1024
+function Remove-LeakedReasoning {
+    # Drop reasoning markers a model leaked into its visible answer
+    # (parity with _clean_llm_text).
+    param([string]$Text)
+    $re = '(?is)<think>.*?</think>|<\|channel>.*?<channel\|>|<\|channel>thought\s*'
+    return ([regex]::Replace($Text, $re, '')).Trim()
+}
+
 function Invoke-LlmCall {
     param([string]$Prompt, [string]$Backend, [string]$Model, [string]$Url, [double]$TimeoutSec = 120)
     # Encode the JSON body as UTF-8 bytes so non-Latin (CJK) transcript text is
@@ -1046,15 +1055,27 @@ function Invoke-LlmCall {
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
         $resp = Invoke-RestMethod -Uri "$($Url.TrimEnd('/'))/api/generate" -Method Post `
             -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec $TimeoutSec
-        if (-not $resp.response) { throw 'ollama returned no text.' }
+        if (-not $resp.PSObject.Properties['response'] -or -not $resp.response) { throw 'ollama returned no text.' }
         return ([string]$resp.response).Trim()
     } else {
-        $json = @{ prompt = $Prompt; n_predict = 512; temperature = 0.2; stream = $false } | ConvertTo-Json
+        # OpenAI-compatible chat endpoint (parity with _llamacpp_call): the server
+        # applies the model's chat template, and thinking is turned off so a
+        # reasoning model doesn't burn the token budget before answering.
+        $json = @{
+            messages = @(@{ role = 'user'; content = $Prompt })
+            max_tokens = $Script:LlamacppMaxTokens; temperature = 0.2; stream = $false
+            chat_template_kwargs = @{ enable_thinking = $false }
+        } | ConvertTo-Json -Depth 5
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-        $resp = Invoke-RestMethod -Uri "$($Url.TrimEnd('/'))/completion" -Method Post `
+        $resp = Invoke-RestMethod -Uri "$($Url.TrimEnd('/'))/v1/chat/completions" -Method Post `
             -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec $TimeoutSec
-        if (-not $resp.content) { throw 'llama.cpp returned no text.' }
-        return ([string]$resp.content).Trim()
+        $text = $null
+        if ($resp.PSObject.Properties['choices'] -and @($resp.choices).Count -gt 0 -and $resp.choices[0].message) {
+            $text = $resp.choices[0].message.content
+        }
+        $text = if ($text -is [string]) { Remove-LeakedReasoning $text } else { '' }
+        if (-not $text) { throw 'llama.cpp returned no text.' }
+        return $text
     }
 }
 
