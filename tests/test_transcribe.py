@@ -110,6 +110,28 @@ class TestCudaDllDirs(unittest.TestCase):
             transcribe.add_cuda_dll_directories()
         self.assertEqual(calls, ["/a/bin", "/b/bin"])
 
+    def test_add_cuda_dll_directories_also_prepends_path(self):
+        # Regression: newer CTranslate2 loads cublas64_12.dll with a plain
+        # LoadLibrary, which ignores os.add_dll_directory but honours PATH.
+        sep = transcribe.os.pathsep
+        with mock.patch.object(transcribe.sys, "platform", "win32"), mock.patch.object(
+            transcribe.os, "add_dll_directory", lambda p: None, create=True
+        ), mock.patch.object(
+            transcribe, "nvidia_dll_dirs", return_value=["/a/bin", "/b/bin"]
+        ), mock.patch.dict(transcribe.os.environ, {"PATH": "/usr/bin"}):
+            transcribe.add_cuda_dll_directories()
+            first = transcribe.os.environ["PATH"]
+            transcribe.add_cuda_dll_directories()          # idempotent
+            self.assertEqual(transcribe.os.environ["PATH"], first)
+        self.assertEqual(first, sep.join(["/a/bin", "/b/bin", "/usr/bin"]))
+
+    def test_path_untouched_off_windows(self):
+        with mock.patch.object(transcribe.sys, "platform", "linux"), mock.patch.dict(
+            transcribe.os.environ, {"PATH": "/usr/bin"}
+        ), mock.patch.object(transcribe, "nvidia_dll_dirs", return_value=["/x/bin"]):
+            transcribe.add_cuda_dll_directories()
+            self.assertEqual(transcribe.os.environ["PATH"], "/usr/bin")
+
 
 class TestTranscriberGuard(unittest.TestCase):
     def test_missing_faster_whisper_raises_clean_error(self):

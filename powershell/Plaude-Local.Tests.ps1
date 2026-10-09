@@ -975,6 +975,8 @@ Describe 'Get-CudaBootstrap' {
     It 'registers the wheel DLL dirs and runs the whisper-ctranslate2 entry point' {
         $code = Get-CudaBootstrap
         $code | Should -Match 'add_dll_directory'
+        # Newer CTranslate2 loads cuBLAS with a plain LoadLibrary: PATH must carry the dirs too.
+        $code | Should -Match 'os\.environ\["PATH"\]'
         $code | Should -Match 'nvidia'
         $code | Should -Match 'from whisper_ctranslate2\.whisper_ctranslate2 import main'
     }

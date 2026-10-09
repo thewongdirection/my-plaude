@@ -62,6 +62,7 @@ PS_SCRIPT = REPO / "powershell" / "Plaude-Local.ps1"
 BEST_WHISPER = "large-v3"
 BEST_TRANSLATORS = ("translategemma:27b", "translategemma:12b", "translategemma:4b")
 OLLAMA_URL = "http://127.0.0.1:11434"
+LLAMACPP_URL = "http://127.0.0.1:8080"
 TOL_CER = 0.05       # allowed CER increase vs baseline
 TOL_RECALL = 0.10    # allowed recall drop vs baseline
 
@@ -71,7 +72,8 @@ DEFAULT_LLM_TIMEOUT = 900  # s per LLM request: survive an 8 GB model (re)load
 
 def build_command(impl: str, audio: Path, work: Path, *, variant: str, model: str,
                   engine: str, translate_model: Optional[str],
-                  llm_timeout: int = DEFAULT_LLM_TIMEOUT) -> list:
+                  llm_timeout: int = DEFAULT_LLM_TIMEOUT,
+                  backend: Optional[str] = None, llm_url: Optional[str] = None) -> list:
     """The exact CLI invocation for one run (flag-for-flag parity across impls)."""
     html, tfile, xfile, stages = (work / "dashboard.html", work / "transcription.txt",
                                   work / "translation.txt", work / "stages")
@@ -83,6 +85,10 @@ def build_command(impl: str, audio: Path, work: Path, *, variant: str, model: st
                "-y", "-q"]
         if translate_model:
             cmd += ["--translate-model", translate_model]
+        if backend:
+            cmd += ["--summarize-backend", backend]
+        if llm_url:
+            cmd += ["--summarize-url", llm_url]
         if variant == "damaged":
             cmd += ["--repair", "--enhance", "strong", "--keep-stages", str(stages)]
         return cmd
@@ -94,6 +100,10 @@ def build_command(impl: str, audio: Path, work: Path, *, variant: str, model: st
            "-Yes", "-Quiet"]
     if translate_model:
         cmd += ["-TranslateModel", translate_model]
+    if backend:
+        cmd += ["-SummarizeBackend", backend]
+    if llm_url:
+        cmd += ["-SummarizeUrl", llm_url]
     if variant == "damaged":
         cmd += ["-Repair", "-Enhance", "strong", "-KeepStages", str(stages)]
     return cmd
@@ -265,8 +275,11 @@ def run_one(impl: str, entry: dict, variant: str, out_dir: Path, args) -> dict:
     work = out_dir / impl / f"{entry['id']}.{variant}"
     work.mkdir(parents=True, exist_ok=True)
     cmd = build_command(impl, audio, work, variant=variant, model=args.model,
-                        engine=args.translate_engine, translate_model=args.translate_model,
-                        llm_timeout=args.llm_timeout)
+                        engine=args.translate_engine,
+                        translate_model=getattr(args, "translate_model_cli", args.translate_model),
+                        llm_timeout=args.llm_timeout,
+                        backend=getattr(args, "translate_backend_cli", None),
+                        llm_url=getattr(args, "llm_url", None))
     t0 = time.time()
     code = run_with_timeout(cmd, work / "run.log", args.timeout)
     if killed_by_system(code):
@@ -349,6 +362,44 @@ def best_translate_model(installed: list) -> Optional[str]:
     return None
 
 
+def llamacpp_model_label(url: str = LLAMACPP_URL) -> Optional[str]:
+    """``llamacpp:<model>`` for a reachable llama-server, else None.
+
+    llama.cpp serves ONE preloaded model and the tool never names it, so the
+    baseline is keyed by this label (the model id the server reports) instead
+    of an Ollama model name.
+    """
+    from plaude_local import summarize
+    if not summarize.llamacpp_available(url):
+        return None
+    try:
+        import urllib.request
+        with urllib.request.urlopen(url.rstrip("/") + "/v1/models", timeout=5) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        name = (data.get("data") or [{}])[0].get("id") or "server-model"
+    except Exception:
+        name = "server-model"
+    return f"llamacpp:{Path(str(name)).name}"
+
+
+def resolve_translator(choice: str, backend: str, installed: list,
+                       llamacpp_label: Optional[str]) -> tuple:
+    """Pick ``(backend, cli_model, baseline_label)`` for translation.
+
+    ``backend`` is ``auto``/``ollama``/``llamacpp``. ``auto`` keeps the
+    historical behaviour (the best installed Ollama translator) and falls back
+    to a reachable llama.cpp server when Ollama has none. ``cli_model`` is what
+    is passed to the tools (None for llama.cpp: its model is bound at launch).
+    """
+    if backend != "llamacpp":
+        model = best_translate_model(installed) if choice == "best" else choice
+        if model or backend == "ollama":
+            return "ollama", model, model
+        if not llamacpp_label:
+            return "ollama", None, None
+    return "llamacpp", None, llamacpp_label
+
+
 def cuda_available() -> bool:
     try:
         import ctranslate2
@@ -378,6 +429,15 @@ def main(argv=None) -> int:
     p.add_argument("--translate-model", default="best",
                    help="Ollama model for translation; 'best' (default) picks the "
                         f"strongest installed of {', '.join(BEST_TRANSLATORS)}")
+    p.add_argument("--translate-backend", default="auto",
+                   choices=["auto", "ollama", "llamacpp"],
+                   help="local LLM server for translation: 'auto' (default) uses the best "
+                        "installed Ollama translator, else a reachable llama.cpp "
+                        "llama-server; 'llamacpp' forces llama.cpp (its single loaded "
+                        "model is used; --translate-model is ignored)")
+    p.add_argument("--llm-url", default=None,
+                   help="URL of the LLM server passed to both tools (default: the "
+                        "backend's usual address)")
     p.add_argument("--out", default=None, help="results folder (default: results/<time>)")
     p.add_argument("--timeout", type=int, default=3600, help="per-file timeout (s)")
     p.add_argument("--llm-timeout", type=int, default=DEFAULT_LLM_TIMEOUT,
@@ -399,14 +459,25 @@ def main(argv=None) -> int:
         return 0
 
     # Rule: regression runs use the GPU and the best models whenever possible.
-    if args.translate_model == "best":
+    args.translate_backend_cli = None
+    args.translate_model_cli = args.translate_model
+    if args.translate_model == "best" or args.translate_backend != "auto":
         from plaude_local import summarize
-        installed = summarize.list_ollama_models(OLLAMA_URL)
-        args.translate_model = best_translate_model(installed)
+        l_url = args.llm_url or LLAMACPP_URL
+        installed = (summarize.list_ollama_models(args.llm_url or OLLAMA_URL)
+                     if args.translate_backend != "llamacpp" else [])
+        label = llamacpp_model_label(l_url) if args.translate_backend != "ollama" else None
+        backend, cli_model, args.translate_model = resolve_translator(
+            args.translate_model, args.translate_backend, installed, label)
+        args.translate_model_cli = cli_model
+        if backend == "llamacpp":
+            args.translate_backend_cli = "llamacpp"
         if args.translate_engine != "whisper" and not args.translate_model:
             p.error(f"--translate-model best: no translation model found on Ollama at "
-                    f"{OLLAMA_URL} (installed: {installed or 'none - is Ollama running?'}); "
-                    f"pull one of {', '.join(BEST_TRANSLATORS)} or pass --translate-model")
+                    f"{OLLAMA_URL} (installed: {installed or 'none - is Ollama running?'}) "
+                    f"and no llama.cpp server at {l_url}; pull one of "
+                    f"{', '.join(BEST_TRANSLATORS)}, start llama-server, or pass "
+                    f"--translate-model")
     gpu = cuda_available()
     print(f"regression config: whisper={args.model} on {'GPU (CUDA)' if gpu else 'CPU'}, "
           f"translate={args.translate_engine}/{args.translate_model or 'tool default'}",

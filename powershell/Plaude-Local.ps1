@@ -729,20 +729,29 @@ function Get-CudaBootstrap {
     # A Python one-shot that registers the pip 'nvidia-*-cu12' wheel bin dirs
     # (cublas64_12.dll / cudnn64_9.dll ...) with os.add_dll_directory, then runs
     # the whisper-ctranslate2 entry point. Needed because a child process cannot
-    # see those DLLs via PATH under Python 3.8+'s restricted DLL search. Parity
-    # with the Python package's transcribe.add_cuda_dll_directories().
+    # see those DLLs via PATH under Python 3.8+'s restricted DLL search. The dirs
+    # are ALSO prepended to PATH: newer CTranslate2 builds load cuBLAS later with
+    # a plain LoadLibrary that ignores add_dll_directory. Parity with the Python
+    # package's transcribe.add_cuda_dll_directories().
     return @'
 import os, sys, glob, importlib.util
 try:
     s = importlib.util.find_spec("nvidia")
     roots = list(s.submodule_search_locations) if s and s.submodule_search_locations else []
+    found = []
     for root in roots:
         for b in glob.glob(os.path.join(root, "*", "bin")):
             if os.path.isdir(b):
+                found.append(b)
                 try:
                     os.add_dll_directory(b)
                 except OSError:
                     pass
+    cur = os.environ.get("PATH", "")
+    have = {os.path.normcase(p) for p in cur.split(os.pathsep) if p}
+    new = [d for d in found if os.path.normcase(d) not in have]
+    if new:
+        os.environ["PATH"] = os.pathsep.join(new + ([cur] if cur else []))
 except Exception:
     pass
 from whisper_ctranslate2.whisper_ctranslate2 import main

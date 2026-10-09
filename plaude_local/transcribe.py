@@ -50,16 +50,25 @@ def add_cuda_dll_directories() -> None:
     Python 3.8, Windows no longer searches ``PATH`` for a native extension's DLL
     dependencies, so CUDA libraries provided by the ``nvidia-*-cu12`` wheels are
     not found and GPU inference fails with "Library cublas64_12.dll is not
-    found". Registering those directories with ``os.add_dll_directory`` fixes it.
-    No-op off Windows or when the wheels are absent.
+    found". Registering those directories with ``os.add_dll_directory`` fixes it
+    for DLLs Python itself loads; newer CTranslate2 builds load cuBLAS later with
+    a plain ``LoadLibrary`` that ignores that registration, so the directories are
+    ALSO prepended to ``PATH`` (idempotent). No-op off Windows or when the wheels
+    are absent.
     """
     if sys.platform != "win32" or not hasattr(os, "add_dll_directory"):
         return
-    for bindir in nvidia_dll_dirs():
+    dirs = nvidia_dll_dirs()
+    for bindir in dirs:
         try:
             os.add_dll_directory(bindir)
         except OSError:  # pragma: no cover - defensive
             pass
+    current = os.environ.get("PATH", "")
+    have = {os.path.normcase(p) for p in current.split(os.pathsep) if p}
+    new = [d for d in dirs if os.path.normcase(d) not in have]
+    if new:
+        os.environ["PATH"] = os.pathsep.join(new + ([current] if current else []))
 
 
 CUDA_LIBS_REMEDY = (

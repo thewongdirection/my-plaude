@@ -852,6 +852,7 @@ class TestRunner(unittest.TestCase):
         from unittest import mock
         from plaude_local import summarize
         with mock.patch.object(summarize, "list_ollama_models", return_value=[]), \
+             mock.patch.object(rr, "llamacpp_model_label", return_value=None), \
              mock.patch.object(rr, "cuda_available", return_value=True):
             with self.assertRaises(SystemExit):
                 rr.main(["--sample", "1"])
@@ -883,6 +884,69 @@ class TestRunner(unittest.TestCase):
         self.assertEqual(len({e["code"] for e in pick}), 6)
         self.assertEqual({e["kind"] for e in pick}, {"mono", "conv"})
         self.assertEqual(len({e["id"] for e in pick}), 12)
+
+
+class TestRunnerLlamacpp(unittest.TestCase):
+    """The regression runner can drive both tools with a llama.cpp server."""
+
+    def test_best_prefers_ollama_translator_when_installed(self):
+        self.assertEqual(
+            rr.resolve_translator("best", "auto", ["translategemma:12b"], "llamacpp:x"),
+            ("ollama", "translategemma:12b", "translategemma:12b"))
+
+    def test_auto_falls_back_to_llamacpp_when_ollama_has_no_translator(self):
+        self.assertEqual(
+            rr.resolve_translator("best", "auto", [], "llamacpp:gemma.gguf"),
+            ("llamacpp", None, "llamacpp:gemma.gguf"))
+
+    def test_forced_llamacpp_ignores_installed_ollama_models(self):
+        self.assertEqual(
+            rr.resolve_translator("best", "llamacpp", ["translategemma:27b"], "llamacpp:m"),
+            ("llamacpp", None, "llamacpp:m"))
+
+    def test_nothing_available_yields_no_label(self):
+        self.assertEqual(rr.resolve_translator("best", "auto", [], None),
+                         ("ollama", None, None))
+
+    def test_explicit_model_is_kept_on_ollama(self):
+        self.assertEqual(rr.resolve_translator("qwen2.5:7b", "ollama", [], None),
+                         ("ollama", "qwen2.5:7b", "qwen2.5:7b"))
+
+    def test_label_is_none_when_server_down(self):
+        from unittest import mock
+        from plaude_local import summarize
+        with mock.patch.object(summarize, "llamacpp_available", return_value=False):
+            self.assertIsNone(rr.llamacpp_model_label("http://127.0.0.1:9"))
+
+    def test_label_uses_model_id_reported_by_server(self):
+        from unittest import mock
+        from plaude_local import summarize
+        body = json.dumps({"data": [{"id": "D:\\models\\gemma-4-26B.gguf"}]}).encode()
+        with mock.patch.object(summarize, "llamacpp_available", return_value=True), \
+             mock.patch("urllib.request.urlopen") as uo:
+            uo.return_value.__enter__.return_value.read.return_value = body
+            self.assertEqual(rr.llamacpp_model_label("http://h"), "llamacpp:gemma-4-26B.gguf")
+
+    def test_commands_pass_backend_and_url_to_both_tools_without_model(self):
+        work = Path("w")
+        py = rr.build_command("python", Path("a.opus"), work, variant="clean", model="large-v3",
+                              engine="llm", translate_model=None, backend="llamacpp",
+                              llm_url="http://127.0.0.1:8080")
+        ps = rr.build_command("powershell", Path("a.opus"), work, variant="clean",
+                              model="large-v3", engine="llm", translate_model=None,
+                              backend="llamacpp", llm_url="http://127.0.0.1:8080")
+        self.assertEqual(py[py.index("--summarize-backend") + 1], "llamacpp")
+        self.assertEqual(py[py.index("--summarize-url") + 1], "http://127.0.0.1:8080")
+        self.assertEqual(ps[ps.index("-SummarizeBackend") + 1], "llamacpp")
+        self.assertEqual(ps[ps.index("-SummarizeUrl") + 1], "http://127.0.0.1:8080")
+        self.assertNotIn("--translate-model", py)
+        self.assertNotIn("-TranslateModel", ps)
+
+    def test_default_commands_are_unchanged(self):
+        py = rr.build_command("python", Path("a.opus"), Path("w"), variant="clean",
+                              model="large-v3", engine="llm", translate_model="m")
+        self.assertNotIn("--summarize-backend", py)
+        self.assertNotIn("--summarize-url", py)
 
 
 class TestVerifyOffline(unittest.TestCase):
