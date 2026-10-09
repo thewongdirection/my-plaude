@@ -186,6 +186,7 @@ python tests/regression/run_regression.py --impl powershell --sample 24
 | Diarization speakers | `--num/min/max-speakers N` | `-NumSpeakers/-MinSpeakers/-MaxSpeakers N` (honored) |
 | Diarization backend | `--diarize-backend pyannote/whisperx` | `-DiarizeBackend` (pyannote only; whisperx not ported) |
 | Summarization | `--summarize` (Ollama/llama.cpp) | `-Summarize` (Ollama/llama.cpp) |
+| llama.cpp transport | `/v1/chat/completions`, thinking off, 1024-token cap, leaked reasoning blocks stripped, truncated replies raise (translation splits + retries) | identical |
 | LLM request timeout | `--summarize-timeout SECONDS` (default 120) | `-SummarizeTimeout SECONDS` |
 | Prereq check + provision | (built-in) | (built-in) |
 | Provide ffmpeg | `--ffmpeg-location` | `-FfmpegLocation` |
@@ -195,6 +196,16 @@ python tests/regression/run_regression.py --impl powershell --sample 24
 | Quiet | `-q`/`--quiet`: hides progress, still prints `warning:` lines for degraded output (translation/summary unavailable) | `-Quiet` (same) |
 | Version | `--version` | `-Version` |
 | Exit codes | 2/3/4/5/6/7/8/9/10/11/12 | same meanings (incl. 7 = diarize failure) |
+
+**llama.cpp notes.** `-Summarize` talks to `llama-server` through its
+OpenAI-compatible `/v1/chat/completions` endpoint (any recent build), so the
+model's own chat template is applied. Thinking is switched off per request
+(`chat_template_kwargs.enable_thinking=false`; servers/models that ignore it are
+fine), replies are capped at 1024 tokens, and leaked `<think>` / `<|channel>`
+reasoning blocks (including an unclosed one) are stripped. A reply cut off at the
+cap is never returned as if complete: summarization reports it as an error
+(`reply was truncated`), and translation splits the batch and retries. Very old
+`llama-server` builds without `/v1/chat/completions` are reported as unreachable.
 
 ### Known differences
 

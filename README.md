@@ -221,6 +221,17 @@ ollama serve            # usually already running as a service
 llama-server -m your-model.gguf     # serves on http://127.0.0.1:8080
 ```
 
+**llama.cpp notes.** The tool talks to `llama-server` through its
+OpenAI-compatible `/v1/chat/completions` endpoint (any recent build), so the
+model's own chat template is applied. Thinking is switched off per request
+(`chat_template_kwargs.enable_thinking=false`; servers/models that ignore it are
+fine), replies are capped at 1024 tokens, and leaked `<think>` / `<|channel>`
+reasoning blocks (including an unclosed one) are stripped. A reply cut off at the
+cap is never returned as if complete: summarization reports it as an error
+(`reply was truncated`), and translation splits the batch and retries. Very old
+`llama-server` builds without `/v1/chat/completions` show up as "could not reach
+the summarization server".
+
 ### 6. Verify everything
 
 ```bash

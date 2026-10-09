@@ -50,6 +50,19 @@ class SummarizeError(RuntimeError):
     """Raised when summarization is unavailable or fails."""
 
 
+class TruncatedReply(SummarizeError):
+    """The model hit its token cap mid-answer; ``partial`` holds what it wrote.
+
+    Raised instead of returning cut-off text as if it were complete. Callers that
+    can recover (aligned translation splits the batch) catch it; everyone else
+    surfaces it like any other summarization failure.
+    """
+
+    def __init__(self, message: str, partial: str = "") -> None:
+        super().__init__(message)
+        self.partial = partial
+
+
 # --------------------------------------------------------------------------- #
 # HTTP helpers (stdlib only)
 # --------------------------------------------------------------------------- #
@@ -164,8 +177,11 @@ def _ollama_call(prompt: str, model: str, url: str, timeout: float) -> str:
     return text.strip()
 
 
+# Balanced reasoning blocks first; then an UNCLOSED opener (a reply cut off
+# mid-thought) drops everything after it; then stray closers.
 _LEAKED_REASONING = re.compile(
-    r"(?is)<think>.*?</think>|<\|channel\>.*?<channel\|>|<\|channel\>thought\s*"
+    r"(?is)<think>.*?</think>|<\|channel\>.*?<channel\|>"
+    r"|<think>.*|<\|channel\>.*|</think>|<channel\|>"
 )
 _LLAMACPP_MAX_TOKENS = 1024
 
@@ -190,10 +206,19 @@ def _llamacpp_call(prompt: str, model: Optional[str], url: str, timeout: float) 
     }
     resp = _post_json(url.rstrip("/") + "/v1/chat/completions", payload, timeout)
     try:
-        text = resp["choices"][0]["message"].get("content")
+        choice = resp["choices"][0]
+        text = choice["message"].get("content")
+        finish = choice.get("finish_reason")
     except (KeyError, IndexError, TypeError, AttributeError):
-        text = None
+        text, finish = None, None
     text = _clean_llm_text(text) if isinstance(text, str) else ""
+    if finish == "length":
+        # Cut off at max_tokens: never hand back half an answer as a whole one.
+        raise TruncatedReply(
+            f"llama.cpp reply was truncated at {_LLAMACPP_MAX_TOKENS} tokens; "
+            "use a shorter --summarize-max-chars chunk or a faster non-reasoning model.",
+            partial=text,
+        )
     if not text:
         raise SummarizeError(f"llama.cpp returned no text (response: {resp!r})")
     return text
@@ -357,7 +382,16 @@ def _translate_group(
     back all-empty.
     """
     numbered = "\n".join(f"{n + 1}. {lines[idx]}" for n, idx in enumerate(group))
-    resp = _THINK.sub("", call(build_aligned_translate_prompt(numbered, target_language)))
+    try:
+        reply = call(build_aligned_translate_prompt(numbered, target_language))
+    except TruncatedReply as exc:
+        if len(group) > 1:  # too much for one reply: split and retry each half
+            mid = len(group) // 2
+            _translate_group(group[:mid], lines, call, target_language, out)
+            _translate_group(group[mid:], lines, call, target_language, out)
+            return
+        reply = exc.partial  # a single line: keep what we got
+    resp = _THINK.sub("", reply)
     got = {int(m.group(1)): m.group(2).strip() for m in _NUM_LINE.finditer(resp)}
     matched = sum(1 for n in range(len(group)) if got.get(n + 1))
     if len(group) == 1 or matched * 2 >= len(group):

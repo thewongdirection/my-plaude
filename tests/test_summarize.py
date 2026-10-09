@@ -380,6 +380,91 @@ class TestLlamacppOutputCleaning(unittest.TestCase):
                 summarize._llamacpp_call("p", None, "http://h", 5)
 
 
+def _chat_len(content):
+    """A reply the server cut off at max_tokens (finish_reason == 'length')."""
+    r = _chat(content)
+    r["choices"][0]["finish_reason"] = "length"
+    return r
+
+
+class TestLlamacppTruncation(unittest.TestCase):
+    """Regression: a reply cut off at max_tokens must never pass as complete."""
+
+    def test_truncated_reply_raises_with_partial(self):
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat_len("- one\n- tw")):
+            with self.assertRaises(summarize.TruncatedReply) as ctx:
+                summarize._llamacpp_call("p", None, "http://h", 5)
+        self.assertEqual(ctx.exception.partial, "- one\n- tw")
+        self.assertIsInstance(ctx.exception, SummarizeError)   # generic handlers still work
+        self.assertIn("truncated", str(ctx.exception))
+
+    def test_normal_stop_is_not_flagged(self):
+        reply = _chat("done")
+        reply["choices"][0]["finish_reason"] = "stop"
+        with mock.patch.object(summarize, "_post_json", return_value=reply):
+            self.assertEqual(summarize._llamacpp_call("p", None, "http://h", 5), "done")
+
+    def test_summarize_surfaces_truncation(self):
+        with mock.patch.object(summarize, "_post_json", return_value=_chat_len("half")):
+            with self.assertRaises(summarize.TruncatedReply):
+                summarize.summarize("a transcript", backend="llamacpp")
+
+    def test_translation_batch_is_split_and_retried(self):
+        calls = []
+
+        def fake(prompt):
+            n = len([ln for ln in prompt.splitlines() if ln[:1].isdigit()])
+            calls.append(n)
+            if n > 2:
+                raise summarize.TruncatedReply("cut", partial="1. par")
+            return "\n".join(f"{i + 1}. t{i}" for i in range(n))
+
+        out = summarize.translate_lines([f"L{i}" for i in range(8)], fake,
+                                        target_language="English",
+                                        max_chars=10_000, max_lines=8)
+        self.assertTrue(all(out))
+        self.assertEqual(len(out), 8)
+        self.assertGreater(len(calls), 1)
+        self.assertLessEqual(calls[-1], 2)
+
+    def test_truncated_single_line_keeps_partial(self):
+        def fake(prompt):
+            raise summarize.TruncatedReply("cut", partial="1. partial text")
+
+        out = summarize.translate_lines(["only"], fake, target_language="English")
+        self.assertEqual(out, ["partial text"])
+
+    def test_truncation_over_real_http(self):
+        import json
+        body = json.dumps(_chat_len("cut off")).encode()
+        with _FakeLlamaServer(reply=lambda p: (200, body)) as srv:
+            with self.assertRaises(summarize.TruncatedReply):
+                summarize.summarize("t", backend="llamacpp", url=srv.url, timeout=5)
+
+
+class TestLlamacppUnclosedReasoning(unittest.TestCase):
+    def test_unclosed_think_is_dropped(self):
+        self.assertEqual(summarize._clean_llm_text("Answer\n<think>The user wants..."),
+                         "Answer")
+
+    def test_unclosed_channel_is_dropped(self):
+        self.assertEqual(summarize._clean_llm_text("<|channel>thought\nplanning..."), "")
+
+    def test_stray_closers_removed(self):
+        self.assertEqual(summarize._clean_llm_text("plan</think>Answer"), "planAnswer")
+        self.assertEqual(summarize._clean_llm_text("<channel|>Answer"), "Answer")
+
+    def test_balanced_block_still_removed_and_text_after_kept(self):
+        self.assertEqual(summarize._clean_llm_text("<think>a</think>X<think>b</think>Y"), "XY")
+
+    def test_only_unclosed_reasoning_is_an_error_not_the_answer(self):
+        with mock.patch.object(summarize, "_post_json",
+                               return_value=_chat("<think>still thinking")):
+            with self.assertRaises(SummarizeError):
+                summarize._llamacpp_call("p", None, "http://h", 5)
+
+
 class TestLlamacppAvailability(unittest.TestCase):
     def test_health_endpoint_probed(self):
         with mock.patch.object(summarize, "_get_ok", return_value=True) as m:

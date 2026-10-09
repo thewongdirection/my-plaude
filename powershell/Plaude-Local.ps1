@@ -1038,8 +1038,22 @@ function Remove-LeakedReasoning {
     # Drop reasoning markers a model leaked into its visible answer
     # (parity with _clean_llm_text).
     param([string]$Text)
-    $re = '(?is)<think>.*?</think>|<\|channel>.*?<channel\|>|<\|channel>thought\s*'
+    # Balanced reasoning blocks first; then an UNCLOSED opener (a reply cut off
+    # mid-thought) drops everything after it; then stray closers.
+    $re = '(?is)<think>.*?</think>|<\|channel>.*?<channel\|>|<think>.*|<\|channel>.*|</think>|<channel\|>'
     return ([regex]::Replace($Text, $re, '')).Trim()
+}
+
+function New-TruncatedReplyError {
+    # The model hit its token cap mid-answer (parity with TruncatedReply). The
+    # exception carries what it wrote in Data['Partial'] and is flagged with
+    # Data['Truncated'] so callers that can recover (aligned translation) tell
+    # it apart from any other LLM failure.
+    param([string]$Partial = '')
+    $ex = New-Object System.Exception ("llama.cpp reply was truncated at $($Script:LlamacppMaxTokens) tokens; use a shorter -SummarizeMaxChars chunk or a faster non-reasoning model.")
+    $ex.Data['Truncated'] = $true
+    $ex.Data['Partial'] = $Partial
+    return $ex
 }
 
 function Invoke-LlmCall {
@@ -1070,10 +1084,17 @@ function Invoke-LlmCall {
         $resp = Invoke-RestMethod -Uri "$($Url.TrimEnd('/'))/v1/chat/completions" -Method Post `
             -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec $TimeoutSec
         $text = $null
-        if ($resp.PSObject.Properties['choices'] -and @($resp.choices).Count -gt 0 -and $resp.choices[0].message) {
-            $text = $resp.choices[0].message.content
+        $finish = $null
+        if ($resp.PSObject.Properties['choices'] -and @($resp.choices).Count -gt 0) {
+            $choice = $resp.choices[0]
+            if ($choice.PSObject.Properties['finish_reason']) { $finish = $choice.finish_reason }
+            if ($choice.PSObject.Properties['message'] -and $choice.message -and $choice.message.PSObject.Properties['content']) {
+                $text = $choice.message.content
+            }
         }
         $text = if ($text -is [string]) { Remove-LeakedReasoning $text } else { '' }
+        # Cut off at max_tokens: never hand back half an answer as a whole one.
+        if ($finish -eq 'length') { throw (New-TruncatedReplyError -Partial $text) }
         if (-not $text) { throw 'llama.cpp returned no text.' }
         return $text
     }
@@ -1166,7 +1187,19 @@ function Invoke-TranslateGroup {
     param([int[]]$Group, [string[]]$Lines, [string]$TargetLanguage, [string]$Backend, [string]$Model, [string]$Url, [double]$TimeoutSec, [string[]]$Out)
     $numberedLines = for ($k = 0; $k -lt $Group.Count; $k++) { "$($k + 1). $($Lines[$Group[$k]])" }
     $numbered = $numberedLines -join "`n"
-    $resp = Invoke-LlmCall -Prompt (Build-AlignedTranslatePrompt -Numbered $numbered -TargetLanguage $TargetLanguage) -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec
+    try {
+        $resp = Invoke-LlmCall -Prompt (Build-AlignedTranslatePrompt -Numbered $numbered -TargetLanguage $TargetLanguage) -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec
+    } catch {
+        if (-not $_.Exception.Data['Truncated']) { throw }
+        if ($Group.Count -gt 1) {
+            # Too much for one reply: split and retry each half (parity with Python).
+            $mid = [int][Math]::Floor($Group.Count / 2)
+            Invoke-TranslateGroup -Group $Group[0..($mid - 1)] -Lines $Lines -TargetLanguage $TargetLanguage -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec -Out $Out
+            Invoke-TranslateGroup -Group $Group[$mid..($Group.Count - 1)] -Lines $Lines -TargetLanguage $TargetLanguage -Backend $Backend -Model $Model -Url $Url -TimeoutSec $TimeoutSec -Out $Out
+            return
+        }
+        $resp = [string]$_.Exception.Data['Partial']   # a single line: keep what we got
+    }
     $resp = [regex]::Replace($resp, '(?is)<think>.*?</think>', '')
     $got = @{}
     foreach ($m in [regex]::Matches($resp, '(?m)^\s*(\d+)[.\):]\s*(.*)$')) { $got[[int]$m.Groups[1].Value] = $m.Groups[2].Value.Trim() }

@@ -214,6 +214,90 @@ Describe 'llama.cpp backend: output cleaning (leaked template and reasoning toke
     }
 }
 
+Describe 'llama.cpp backend: truncated replies (finish_reason=length)' {
+    It 'throws a flagged truncation error carrying the partial text' {
+        Mock Invoke-RestMethod {
+            [pscustomobject]@{ choices = @([pscustomobject]@{ finish_reason = 'length'; message = [pscustomobject]@{ content = "- one`n- tw" } }) }
+        }
+        $err = $null
+        try { Invoke-LlmCall -Prompt 'p' -Backend 'llamacpp' -Url 'http://h' } catch { $err = $_.Exception }
+        $err | Should -Not -BeNullOrEmpty
+        $err.Message | Should -Match 'truncated'
+        $err.Data['Truncated'] | Should -BeTrue
+        $err.Data['Partial'] | Should -Be "- one`n- tw"
+    }
+    It 'does not flag a normal stop' {
+        Mock Invoke-RestMethod {
+            [pscustomobject]@{ choices = @([pscustomobject]@{ finish_reason = 'stop'; message = [pscustomobject]@{ content = 'done' } }) }
+        }
+        Invoke-LlmCall -Prompt 'p' -Backend 'llamacpp' -Url 'http://h' | Should -Be 'done'
+    }
+    It 'Invoke-Summarize surfaces the truncation' {
+        Mock Invoke-RestMethod {
+            [pscustomobject]@{ choices = @([pscustomobject]@{ finish_reason = 'length'; message = [pscustomobject]@{ content = 'half' } }) }
+        }
+        { Invoke-Summarize -Text 'a transcript' -Backend 'llamacpp' -Url 'http://h' -MaxChars 1000 } |
+            Should -Throw '*truncated*'
+    }
+    It 'splits and retries a translation batch whose reply was truncated' {
+        $rec = @{ sizes = @() }
+        Mock Invoke-LlmCall {
+            $n = @($Prompt -split "`n" | Where-Object { $_ -match '^\d' }).Count
+            $rec.sizes += $n
+            if ($n -gt 2) { throw (New-TruncatedReplyError -Partial '1. par') }
+            (1..$n | ForEach-Object { "$_. t$($_ - 1)" }) -join "`n"
+        }
+        $lines = 0..7 | ForEach-Object { "L$_" }
+        $out = Invoke-TranslateLines -Lines $lines -TargetLanguage 'English' -Backend 'llamacpp' -Url 'http://h' -MaxChars 10000 -MaxLines 8
+        @($out).Count | Should -Be 8
+        @($out | Where-Object { -not $_ }).Count | Should -Be 0
+        $rec.sizes.Count | Should -BeGreaterThan 1
+    }
+    It 'keeps the partial text for a truncated single line' {
+        Mock Invoke-LlmCall { throw (New-TruncatedReplyError -Partial '1. partial text') }
+        $out = Invoke-TranslateLines -Lines @('only') -TargetLanguage 'English' -Backend 'llamacpp' -Url 'http://h' -MaxChars 1000
+        @($out)[0] | Should -Be 'partial text'
+    }
+    It 'rethrows non-truncation errors from translation' {
+        Mock Invoke-LlmCall { throw 'connection refused' }
+        { Invoke-TranslateLines -Lines @('a', 'b') -TargetLanguage 'English' -Backend 'llamacpp' -Url 'http://h' -MaxChars 1000 } |
+            Should -Throw '*connection refused*'
+    }
+}
+
+Describe 'llama.cpp backend: unclosed reasoning and tolerant parsing' {
+    It 'drops an unclosed think block' {
+        Remove-LeakedReasoning "Answer`n<think>The user wants..." | Should -Be 'Answer'
+    }
+    It 'drops an unclosed channel block' {
+        Remove-LeakedReasoning "<|channel>thought`nplanning..." | Should -Be ''
+    }
+    It 'removes stray closers' {
+        Remove-LeakedReasoning 'plan</think>Answer' | Should -Be 'planAnswer'
+        Remove-LeakedReasoning '<channel|>Answer' | Should -Be 'Answer'
+    }
+    It 'keeps text between balanced blocks' {
+        Remove-LeakedReasoning '<think>a</think>X<think>b</think>Y' | Should -Be 'XY'
+    }
+    It 'an only-unclosed-reasoning reply is an error, not the answer' {
+        Mock Invoke-RestMethod { New-ChatReply '<think>still thinking' }
+        { Invoke-LlmCall -Prompt 'p' -Backend 'llamacpp' -Url 'http://h' } |
+            Should -Throw '*llama.cpp returned no text*'
+    }
+    It 'a message without a content property gives the clean error (strict mode safe)' {
+        Mock Invoke-RestMethod {
+            [pscustomobject]@{ choices = @([pscustomobject]@{ message = [pscustomobject]@{ role = 'assistant' } }) }
+        }
+        { Invoke-LlmCall -Prompt 'p' -Backend 'llamacpp' -Url 'http://h' } |
+            Should -Throw '*llama.cpp returned no text*'
+    }
+    It 'a choice without a message property gives the clean error' {
+        Mock Invoke-RestMethod { [pscustomobject]@{ choices = @([pscustomobject]@{ index = 0 }) } }
+        { Invoke-LlmCall -Prompt 'p' -Backend 'llamacpp' -Url 'http://h' } |
+            Should -Throw '*llama.cpp returned no text*'
+    }
+}
+
 Describe 'llama.cpp backend: availability and detection' {
     It 'Test-LlamacppUp probes /health' {
         $rec = @{ uri = $null }
