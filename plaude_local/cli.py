@@ -118,6 +118,11 @@ def build_parser() -> argparse.ArgumentParser:
                          help="beam search width")
     g_model.add_argument("--no-vad", action="store_true",
                          help="disable voice-activity filtering of silence")
+    g_model.add_argument("--condition-on-previous", action="store_true",
+                         help="feed each window's text to the next as context "
+                              "(Whisper's classic behavior). Off by default: it can "
+                              "make large-v3 fall into a repetition loop on some "
+                              "languages (e.g. Bengali, Tamil)")
     g_model.add_argument("--model-dir", default=None, metavar="DIR",
                          help="directory to cache/download model weights")
     g_model.add_argument("--offline", action="store_true",
@@ -663,6 +668,7 @@ def run(argv: Optional[List[str]] = None) -> int:
                 word_timestamps=want_words,
                 vad_filter=not args.no_vad,
                 beam_size=args.beam_size,
+                condition_on_previous_text=args.condition_on_previous,
             )
         except transcribe.TranscribeError as exc:
             print(f"error: {exc}", file=sys.stderr)
@@ -681,7 +687,8 @@ def run(argv: Optional[List[str]] = None) -> int:
                 _tr_segs, _ = engine.transcribe(
                     str(prepared), language=args.language,
                     vad_filter=not args.no_vad, beam_size=args.beam_size,
-                    task="translate")
+                    task="translate",
+                    condition_on_previous_text=args.condition_on_previous)
                 whisper_translate_segs = _tr_segs
             except transcribe.TranscribeError as exc:
                 print(f"error: {exc}", file=sys.stderr)

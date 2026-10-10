@@ -968,6 +968,36 @@ Describe 'Get-InferenceHint (transcription failure remedy)' {
     }
 }
 
+Describe 'Invoke-Transcribe: condition_on_previous_text (parity with Python)' {
+    # Regression: carrying text across windows lets large-v3 loop (Bengali, Tamil).
+    BeforeAll {
+        function whisper-ctranslate2 { $script:wcArgs = $args; $global:LASTEXITCODE = 0 }
+    }
+    BeforeEach {
+        $script:wcArgs = $null
+        $Model = 'small'; $BeamSize = 5; $NoVad = $false; $Language = ''
+        Mock Set-Utf8Subprocess { }
+        Mock Write-Log { }
+        $wd = Join-Path $TestDrive 'wd'
+        New-Item -ItemType Directory -Force $wd | Out-Null
+        Set-Content -LiteralPath (Join-Path $wd 'a.txt') -Value 'x'
+        $script:wd = $wd
+    }
+    It 'passes --condition_on_previous_text False by default' {
+        $ConditionOnPrevious = $false
+        Invoke-Transcribe -AudioPath 'a.wav' -WorkDir $script:wd -Dev 'cpu' -Compute 'int8' -Token '' | Out-Null
+        $i = [array]::IndexOf($script:wcArgs, '--condition_on_previous_text')
+        $i | Should -BeGreaterThan -1
+        $script:wcArgs[$i + 1] | Should -Be 'False'
+    }
+    It 'passes True with -ConditionOnPrevious' {
+        $ConditionOnPrevious = $true
+        Invoke-Transcribe -AudioPath 'a.wav' -WorkDir $script:wd -Dev 'cpu' -Compute 'int8' -Token '' | Out-Null
+        $i = [array]::IndexOf($script:wcArgs, '--condition_on_previous_text')
+        $script:wcArgs[$i + 1] | Should -Be 'True'
+    }
+}
+
 Describe 'Get-CudaBootstrap' {
     # Parity with the Python entry point: the PowerShell GPU path runs
     # whisper-ctranslate2 through a bootstrap that registers the nvidia-*-cu12

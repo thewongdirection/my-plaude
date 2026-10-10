@@ -179,8 +179,14 @@ class Transcriber:
         vad_filter: bool = True,
         beam_size: int = 5,
         task: str = "transcribe",
+        condition_on_previous_text: bool = False,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """Transcribe (or translate) ``audio_path``.
+
+        ``condition_on_previous_text`` is OFF by default: with it on, one bad
+        window poisons the next and large-v3 can fall into a repetition loop
+        (seen on Bengali and Tamil), turning a whole recording into one repeated
+        line. Turning it off costs only cross-window context.
 
         ``language=None`` triggers Whisper's automatic language detection.
         ``task="translate"`` uses Whisper's speech-to-**English** translation.
@@ -190,7 +196,8 @@ class Transcriber:
         try:
             return self._run(audio_path, language=language, task=task,
                              beam_size=beam_size, vad_filter=vad_filter,
-                             word_timestamps=word_timestamps)
+                             word_timestamps=word_timestamps,
+                             condition_on_previous_text=condition_on_previous_text)
         except TranscribeError:
             raise
         except Exception as exc:
@@ -202,7 +209,8 @@ class Transcriber:
             ) from exc
 
     def _run(self, audio_path: str, *, language: Optional[str], task: str,
-             beam_size: int, vad_filter: bool, word_timestamps: bool
+             beam_size: int, vad_filter: bool, word_timestamps: bool,
+             condition_on_previous_text: bool = False
              ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         segments_iter, info = self._model.transcribe(
             audio_path,
@@ -211,6 +219,7 @@ class Transcriber:
             beam_size=beam_size,
             vad_filter=vad_filter,
             word_timestamps=word_timestamps,
+            condition_on_previous_text=condition_on_previous_text,
         )
 
         segments: List[Dict[str, Any]] = []

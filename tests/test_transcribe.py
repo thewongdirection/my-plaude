@@ -144,6 +144,33 @@ class TestTranscriberGuard(unittest.TestCase):
 
 
 
+class TestConditionOnPrevious(unittest.TestCase):
+    """Regression: carrying text across windows lets large-v3 loop (Bengali, Tamil)."""
+
+    def _engine(self):
+        engine = transcribe.Transcriber.__new__(transcribe.Transcriber)
+        engine.device, engine.compute_type, engine.model_name = "cpu", "int8", "small"
+        engine._model = mock.Mock()
+        engine._model.transcribe.return_value = ([], mock.Mock(language="bn"))
+        return engine
+
+    def test_off_by_default(self):
+        engine = self._engine()
+        engine.transcribe("x.wav")
+        self.assertIs(engine._model.transcribe.call_args.kwargs["condition_on_previous_text"], False)
+
+    def test_can_be_turned_on(self):
+        engine = self._engine()
+        engine.transcribe("x.wav", condition_on_previous_text=True)
+        self.assertIs(engine._model.transcribe.call_args.kwargs["condition_on_previous_text"], True)
+
+    def test_cli_flag_defaults_off_and_enables(self):
+        from plaude_local import cli
+        parser = cli.build_parser()
+        self.assertFalse(parser.parse_args(["a.wav"]).condition_on_previous)
+        self.assertTrue(parser.parse_args(["a.wav", "--condition-on-previous"]).condition_on_previous)
+
+
 class TestInferenceErrors(unittest.TestCase):
     """Runtime inference failures become TranscribeError (exit 6), not tracebacks."""
 

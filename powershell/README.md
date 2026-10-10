@@ -185,6 +185,7 @@ python tests/regression/run_regression.py --impl powershell --sample 24
 | Diarization model | `--diarize-model REPO` | `-DiarizeModel REPO` (honored) |
 | Diarization speakers | `--num/min/max-speakers N` | `-NumSpeakers/-MinSpeakers/-MaxSpeakers N` (honored) |
 | Diarization backend | `--diarize-backend pyannote/whisperx` | `-DiarizeBackend` (pyannote only; whisperx not ported) |
+| Context carry-over between windows | `--condition-on-previous` (off by default: prevents large-v3 repetition loops on e.g. Bengali/Tamil) | `-ConditionOnPrevious` (same default; passed to whisper-ctranslate2 as `--condition_on_previous_text`) |
 | Summarization | `--summarize` (Ollama/llama.cpp) | `-Summarize` (Ollama/llama.cpp) |
 | llama.cpp transport | `/v1/chat/completions`, thinking off, 1024-token cap, leaked reasoning blocks stripped, truncated replies raise (translation splits + retries) | identical |
 | LLM request timeout | `--summarize-timeout SECONDS` (default 120) | `-SummarizeTimeout SECONDS` |

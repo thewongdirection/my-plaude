@@ -63,6 +63,7 @@ param(
     [string]$Language,
     [int]$BeamSize = 5,
     [switch]$NoVad,
+    [switch]$ConditionOnPrevious,
     [string]$ModelDir,
     [switch]$Offline,
 
@@ -784,7 +785,11 @@ function Invoke-Transcribe {
         '--output_format', 'all',
         '--beam_size', "$BeamSize",
         # Always pass VAD explicitly (parity with Python's vad_filter=not no_vad).
-        '--vad_filter', $(if ($NoVad) { 'False' } else { 'True' })
+        '--vad_filter', $(if ($NoVad) { 'False' } else { 'True' }),
+        # Always explicit (parity with Python's condition_on_previous_text): OFF by
+        # default, because carrying text across windows can send large-v3 into a
+        # repetition loop (Bengali, Tamil). -ConditionOnPrevious restores it.
+        '--condition_on_previous_text', $(if ($ConditionOnPrevious) { 'True' } else { 'False' })
     )
     if ($Language) { $a += @('--language', $Language) }
     # NOTE: diarization is NOT delegated to whisper-ctranslate2 (--hf_token). Its
