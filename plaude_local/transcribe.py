@@ -180,8 +180,18 @@ class Transcriber:
         beam_size: int = 5,
         task: str = "transcribe",
         condition_on_previous_text: bool = False,
+        batched: bool = False,
+        batch_size: int = 8,
+        chunk_length: int = 15,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """Transcribe (or translate) ``audio_path``.
+
+        ``batched=True`` uses faster-whisper's batched pipeline: the audio is cut
+        into independent voice-detected chunks of at most ``chunk_length`` seconds
+        and decoded ``batch_size`` at a time. A hallucination or loop is then
+        confined to its own chunk, and it is many times faster. VAD is always on
+        in this mode (``vad_filter`` is ignored) and, as chunks are independent,
+        ``condition_on_previous_text`` has no effect.
 
         ``condition_on_previous_text`` is OFF by default: with it on, one bad
         window poisons the next and large-v3 can fall into a repetition loop
@@ -197,7 +207,9 @@ class Transcriber:
             return self._run(audio_path, language=language, task=task,
                              beam_size=beam_size, vad_filter=vad_filter,
                              word_timestamps=word_timestamps,
-                             condition_on_previous_text=condition_on_previous_text)
+                             condition_on_previous_text=condition_on_previous_text,
+                             batched=batched, batch_size=batch_size,
+                             chunk_length=chunk_length)
         except TranscribeError:
             raise
         except Exception as exc:
@@ -210,17 +222,34 @@ class Transcriber:
 
     def _run(self, audio_path: str, *, language: Optional[str], task: str,
              beam_size: int, vad_filter: bool, word_timestamps: bool,
-             condition_on_previous_text: bool = False
+             condition_on_previous_text: bool = False, batched: bool = False,
+             batch_size: int = 8, chunk_length: int = 15
              ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        segments_iter, info = self._model.transcribe(
-            audio_path,
-            language=language,
-            task=task,
-            beam_size=beam_size,
-            vad_filter=vad_filter,
-            word_timestamps=word_timestamps,
-            condition_on_previous_text=condition_on_previous_text,
-        )
+        if batched:
+            pipeline = getattr(self, "_batched_pipeline", None)
+            if pipeline is None:
+                from faster_whisper import BatchedInferencePipeline  # lazy: optional dep
+
+                pipeline = self._batched_pipeline = BatchedInferencePipeline(model=self._model)
+            segments_iter, info = pipeline.transcribe(
+                audio_path,
+                language=language,
+                task=task,
+                beam_size=beam_size,
+                batch_size=batch_size,
+                chunk_length=chunk_length,
+                word_timestamps=word_timestamps,
+            )
+        else:
+            segments_iter, info = self._model.transcribe(
+                audio_path,
+                language=language,
+                task=task,
+                beam_size=beam_size,
+                vad_filter=vad_filter,
+                word_timestamps=word_timestamps,
+                condition_on_previous_text=condition_on_previous_text,
+            )
 
         segments: List[Dict[str, Any]] = []
         for seg in segments_iter:  # iterating is what actually runs inference
