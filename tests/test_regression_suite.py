@@ -949,6 +949,32 @@ class TestRunnerLlamacpp(unittest.TestCase):
         self.assertNotIn("--summarize-url", py)
 
 
+class TestRunnerBatched(unittest.TestCase):
+    """The runner can drive both tools in opt-in batched decoding mode."""
+
+    def test_batched_flags_reach_both_tools(self):
+        py = rr.build_command("python", Path("a.opus"), Path("w"), variant="clean",
+                              model="large-v3", engine="llm", translate_model=None, batched=True)
+        ps = rr.build_command("powershell", Path("a.opus"), Path("w"), variant="clean",
+                              model="large-v3", engine="llm", translate_model=None, batched=True)
+        self.assertIn("--batched", py)
+        self.assertIn("-Batched", ps)
+
+    def test_default_commands_have_no_batched_flag(self):
+        py = rr.build_command("python", Path("a.opus"), Path("w"), variant="clean",
+                              model="large-v3", engine="llm", translate_model="m")
+        ps = rr.build_command("powershell", Path("a.opus"), Path("w"), variant="clean",
+                              model="large-v3", engine="llm", translate_model="m")
+        self.assertNotIn("--batched", py)
+        self.assertNotIn("-Batched", ps)
+
+    def test_batched_goes_with_the_damaged_stages_too(self):
+        py = rr.build_command("python", Path("a.opus"), Path("w"), variant="damaged",
+                              model="large-v3", engine="llm", translate_model=None, batched=True)
+        self.assertIn("--batched", py)
+        self.assertIn("--repair", py)
+
+
 class TestVerifyOffline(unittest.TestCase):
     """The offline check must really cut the internet and use offline flags."""
 

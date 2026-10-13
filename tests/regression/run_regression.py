@@ -73,7 +73,8 @@ DEFAULT_LLM_TIMEOUT = 900  # s per LLM request: survive an 8 GB model (re)load
 def build_command(impl: str, audio: Path, work: Path, *, variant: str, model: str,
                   engine: str, translate_model: Optional[str],
                   llm_timeout: int = DEFAULT_LLM_TIMEOUT,
-                  backend: Optional[str] = None, llm_url: Optional[str] = None) -> list:
+                  backend: Optional[str] = None, llm_url: Optional[str] = None,
+                  batched: bool = False) -> list:
     """The exact CLI invocation for one run (flag-for-flag parity across impls)."""
     html, tfile, xfile, stages = (work / "dashboard.html", work / "transcription.txt",
                                   work / "translation.txt", work / "stages")
@@ -89,6 +90,8 @@ def build_command(impl: str, audio: Path, work: Path, *, variant: str, model: st
             cmd += ["--summarize-backend", backend]
         if llm_url:
             cmd += ["--summarize-url", llm_url]
+        if batched:
+            cmd += ["--batched"]
         if variant == "damaged":
             cmd += ["--repair", "--enhance", "strong", "--keep-stages", str(stages)]
         return cmd
@@ -104,6 +107,8 @@ def build_command(impl: str, audio: Path, work: Path, *, variant: str, model: st
         cmd += ["-SummarizeBackend", backend]
     if llm_url:
         cmd += ["-SummarizeUrl", llm_url]
+    if batched:
+        cmd += ["-Batched"]
     if variant == "damaged":
         cmd += ["-Repair", "-Enhance", "strong", "-KeepStages", str(stages)]
     return cmd
@@ -279,7 +284,8 @@ def run_one(impl: str, entry: dict, variant: str, out_dir: Path, args) -> dict:
                         translate_model=getattr(args, "translate_model_cli", args.translate_model),
                         llm_timeout=args.llm_timeout,
                         backend=getattr(args, "translate_backend_cli", None),
-                        llm_url=getattr(args, "llm_url", None))
+                        llm_url=getattr(args, "llm_url", None),
+                        batched=getattr(args, "batched", False))
     t0 = time.time()
     code = run_with_timeout(cmd, work / "run.log", args.timeout)
     if killed_by_system(code):
@@ -429,6 +435,9 @@ def main(argv=None) -> int:
     p.add_argument("--translate-model", default="best",
                    help="Ollama model for translation; 'best' (default) picks the "
                         f"strongest installed of {', '.join(BEST_TRANSLATORS)}")
+    p.add_argument("--batched", action="store_true",
+                   help="run both tools with opt-in batched decoding (--batched / -Batched); "
+                        "results are recorded under a separate config, so use another --out")
     p.add_argument("--translate-backend", default="auto",
                    choices=["auto", "ollama", "llamacpp"],
                    help="local LLM server for translation: 'auto' (default) uses the best "
@@ -500,6 +509,8 @@ def main(argv=None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {"model": args.model, "translate_engine": args.translate_engine,
               "translate_model": args.translate_model}
+    if args.batched:
+        config["batched"] = True   # only when set: existing results/baselines stay comparable
     base = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
     same_config = base.get("config") == config
     base_scores = base.get("results", {}) if same_config else {}
