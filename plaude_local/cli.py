@@ -674,6 +674,12 @@ def run(argv: Optional[List[str]] = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 6
         _log(args.quiet, f"      detected language: {meta.get('language')}")
+        if not args.language:  # only when auto-detected (an explicit --language is never "uncertain")
+            from .quality import language_ambiguity_note
+            _note = language_ambiguity_note(
+                meta.get("language"), meta.get("language_probability"))
+            if _note:
+                _warn(_note)
 
         # For the HTML dashboard's English tab via the Whisper engine, run
         # Whisper's native translate task (a second decode pass). Skipped when the

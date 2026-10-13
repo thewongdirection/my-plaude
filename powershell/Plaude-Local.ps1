@@ -819,6 +819,11 @@ function Invoke-Transcribe {
     } else {
         $toolLog = Invoke-NativeMerged { whisper-ctranslate2 @a } | ForEach-Object { Write-Log $_; $_ }
     }
+    if ($Task -eq 'transcribe') {
+        $Script:DetectedLanguageProb = $null
+        $m = [regex]::Match((@($toolLog) -join "`n"), "Detected language '[^']*' with probability ([0-9.]+)")
+        if ($m.Success) { $Script:DetectedLanguageProb = [double]::Parse($m.Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture) }
+    }
     if ($LASTEXITCODE -ne 0) {
         throw ("whisper-ctranslate2 failed (exit $LASTEXITCODE) on $Dev ($Compute)." +
             (Get-InferenceHint -ToolOutput (@($toolLog) -join "`n")))
@@ -1372,6 +1377,19 @@ function Get-QualityReport {
     return @{ verdict = $verdict; reasons = $reasons.ToArray(); metrics = $metrics }
 }
 
+# Spoken Hindi and Urdu are nearly identical, so Whisper often cannot tell them apart
+# (parity with quality.language_ambiguity_note): warn instead of silently forcing one.
+# 0.9, not 0.8 (parity with LANGUAGE_AMBIGUITY_BELOW): the probability shifts with preprocessing
+# while real Hindi stayed >= 0.96.
+$Script:LanguageAmbiguityBelow = 0.9
+function Get-LanguageAmbiguityNote {
+    param([string]$Language, $Probability)
+    if ($Language -notin @('hi', 'ur') -or $null -eq $Probability) { return $null }
+    if ([double]$Probability -ge $Script:LanguageAmbiguityBelow) { return $null }
+    $p = ([double]$Probability).ToString('0.00', [System.Globalization.CultureInfo]::InvariantCulture)
+    return "language detection is uncertain between Hindi and Urdu (detected '$Language' at $p); they sound nearly identical, so if the transcript is in the wrong script re-run with -Language hi or -Language ur"
+}
+
 function Format-QualitySummary {
     param([hashtable]$Report)
     $head = "quality: $($Report.verdict.ToUpper())"
@@ -1739,6 +1757,11 @@ function Invoke-Main {
             } catch { Write-ErrLine "error: $($_.Exception.Message)"; return 7 }
         } else {
             Write-Log '[3/4] diarization skipped'
+        }
+
+        if (-not $Language -and $jsonObj -and $jsonObj.PSObject.Properties['language']) {
+            $note = Get-LanguageAmbiguityNote -Language ([string]$jsonObj.language) -Probability $Script:DetectedLanguageProb
+            if ($note) { Write-Warn $note }
         }
 
         # Assess recording quality from the JSON metrics whisper-ctranslate2 wrote.

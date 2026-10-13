@@ -107,5 +107,28 @@ class TestThresholdsAndReport(unittest.TestCase):
         self.assertTrue(r.is_bad)
 
 
+class TestLanguageAmbiguity(unittest.TestCase):
+    """Hindi/Urdu are near-identical; low-confidence detection must be flagged."""
+
+    def test_warns_for_low_confidence_hindi_or_urdu(self):
+        for lang, p in (("hi", 0.50), ("ur", 0.72), ("hi", 0.89)):
+            note = quality.language_ambiguity_note(lang, p)
+            self.assertIsNotNone(note, (lang, p))
+            self.assertIn("Hindi and Urdu", note)
+            self.assertIn("--language hi or --language ur", note)
+            self.assertIn(f"'{lang}' at {p:.2f}", note)
+
+    def test_confident_detection_is_not_flagged(self):
+        # Real Hindi in the corpus was always >= 0.96.
+        for lang, p in (("hi", 0.98), ("ur", 0.96), ("hi", 0.90)):
+            self.assertIsNone(quality.language_ambiguity_note(lang, p), (lang, p))
+
+    def test_other_languages_and_missing_probability_are_ignored(self):
+        self.assertIsNone(quality.language_ambiguity_note("en", 0.3))
+        self.assertIsNone(quality.language_ambiguity_note("ta", 0.2))
+        self.assertIsNone(quality.language_ambiguity_note("hi", None))
+        self.assertIsNone(quality.language_ambiguity_note(None, 0.5))
+
+
 if __name__ == "__main__":
     unittest.main()

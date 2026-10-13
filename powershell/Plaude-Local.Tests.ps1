@@ -998,6 +998,58 @@ Describe 'Invoke-Transcribe: condition_on_previous_text (parity with Python)' {
     }
 }
 
+Describe 'Get-LanguageAmbiguityNote (parity with quality.language_ambiguity_note)' {
+    It 'warns for low-confidence Hindi or Urdu' {
+        foreach ($c in @(@('hi', 0.50), @('ur', 0.72), @('hi', 0.89))) {
+            $n = Get-LanguageAmbiguityNote -Language $c[0] -Probability $c[1]
+            $n | Should -Not -BeNullOrEmpty
+            $n | Should -Match 'Hindi and Urdu'
+            $n | Should -Match '-Language hi or -Language ur'
+            $n | Should -Match ("'" + $c[0] + "' at " + ([double]$c[1]).ToString('0.00', [System.Globalization.CultureInfo]::InvariantCulture))
+        }
+    }
+    It 'does not flag a confident detection' {
+        foreach ($c in @(@('hi', 0.98), @('ur', 0.96), @('hi', 0.90))) {
+            Get-LanguageAmbiguityNote -Language $c[0] -Probability $c[1] | Should -BeNullOrEmpty
+        }
+    }
+    It 'ignores other languages and a missing probability' {
+        Get-LanguageAmbiguityNote -Language 'en' -Probability 0.3 | Should -BeNullOrEmpty
+        Get-LanguageAmbiguityNote -Language 'ta' -Probability 0.2 | Should -BeNullOrEmpty
+        Get-LanguageAmbiguityNote -Language 'hi' -Probability $null | Should -BeNullOrEmpty
+    }
+    It 'formats the probability the same way under any culture (parity with Python)' {
+        $old = [System.Threading.Thread]::CurrentThread.CurrentCulture
+        try {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::GetCultureInfo('de-DE')
+            Get-LanguageAmbiguityNote -Language 'hi' -Probability 0.5 | Should -Match "'hi' at 0\.50"
+        } finally { [System.Threading.Thread]::CurrentThread.CurrentCulture = $old }
+    }
+}
+
+Describe 'Invoke-Transcribe: remembers the detected-language probability' {
+    BeforeAll { function whisper-ctranslate2 { Write-Output "Detected language 'Hindi' with probability 0.503214"; $global:LASTEXITCODE = 0 } }
+    BeforeEach {
+        $Model = 'small'; $BeamSize = 5; $NoVad = $false; $Language = ''; $ConditionOnPrevious = $false; $Batched = $false
+        Mock Set-Utf8Subprocess { }
+        Mock Write-Log { }
+        $script:wd = Join-Path $TestDrive 'wd2'
+        New-Item -ItemType Directory -Force $script:wd | Out-Null
+        Set-Content -LiteralPath (Join-Path $script:wd 'a.txt') -Value 'x'
+        $Script:DetectedLanguageProb = $null
+    }
+    It 'parses the probability printed by whisper-ctranslate2' {
+        Invoke-Transcribe -AudioPath 'a.wav' -WorkDir $script:wd -Dev 'cpu' -Compute 'int8' -Token '' | Out-Null
+        $Script:DetectedLanguageProb | Should -BeGreaterThan 0.5031
+        $Script:DetectedLanguageProb | Should -BeLessThan 0.5033
+    }
+    It 'is not overwritten by a translate pass' {
+        $Script:DetectedLanguageProb = 0.42
+        Invoke-Transcribe -AudioPath 'a.wav' -WorkDir $script:wd -Dev 'cpu' -Compute 'int8' -Token '' -Task translate | Out-Null
+        $Script:DetectedLanguageProb | Should -Be 0.42
+    }
+}
+
 Describe 'Get-CudaBootstrap' {
     # Parity with the Python entry point: the PowerShell GPU path runs
     # whisper-ctranslate2 through a bootstrap that registers the nvidia-*-cu12

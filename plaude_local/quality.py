@@ -61,6 +61,29 @@ class QualityReport:
                 "metrics": self.metrics}
 
 
+# Spoken Hindi and Urdu are nearly identical, so Whisper often cannot tell them apart:
+# in the regression corpus real Hindi was always detected at >= 0.96, but Urdu
+# conversations scored ~50/50 in EVERY window of the recording (averaging windows did
+# not help) and were written in Devanagari (Hindi) instead of Urdu script. Silently
+# forcing one language would mislabel real speakers, so the tool only warns.
+# 0.9, not 0.8: the probability shifts with preprocessing (an Urdu conversation read
+# 0.56 raw but 0.78 through the tool's pipeline) while real Hindi stayed >= 0.96.
+LANGUAGE_AMBIGUITY_BELOW = 0.9
+_HINDI_URDU = ("hi", "ur")
+
+
+def language_ambiguity_note(language: Optional[str],
+                            probability: Optional[float]) -> Optional[str]:
+    """A warning when auto-detection chose Hindi/Urdu with low confidence, else None."""
+    if language not in _HINDI_URDU or probability is None:
+        return None
+    if probability >= LANGUAGE_AMBIGUITY_BELOW:
+        return None
+    return (f"language detection is uncertain between Hindi and Urdu (detected "
+            f"'{language}' at {probability:.2f}); they sound nearly identical, so if the "
+            f"transcript is in the wrong script re-run with --language hi or --language ur")
+
+
 def _mean(values: Sequence[float]) -> Optional[float]:
     vals = [v for v in values if v is not None]
     return sum(vals) / len(vals) if vals else None
