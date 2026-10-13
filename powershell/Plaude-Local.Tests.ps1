@@ -1050,6 +1050,68 @@ Describe 'Invoke-Transcribe: remembers the detected-language probability' {
     }
 }
 
+Describe 'Invoke-Transcribe: -Batched (parity with Python --batched)' {
+    BeforeAll {
+        function whisper-ctranslate2 { $script:wcArgs = $args; $global:LASTEXITCODE = 0 }
+        # Shadows the real python so the bootstrap path can be observed without running it.
+        function python { $script:pyArgs = $args; $global:LASTEXITCODE = 0 }
+    }
+    BeforeEach {
+        $script:wcArgs = $null; $script:pyArgs = $null
+        $Model = 'small'; $BeamSize = 5; $NoVad = $false; $Language = ''; $ConditionOnPrevious = $false
+        $Batched = $false; $BatchSize = 8; $ChunkLength = 15
+        Mock Set-Utf8Subprocess { }
+        Mock Write-Log { }
+        Mock Resolve-PythonExe { 'python' }
+        $wd = Join-Path $TestDrive 'wd'
+        New-Item -ItemType Directory -Force $wd | Out-Null
+        Set-Content -LiteralPath (Join-Path $wd 'a.txt') -Value 'x'
+        $script:wd = $wd
+        $env:PLAUDE_BATCH_CHUNK = $null
+    }
+    AfterEach { $env:PLAUDE_BATCH_CHUNK = $null }
+    It 'does not batch by default' {
+        Invoke-Transcribe -AudioPath 'a.wav' -WorkDir $script:wd -Dev 'cpu' -Compute 'int8' -Token '' | Out-Null
+        $script:wcArgs | Should -Not -Contain '--batched'
+        $env:PLAUDE_BATCH_CHUNK | Should -BeNullOrEmpty
+    }
+    It 'passes --batched True, the batch size and the chunk length via the bootstrap' {
+        $Batched = $true; $BatchSize = 4; $ChunkLength = 20
+        Invoke-Transcribe -AudioPath 'a.wav' -WorkDir $script:wd -Dev 'cpu' -Compute 'int8' -Token '' | Out-Null
+        # -Batched always goes through the Python bootstrap (it sets the chunk length).
+        $script:wcArgs | Should -BeNullOrEmpty
+        $a = @($script:pyArgs)
+        $a[0] | Should -Match '_cuda_bootstrap\.py$'
+        $i = [array]::IndexOf($a, '--batched'); $i | Should -BeGreaterThan -1
+        $a[$i + 1] | Should -Be 'True'
+        $a[[array]::IndexOf($a, '--batch_size') + 1] | Should -Be '4'
+        $env:PLAUDE_BATCH_CHUNK | Should -Be '20'
+    }
+    It 'defaults to batch size 8 and 15 s chunks' {
+        $Batched = $true
+        Invoke-Transcribe -AudioPath 'a.wav' -WorkDir $script:wd -Dev 'cpu' -Compute 'int8' -Token '' | Out-Null
+        $a = @($script:pyArgs)
+        $a[[array]::IndexOf($a, '--batch_size') + 1] | Should -Be '8'
+        $env:PLAUDE_BATCH_CHUNK | Should -Be '15'
+    }
+    It 'the bootstrap applies the chunk length and the pipeline VAD (parity with Python)' {
+        $code = Get-CudaBootstrap
+        $code | Should -Match 'PLAUDE_BATCH_CHUNK'
+        $code | Should -Match 'chunk_length'
+        $code | Should -Match 'vad_parameters'
+    }
+    It 'rejects out-of-range values with exit code 2 (same as the Python CLI)' {
+        $script = Join-Path $PSScriptRoot 'Plaude-Local.ps1'
+        $exe = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        $audio = Join-Path $TestDrive 'a.wav'; Set-Content -LiteralPath $audio -Value 'x'
+        foreach ($bad in @(@('-ChunkLength', '4'), @('-ChunkLength', '31'), @('-BatchSize', '0'), @('-BatchSize', '65'))) {
+            $out = & $exe -NoProfile -ExecutionPolicy Bypass -File $script $audio @bad 2>&1
+            $LASTEXITCODE | Should -Be 2 -Because ($bad -join ' ')
+            ($out -join "`n") | Should -Match 'must be between'
+        }
+    }
+}
+
 Describe 'Get-CudaBootstrap' {
     # Parity with the Python entry point: the PowerShell GPU path runs
     # whisper-ctranslate2 through a bootstrap that registers the nvidia-*-cu12

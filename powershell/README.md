@@ -186,6 +186,7 @@ python tests/regression/run_regression.py --impl powershell --sample 24
 | Diarization speakers | `--num/min/max-speakers N` | `-NumSpeakers/-MinSpeakers/-MaxSpeakers N` (honored) |
 | Diarization backend | `--diarize-backend pyannote/whisperx` | `-DiarizeBackend` (pyannote only; whisperx not ported) |
 | Hindi/Urdu uncertainty warning | warns when auto-detected `hi`/`ur` has probability < 0.9 (`--language hi` / `--language ur` to force); read from `info.language_probability` | same warning and text (`-Language hi` / `-Language ur`); the probability is read from whisper-ctranslate2's `Detected language ... with probability P` line |
+| Batched decoding (opt-in) | `--batched` `--batch-size N` (8) `--chunk-length SEC` (15, 5-30) | `-Batched` `-BatchSize N` (8) `-ChunkLength SEC` (15, 5-30); the chunk length is applied by the same Python bootstrap that already starts whisper-ctranslate2 (whisper-ctranslate2 has no chunk-length option) |
 | Context carry-over between windows | `--condition-on-previous` (off by default: prevents large-v3 repetition loops on e.g. Bengali/Tamil) | `-ConditionOnPrevious` (same default; passed to whisper-ctranslate2 as `--condition_on_previous_text`) |
 | Summarization | `--summarize` (Ollama/llama.cpp) | `-Summarize` (Ollama/llama.cpp) |
 | llama.cpp transport | `/v1/chat/completions`, thinking off, 1024-token cap, leaked reasoning blocks stripped, truncated replies raise (translation splits + retries) | identical |

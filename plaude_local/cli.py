@@ -118,6 +118,17 @@ def build_parser() -> argparse.ArgumentParser:
                          help="beam search width")
     g_model.add_argument("--no-vad", action="store_true",
                          help="disable voice-activity filtering of silence")
+    g_model.add_argument("--batched", action="store_true",
+                         help="batched decoding: cut the audio into independent "
+                              "voice-detected chunks and decode several at once. "
+                              "Much faster and confines a Whisper loop to one chunk "
+                              "(fixes some Tamil recordings), but can be less "
+                              "accurate on others (e.g. Bengali). VAD is always on")
+    g_model.add_argument("--batch-size", type=int, default=8, metavar="N",
+                         help="chunks decoded in parallel with --batched (default 8)")
+    g_model.add_argument("--chunk-length", type=int, default=15, metavar="SEC",
+                         help="max chunk length in seconds with --batched, 5-30 "
+                              "(default 15)")
     g_model.add_argument("--condition-on-previous", action="store_true",
                          help="feed each window's text to the next as context "
                               "(Whisper's classic behavior). Off by default: it can "
@@ -555,6 +566,12 @@ def run(argv: Optional[List[str]] = None) -> int:
     if not in_path.is_file():
         print(f"error: input file not found: {in_path}", file=sys.stderr)
         return 2
+    if not 1 <= args.batch_size <= 64:
+        print("error: --batch-size must be between 1 and 64.", file=sys.stderr)
+        return 2
+    if not 5 <= args.chunk_length <= 30:
+        print("error: --chunk-length must be between 5 and 30 seconds.", file=sys.stderr)
+        return 2
 
     # Thorough prerequisite gate: ensure ffmpeg + ffprobe are available, and if
     # not, warn and offer to install them / accept a path, else abort.
@@ -669,6 +686,8 @@ def run(argv: Optional[List[str]] = None) -> int:
                 vad_filter=not args.no_vad,
                 beam_size=args.beam_size,
                 condition_on_previous_text=args.condition_on_previous,
+                batched=args.batched, batch_size=args.batch_size,
+                chunk_length=args.chunk_length,
             )
         except transcribe.TranscribeError as exc:
             print(f"error: {exc}", file=sys.stderr)
@@ -694,7 +713,9 @@ def run(argv: Optional[List[str]] = None) -> int:
                     str(prepared), language=args.language,
                     vad_filter=not args.no_vad, beam_size=args.beam_size,
                     task="translate",
-                    condition_on_previous_text=args.condition_on_previous)
+                    condition_on_previous_text=args.condition_on_previous,
+                    batched=args.batched, batch_size=args.batch_size,
+                    chunk_length=args.chunk_length)
                 whisper_translate_segs = _tr_segs
             except transcribe.TranscribeError as exc:
                 print(f"error: {exc}", file=sys.stderr)

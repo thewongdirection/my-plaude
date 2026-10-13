@@ -504,6 +504,9 @@ In a non-interactive session (piped/redirected) it overwrites without waiting.
 | `--keep-stages DIR` | — | save each preprocessing stage (original / repaired / denoised / enhanced wav) + a `.stages.json` settings manifest to DIR |
 | `--no-vad` | off | disable silence trimming |
 | `--language CODE` | auto | force the spoken language. Worth using for **Hindi vs Urdu**: they sound nearly identical, so auto-detection is sometimes a coin flip and Urdu can come out in Devanagari (Hindi) script. The tool prints a warning when it detected `hi`/`ur` below 0.9 confidence |
+| `--batched` | off | batched decoding: independent voice-detected chunks decoded in parallel (**much faster**, and a Whisper loop stays inside one chunk, which fixes some Tamil recordings). Can be *less* accurate on other languages (e.g. Bengali), so it is opt-in. VAD is always on in this mode |
+| `--batch-size N` | `8` | chunks decoded in parallel with `--batched` |
+| `--chunk-length SEC` | `15` | max chunk length (5-30 s) with `--batched`; 15 s measured best (30 s chunks were much worse) |
 | `--condition-on-previous` | off | carry each window's text into the next as context (Whisper's classic behavior). Off by default because it can send large-v3 into a repetition loop on some languages (Bengali, Tamil) |
 | `-q`, `--quiet` | off | hide progress messages; warnings about degraded output (e.g. `warning: translation unavailable: ...`) are still printed |
 

@@ -171,6 +171,82 @@ class TestConditionOnPrevious(unittest.TestCase):
         self.assertTrue(parser.parse_args(["a.wav", "--condition-on-previous"]).condition_on_previous)
 
 
+class TestBatchedMode(unittest.TestCase):
+    """Opt-in batched decoding (independent VAD chunks decoded in parallel)."""
+
+    def _engine(self):
+        engine = transcribe.Transcriber.__new__(transcribe.Transcriber)
+        engine.device, engine.compute_type, engine.model_name = "cpu", "int8", "small"
+        engine._model = mock.Mock()
+        engine._model.transcribe.return_value = ([], mock.Mock(language="ta"))
+        return engine
+
+    def _fake_faster_whisper(self):
+        pipeline = mock.Mock()
+        pipeline.transcribe.return_value = ([], mock.Mock(language="ta"))
+        module = mock.Mock(BatchedInferencePipeline=mock.Mock(return_value=pipeline))
+        return module, pipeline
+
+    def test_off_by_default_uses_the_plain_model(self):
+        engine = self._engine()
+        module, pipeline = self._fake_faster_whisper()
+        with mock.patch.dict(sys.modules, {"faster_whisper": module}):
+            engine.transcribe("x.wav")
+        engine._model.transcribe.assert_called_once()
+        module.BatchedInferencePipeline.assert_not_called()
+
+    def test_batched_uses_the_pipeline_with_chunk_and_batch_settings(self):
+        engine = self._engine()
+        module, pipeline = self._fake_faster_whisper()
+        with mock.patch.dict(sys.modules, {"faster_whisper": module}):
+            engine.transcribe("x.wav", language="ta", batched=True)
+        engine._model.transcribe.assert_not_called()
+        module.BatchedInferencePipeline.assert_called_once_with(model=engine._model)
+        kw = pipeline.transcribe.call_args.kwargs
+        self.assertEqual((kw["batch_size"], kw["chunk_length"], kw["language"]), (8, 15, "ta"))
+
+    def test_custom_batch_and_chunk_are_passed_through(self):
+        engine = self._engine()
+        module, pipeline = self._fake_faster_whisper()
+        with mock.patch.dict(sys.modules, {"faster_whisper": module}):
+            engine.transcribe("x.wav", batched=True, batch_size=4, chunk_length=20)
+        kw = pipeline.transcribe.call_args.kwargs
+        self.assertEqual((kw["batch_size"], kw["chunk_length"]), (4, 20))
+
+    def test_pipeline_is_built_once_per_engine(self):
+        engine = self._engine()
+        module, pipeline = self._fake_faster_whisper()
+        with mock.patch.dict(sys.modules, {"faster_whisper": module}):
+            engine.transcribe("x.wav", batched=True)
+            engine.transcribe("y.wav", batched=True)
+        module.BatchedInferencePipeline.assert_called_once()
+
+    def test_batched_errors_are_wrapped_like_any_inference_error(self):
+        engine = self._engine()
+        module, pipeline = self._fake_faster_whisper()
+        pipeline.transcribe.side_effect = RuntimeError("boom")
+        with mock.patch.dict(sys.modules, {"faster_whisper": module}):
+            with self.assertRaises(transcribe.TranscribeError):
+                engine.transcribe("x.wav", batched=True)
+
+    def test_cli_defaults_and_flags(self):
+        from plaude_local import cli
+        parser = cli.build_parser()
+        a = parser.parse_args(["a.wav"])
+        self.assertEqual((a.batched, a.batch_size, a.chunk_length), (False, 8, 15))
+        b = parser.parse_args(["a.wav", "--batched", "--batch-size", "4", "--chunk-length", "20"])
+        self.assertEqual((b.batched, b.batch_size, b.chunk_length), (True, 4, 20))
+
+    def test_cli_rejects_out_of_range_values_with_exit_2(self):
+        import tempfile
+        from plaude_local import cli
+        with tempfile.NamedTemporaryFile(suffix=".wav") as f:
+            for extra in (["--chunk-length", "4"], ["--chunk-length", "31"],
+                          ["--batch-size", "0"], ["--batch-size", "65"]):
+                with mock.patch("sys.stderr"):
+                    self.assertEqual(cli.run([f.name] + extra), 2, extra)
+
+
 class TestInferenceErrors(unittest.TestCase):
     """Runtime inference failures become TranscribeError (exit 6), not tracebacks."""
 

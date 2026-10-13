@@ -64,6 +64,9 @@ param(
     [int]$BeamSize = 5,
     [switch]$NoVad,
     [switch]$ConditionOnPrevious,
+    [switch]$Batched,
+    [int]$BatchSize = 8,
+    [int]$ChunkLength = 15,
     [string]$ModelDir,
     [switch]$Offline,
 
@@ -755,6 +758,20 @@ try:
         os.environ["PATH"] = os.pathsep.join(new + ([cur] if cur else []))
 except Exception:
     pass
+# -Batched: whisper-ctranslate2 cannot set the batched chunk length, and it
+# hands the pipeline an EMPTY vad dict (which would silently change the VAD
+# silence rule). Patch the pipeline here so -Batched behaves exactly like the
+# Python tool: chunk_length from PLAUDE_BATCH_CHUNK and the pipeline's own VAD.
+_chunk = os.environ.get("PLAUDE_BATCH_CHUNK")
+if _chunk:
+    from faster_whisper import BatchedInferencePipeline as _Batched
+    _orig = _Batched.transcribe
+    def _patched(self, *args, **kwargs):
+        kwargs.setdefault("chunk_length", int(_chunk))
+        if not kwargs.get("vad_parameters"):
+            kwargs["vad_parameters"] = None
+        return _orig(self, *args, **kwargs)
+    _Batched.transcribe = _patched
 from whisper_ctranslate2.whisper_ctranslate2 import main
 main()
 '@
@@ -792,6 +809,12 @@ function Invoke-Transcribe {
         '--condition_on_previous_text', $(if ($ConditionOnPrevious) { 'True' } else { 'False' })
     )
     if ($Language) { $a += @('--language', $Language) }
+    # Opt-in batched decoding (parity with Python's --batched/--batch-size/--chunk-length).
+    $env:PLAUDE_BATCH_CHUNK = $null
+    if ($Batched) {
+        $a += @('--batched', 'True', '--batch_size', "$BatchSize")
+        $env:PLAUDE_BATCH_CHUNK = "$ChunkLength"
+    }
     # NOTE: diarization is NOT delegated to whisper-ctranslate2 (--hf_token). Its
     # built-in diarization calls pyannote's 4.x `token=` API, which can't run on
     # Windows (pyannote 4.x needs k2, no Windows wheels). We diarize separately via
@@ -802,7 +825,7 @@ function Invoke-Transcribe {
 
     # Route the tool's own stdout/stderr to our log so it does NOT become part
     # of this function's return value (PowerShell captures success-stream output).
-    if ($Dev -eq 'cuda') {
+    if ($Dev -eq 'cuda' -or $Batched) {
         # A child process can't see the nvidia-*-cu12 wheel CUDA DLLs via PATH
         # (Python 3.8+ restricts the DLL search), so run whisper-ctranslate2
         # through a bootstrap that registers those dirs first (parity with the
@@ -1646,6 +1669,14 @@ function Invoke-Main {
     }
     if (-not (Test-Path -LiteralPath $InputFile -PathType Leaf)) {
         Write-ErrLine "error: input file not found: $InputFile"
+        return 2
+    }
+    if ($BatchSize -lt 1 -or $BatchSize -gt 64) {
+        Write-ErrLine 'error: -BatchSize must be between 1 and 64.'
+        return 2
+    }
+    if ($ChunkLength -lt 5 -or $ChunkLength -gt 30) {
+        Write-ErrLine 'error: -ChunkLength must be between 5 and 30 seconds.'
         return 2
     }
     # Thorough prerequisite gate: ensure ffmpeg + ffprobe, offering to install
