@@ -625,6 +625,10 @@ through **both** implementations for real (transcribe + translate to English):
   comparison is marked not comparable instead of failing - the English recall
   still checks that the content came through.
 
+**Latest results:** 598 of 600 Python runs pass (2 failures: a Bengali near miss and
+a damaged Tamil recording); per-language numbers, findings and caveats are in
+[`tests/regression/RESULTS.md`](tests/regression/RESULTS.md).
+
 > **Cloud for speed, not a requirement.** The regression suite runs on a cloud
 > GPU by default purely for **performance**: ~46 hours of multilingual audio per
 > implementation needs a strong GPU, and not everyone has one. **The tool itself

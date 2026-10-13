@@ -135,6 +135,9 @@ languages, mostly Asian, clean + damaged, monologues + multi-speaker conversatio
 **this script and the Python tool on the same corpus with the same flags** and
 scores both identically - see the main [README](../README.md#multilingual-end-to-end-regression-suite).
 
+Recorded outcomes (Python tool on the full corpus; both tools on a 48-run sample) are
+in [`tests/regression/RESULTS.md`](../tests/regression/RESULTS.md).
+
 The default way to run it is **Google Colab** (no local GPU needed; the notebook
 installs PowerShell 7 and runs this script as `pwsh` on Linux). That is purely for
 performance - **the script itself needs no internet connection**: with the Whisper

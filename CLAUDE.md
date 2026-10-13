@@ -85,6 +85,9 @@ Keep both suites green when changing either implementation.
 
 ## Regression test runs (rule)
 
+Recorded outcomes of past runs live in `tests/regression/RESULTS.md` (raw data under
+`tests/regression/reports/`); add a new dated section there after each full run.
+
 The cloud default is for **performance only** - the tool itself must keep
 working with no internet connection (models cached, `--offline` / `-Offline`, GPU
 or CPU). Never add a runtime dependency on the network; after changes that touch
